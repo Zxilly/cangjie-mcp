@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
+from cangjie_mcp.indexer.reranker import RerankerProvider
 
 if TYPE_CHECKING:
     from chromadb.api import ClientAPI
@@ -60,6 +61,7 @@ class VectorStore:
         db_path: Path,
         embedding_provider: EmbeddingProvider,
         collection_name: str = "cangjie_docs",
+        reranker: RerankerProvider | None = None,
     ) -> None:
         """Initialize vector store.
 
@@ -67,10 +69,12 @@ class VectorStore:
             db_path: Path to ChromaDB storage directory
             embedding_provider: Embedding provider for vectorization
             collection_name: Name of the ChromaDB collection
+            reranker: Optional reranker provider for result reranking
         """
         self.db_path = db_path
         self.embedding_provider = embedding_provider
         self.collection_name = collection_name
+        self.reranker = reranker
         self._client: ClientAPI | None = None
         self._collection: Collection | None = None
         self._index: VectorStoreIndex | None = None
@@ -225,6 +229,8 @@ class VectorStore:
         query: str,
         top_k: int = 5,
         category: str | None = None,
+        use_rerank: bool = True,
+        initial_k: int | None = None,
     ) -> list[SearchResult]:
         """Search for documents matching query.
 
@@ -232,6 +238,9 @@ class VectorStore:
             query: Search query
             top_k: Number of results to return
             category: Optional category filter
+            use_rerank: Whether to use reranking (if reranker is available)
+            initial_k: Number of candidates to retrieve before reranking.
+                       If None, uses config default or top_k * 4.
 
         Returns:
             List of search results with text and metadata
@@ -239,6 +248,14 @@ class VectorStore:
         index = self.get_index()
         if index is None:
             return []
+
+        # Determine how many candidates to retrieve
+        should_rerank = use_rerank and self.reranker is not None
+        if should_rerank:
+            # Retrieve more candidates for reranking
+            retrieve_k = initial_k if initial_k is not None else max(top_k * 4, 20)
+        else:
+            retrieve_k = top_k
 
         # Build retriever with filters
         filters = None
@@ -248,14 +265,18 @@ class VectorStore:
             filters = MetadataFilters(filters=[MetadataFilter(key="category", value=category)])
 
         retriever = index.as_retriever(
-            similarity_top_k=top_k,
+            similarity_top_k=retrieve_k,
             filters=filters,
         )
 
         nodes = retriever.retrieve(query)
 
+        # Apply reranking if enabled
+        if should_rerank and self.reranker is not None:
+            nodes = self.reranker.rerank(query=query, nodes=nodes, top_k=top_k)
+
         results: list[SearchResult] = []
-        for node in nodes:
+        for node in nodes[:top_k]:
             metadata = SearchResultMetadata(
                 file_path=str(node.metadata.get("file_path", "")),
                 category=str(node.metadata.get("category", "")),

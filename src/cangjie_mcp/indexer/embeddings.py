@@ -8,7 +8,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 from rich.console import Console
 
-from cangjie_mcp.config import Settings, get_openai_settings
+from cangjie_mcp.config import Settings
 
 console = Console()
 
@@ -150,14 +150,13 @@ def create_embedding_provider(
         return LocalEmbedding(model_name=model_name)
 
     if settings.embedding_type == "openai":
-        openai_settings = get_openai_settings()
-        if not openai_settings.api_key:
+        if not settings.openai_api_key:
             raise ValueError("OpenAI API key is required when using OpenAI embeddings")
-        model = model_override or openai_settings.model
+        model = model_override or settings.openai_model
         return OpenAIEmbeddingProvider(
-            api_key=openai_settings.api_key,
+            api_key=settings.openai_api_key,
             model=model,
-            base_url=openai_settings.base_url,
+            base_url=settings.openai_base_url,
         )
 
     raise ValueError(f"Unknown embedding type: {settings.embedding_type}")

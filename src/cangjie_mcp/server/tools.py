@@ -6,6 +6,7 @@ from typing import TypedDict
 from cangjie_mcp.config import Settings
 from cangjie_mcp.indexer.embeddings import get_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader, extract_code_blocks
+from cangjie_mcp.indexer.reranker import get_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
 
 
@@ -74,9 +75,11 @@ def create_tool_context(settings: Settings) -> ToolContext:
         ToolContext with initialized components
     """
     embedding_provider = get_embedding_provider(settings)
+    reranker = get_reranker_provider() if settings.rerank_type != "none" else None
     store = VectorStore(
         db_path=settings.chroma_db_dir,
         embedding_provider=embedding_provider,
+        reranker=reranker,
     )
     loader = DocumentLoader(settings.docs_source_dir)
 

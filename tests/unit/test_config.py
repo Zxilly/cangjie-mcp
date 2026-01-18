@@ -6,7 +6,6 @@ from unittest.mock import patch
 import pytest
 
 from cangjie_mcp.config import (
-    OpenAISettings,
     Settings,
     get_openai_settings,
     get_settings,
@@ -73,7 +72,7 @@ class TestSettings:
 
 
 class TestOpenAISettings:
-    """Tests for OpenAI settings."""
+    """Tests for OpenAI settings in unified Settings class."""
 
     def test_default_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test default OpenAI configuration without environment variables."""
@@ -83,21 +82,27 @@ class TestOpenAISettings:
         monkeypatch.delenv("OPENAI_MODEL", raising=False)
 
         # Bypass .env file by passing _env_file=None
-        settings = OpenAISettings(_env_file=None)  # type: ignore[call-arg]
-        assert settings.api_key is None
-        assert settings.base_url == "https://api.openai.com/v1"
-        assert settings.model == "text-embedding-3-small"
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert settings.openai_api_key is None
+        assert settings.openai_base_url == "https://api.openai.com/v1"
+        assert settings.openai_model == "text-embedding-3-small"
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test custom OpenAI configuration."""
-        settings = OpenAISettings(
-            api_key="test-key",
-            base_url="https://custom.api.com/v1",
-            model="text-embedding-3-large",
+        # Clear environment variables to ensure test values are used
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
+
+        settings = Settings(
+            openai_api_key="test-key",
+            openai_base_url="https://custom.api.com/v1",
+            openai_model="text-embedding-3-large",
+            _env_file=None,  # type: ignore[call-arg]
         )
-        assert settings.api_key == "test-key"
-        assert settings.base_url == "https://custom.api.com/v1"
-        assert settings.model == "text-embedding-3-large"
+        assert settings.openai_api_key == "test-key"
+        assert settings.openai_base_url == "https://custom.api.com/v1"
+        assert settings.openai_model == "text-embedding-3-large"
 
 
 class TestGetSettings:
@@ -118,19 +123,21 @@ class TestGetSettings:
 
 
 class TestGetOpenAISettings:
-    """Tests for get_openai_settings function."""
+    """Tests for get_openai_settings function (legacy compatibility)."""
 
     def test_get_openai_settings_returns_settings(self) -> None:
-        """Test that get_openai_settings returns an OpenAISettings instance."""
-        with patch("cangjie_mcp.config._openai_settings", None):
+        """Test that get_openai_settings returns a Settings instance."""
+        with patch("cangjie_mcp.config._settings", None):
             settings = get_openai_settings()
-            assert isinstance(settings, OpenAISettings)
+            # get_openai_settings now returns the unified Settings instance
+            assert isinstance(settings, Settings)
 
     def test_get_openai_settings_caches_instance(self) -> None:
-        """Test that get_openai_settings caches the settings instance."""
-        with patch("cangjie_mcp.config._openai_settings", None):
+        """Test that get_openai_settings returns the same instance as get_settings."""
+        with patch("cangjie_mcp.config._settings", None):
             settings1 = get_openai_settings()
-            settings2 = get_openai_settings()
+            settings2 = get_settings()
+            # Both should return the same cached instance
             assert settings1 is settings2
 
 

@@ -106,6 +106,56 @@ def serve(
         str | None,
         typer.Option("--embedding", "-e", help="Embedding type (local/openai)"),
     ] = None,
+    local_model: Annotated[
+        str | None,
+        typer.Option("--local-model", help="Local HuggingFace embedding model name"),
+    ] = None,
+    openai_api_key: Annotated[
+        str | None,
+        typer.Option("--openai-api-key", help="OpenAI API key", envvar="OPENAI_API_KEY"),
+    ] = None,
+    openai_base_url: Annotated[
+        str | None,
+        typer.Option("--openai-base-url", help="OpenAI API base URL"),
+    ] = None,
+    openai_model: Annotated[
+        str | None,
+        typer.Option("--openai-model", help="OpenAI embedding model"),
+    ] = None,
+    rerank: Annotated[
+        str | None,
+        typer.Option("--rerank", "-r", help="Rerank type (none/local/siliconflow)"),
+    ] = None,
+    rerank_model: Annotated[
+        str | None,
+        typer.Option("--rerank-model", help="Rerank model name (for local rerank)"),
+    ] = None,
+    rerank_top_k: Annotated[
+        int | None,
+        typer.Option("--rerank-top-k", help="Number of results after reranking"),
+    ] = None,
+    rerank_initial_k: Annotated[
+        int | None,
+        typer.Option("--rerank-initial-k", help="Number of candidates before reranking"),
+    ] = None,
+    siliconflow_api_key: Annotated[
+        str | None,
+        typer.Option(
+            "--siliconflow-api-key", help="SiliconFlow API key", envvar="SILICONFLOW_API_KEY"
+        ),
+    ] = None,
+    siliconflow_base_url: Annotated[
+        str | None,
+        typer.Option("--siliconflow-base-url", help="SiliconFlow API base URL"),
+    ] = None,
+    siliconflow_rerank_model: Annotated[
+        str | None,
+        typer.Option("--siliconflow-rerank-model", help="SiliconFlow rerank model"),
+    ] = None,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option("--data-dir", "-d", help="Data directory path"),
+    ] = None,
     transport: Annotated[
         str,
         typer.Option("--transport", "-t", help="Transport type (stdio/http)"),
@@ -124,13 +174,28 @@ def serve(
         "docs_version": version,
         "docs_lang": lang,
         "embedding_type": embedding,
+        "local_model": local_model,
+        "openai_api_key": openai_api_key,
+        "openai_base_url": openai_base_url,
+        "openai_model": openai_model,
+        "rerank_type": rerank,
+        "rerank_local_model": rerank_model,
+        "rerank_top_k": rerank_top_k,
+        "rerank_initial_k": rerank_initial_k,
+        "siliconflow_api_key": siliconflow_api_key,
+        "siliconflow_base_url": siliconflow_base_url,
+        "siliconflow_rerank_model": siliconflow_rerank_model,
+        "data_dir": data_dir,
     }
-    settings = update_settings(**{k: v for k, v in overrides.items() if v})
+    settings = update_settings(**{k: v for k, v in overrides.items() if v is not None})
 
     console.print("[bold]Cangjie MCP Server[/bold]")
     console.print(f"  Version: {settings.docs_version}")
     console.print(f"  Language: {settings.docs_lang}")
     console.print(f"  Embedding: {settings.embedding_type}")
+    console.print(f"  Rerank: {settings.rerank_type}")
+    if settings.rerank_type != "none":
+        console.print(f"  Rerank Model: {settings.rerank_local_model}")
     console.print(f"  Transport: {transport}")
     console.print()
 

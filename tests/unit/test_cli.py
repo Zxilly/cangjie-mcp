@@ -139,61 +139,110 @@ class TestPrebuiltListCommand:
 
 
 class TestPrebuiltBuildCommand:
-    """Tests for prebuilt build command."""
+    """Tests for prebuilt build command.
 
-    @patch("cangjie_mcp.config.get_settings")
-    def test_prebuilt_build_no_index(
-        self,
-        mock_get_settings: MagicMock,
-    ) -> None:
-        """Test prebuilt build when no index exists."""
-        mock_settings = MagicMock()
-        mock_chroma_dir = MagicMock()
-        mock_chroma_dir.exists.return_value = False
-        mock_settings.chroma_db_dir = mock_chroma_dir
-        mock_get_settings.return_value = mock_settings
+    Note: The prebuilt build command now builds the index itself before creating
+    the archive, so complex mocking is required. These tests verify basic behavior.
+    """
 
-        result = runner.invoke(app, ["prebuilt", "build"])
-
-        assert result.exit_code == 1
-        assert "No index found" in result.output
-
-    @patch("cangjie_mcp.indexer.embeddings.get_embedding_provider")
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    @patch("cangjie_mcp.config.get_settings")
+    @patch("cangjie_mcp.indexer.store.VectorStore")
+    @patch("cangjie_mcp.indexer.chunker.create_chunker")
+    @patch("cangjie_mcp.indexer.embeddings.create_embedding_provider")
+    @patch("cangjie_mcp.indexer.loader.DocumentLoader")
+    @patch("cangjie_mcp.repo.git_manager.GitManager")
+    @patch("cangjie_mcp.config.update_settings")
     def test_prebuilt_build_success(
         self,
-        mock_get_settings: MagicMock,
+        mock_update_settings: MagicMock,
+        mock_git_manager_class: MagicMock,
+        mock_loader_class: MagicMock,
+        mock_embedding_provider: MagicMock,
+        mock_create_chunker: MagicMock,
+        mock_store_class: MagicMock,
         mock_manager_class: MagicMock,
-        mock_get_embedding: MagicMock,
     ) -> None:
         """Test prebuilt build success."""
+        # Setup settings
         mock_settings = MagicMock()
-        mock_chroma_dir = MagicMock()
-        mock_chroma_dir.exists.return_value = True
-        mock_settings.chroma_db_dir = mock_chroma_dir
-        mock_settings.data_dir = Path("/test/data")
         mock_settings.docs_version = "v1.0.0"
         mock_settings.docs_lang = "zh"
-        mock_get_settings.return_value = mock_settings
+        mock_settings.embedding_type = "local"
+        mock_settings.data_dir = Path("/test/data")
+        mock_settings.docs_repo_dir = Path("/test/repo")
+        mock_settings.docs_source_dir = Path("/test/source")
+        mock_settings.chroma_db_dir = Path("/test/chroma")
+        mock_update_settings.return_value = mock_settings
 
+        # Setup GitManager
+        mock_git_mgr = MagicMock()
+        mock_git_mgr.get_current_version.return_value = "v1.0.0"
+        mock_git_manager_class.return_value = mock_git_mgr
+
+        # Setup DocumentLoader
+        mock_loader = MagicMock()
+        mock_loader.load_all_documents.return_value = [MagicMock()]
+        mock_loader_class.return_value = mock_loader
+
+        # Setup embedding provider
         mock_provider = MagicMock()
         mock_provider.get_model_name.return_value = "local:test"
-        mock_get_embedding.return_value = mock_provider
+        mock_embedding_provider.return_value = mock_provider
 
+        # Setup chunker
+        mock_chunker = MagicMock()
+        mock_chunker.chunk_documents.return_value = [MagicMock()]
+        mock_create_chunker.return_value = mock_chunker
+
+        # Setup VectorStore
+        mock_store = MagicMock()
+        mock_store_class.return_value = mock_store
+
+        # Setup PrebuiltManager
         mock_manager = MagicMock()
         mock_manager.build.return_value = Path("/test/archive.tar.gz")
         mock_manager_class.return_value = mock_manager
 
         result = runner.invoke(app, ["prebuilt", "build"])
 
-        # Check for success or specific error
-        if result.exit_code != 0:
-            # May fail due to chroma_db_dir.exists() not being properly mocked
-            # since Path objects have special behavior
-            assert "No index found" in result.output or result.exit_code == 0
-        else:
-            assert "Built" in result.output
+        assert result.exit_code == 0
+        assert "Archive built" in result.output
+        mock_manager.build.assert_called_once()
+
+    @patch("cangjie_mcp.indexer.loader.DocumentLoader")
+    @patch("cangjie_mcp.repo.git_manager.GitManager")
+    @patch("cangjie_mcp.config.update_settings")
+    def test_prebuilt_build_no_documents(
+        self,
+        mock_update_settings: MagicMock,
+        mock_git_manager_class: MagicMock,
+        mock_loader_class: MagicMock,
+    ) -> None:
+        """Test prebuilt build when no documents found."""
+        # Setup settings
+        mock_settings = MagicMock()
+        mock_settings.docs_version = "v1.0.0"
+        mock_settings.docs_lang = "zh"
+        mock_settings.embedding_type = "local"
+        mock_settings.data_dir = Path("/test/data")
+        mock_settings.docs_repo_dir = Path("/test/repo")
+        mock_settings.docs_source_dir = Path("/test/source")
+        mock_update_settings.return_value = mock_settings
+
+        # Setup GitManager
+        mock_git_mgr = MagicMock()
+        mock_git_mgr.get_current_version.return_value = "v1.0.0"
+        mock_git_manager_class.return_value = mock_git_mgr
+
+        # Setup DocumentLoader with empty documents
+        mock_loader = MagicMock()
+        mock_loader.load_all_documents.return_value = []
+        mock_loader_class.return_value = mock_loader
+
+        result = runner.invoke(app, ["prebuilt", "build"])
+
+        assert result.exit_code == 1
+        assert "No documents found" in result.output
 
 
 class TestPrebuiltDownloadCommand:

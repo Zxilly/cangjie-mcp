@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 from dotenv import load_dotenv
 
-from cangjie_mcp.config import OpenAISettings, Settings
+from cangjie_mcp.config import Settings
 
 if TYPE_CHECKING:
     from _pytest.config import Config
@@ -43,8 +43,10 @@ def pytest_collection_modifyitems(items: list["Item"]) -> None:
 @pytest.fixture(scope="session")
 def has_openai_credentials() -> bool:
     """Check if OpenAI credentials are available."""
-    settings = OpenAISettings()
-    return bool(settings.api_key and settings.api_key != "your-openai-api-key-here")
+    settings = Settings()
+    return bool(
+        settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here"
+    )
 
 
 @pytest.fixture

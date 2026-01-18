@@ -1,7 +1,7 @@
 """Tests for indexer/embeddings.py embedding providers."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # noqa: F401
 
 import pytest
 
@@ -103,39 +103,42 @@ class TestCreateEmbeddingProvider:
         assert isinstance(provider, LocalEmbedding)
         assert provider.model_name == "test-local-model"
 
-    @patch("cangjie_mcp.indexer.embeddings.get_openai_settings")
     def test_create_openai_provider(
-        self, mock_get_openai_settings: MagicMock, temp_data_dir: Path
+        self, temp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test creating OpenAI embedding provider."""
-        mock_openai_settings = MagicMock()
-        mock_openai_settings.api_key = "test-api-key"
-        mock_openai_settings.model = "text-embedding-3-small"
-        mock_openai_settings.base_url = "https://api.openai.com/v1"
-        mock_get_openai_settings.return_value = mock_openai_settings
+        # Clear environment variables to ensure test values are used
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
 
         settings = Settings(
             embedding_type="openai",
+            openai_api_key="test-api-key",
+            openai_model="text-embedding-3-small",
+            openai_base_url="https://api.openai.com/v1",
             data_dir=temp_data_dir,
+            _env_file=None,  # type: ignore[call-arg]
         )
 
         provider = create_embedding_provider(settings)
 
         assert isinstance(provider, OpenAIEmbeddingProvider)
         assert provider.api_key == "test-api-key"
+        assert provider.model == "text-embedding-3-small"
 
-    @patch("cangjie_mcp.indexer.embeddings.get_openai_settings")
     def test_create_openai_provider_no_key(
-        self, mock_get_openai_settings: MagicMock, temp_data_dir: Path
+        self, temp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test error when OpenAI key is not set."""
-        mock_openai_settings = MagicMock()
-        mock_openai_settings.api_key = None
-        mock_get_openai_settings.return_value = mock_openai_settings
+        # Clear environment variables to test no-key scenario
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         settings = Settings(
             embedding_type="openai",
+            openai_api_key=None,
             data_dir=temp_data_dir,
+            _env_file=None,  # type: ignore[call-arg]
         )
 
         with pytest.raises(ValueError, match="OpenAI API key is required"):

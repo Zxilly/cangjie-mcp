@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from cangjie_mcp.config import OpenAISettings, Settings
+from cangjie_mcp.config import Settings
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
@@ -13,8 +13,10 @@ from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 
 def has_openai_credentials() -> bool:
     """Check if OpenAI credentials are available."""
-    settings = OpenAISettings()
-    return bool(settings.api_key and settings.api_key != "your-openai-api-key-here")
+    settings = Settings()
+    return bool(
+        settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here"
+    )
 
 
 @pytest.fixture
