@@ -21,7 +21,7 @@ dependencies = [
     "llama-index-embeddings-openai-like>=0.2.2",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=1.1.0",
