@@ -3,7 +3,34 @@ name = "cangjie-mcp"
 version = "0.1.0"
 description = "MCP server for Cangjie programming language documentation"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.13"
+authors = [
+    { name = "Zxilly", email = "zxilly@outlook.com" }
+]
+keywords = [
+    "cangjie",
+    "mcp",
+    "model-context-protocol",
+    "rag",
+    "documentation",
+    "llm",
+    "ai",
+    "embeddings",
+    "vector-search",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+
 dependencies = [
     "mcp[cli]>=1.25.0",
     "typer>=0.21.0",
@@ -20,6 +47,11 @@ dependencies = [
     "httpx>=0.28.0",
     "llama-index-embeddings-openai-like>=0.2.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Zxilly/cangjie-mcp"
+Repository = "https://github.com/Zxilly/cangjie-mcp"
+Issues = "https://github.com/Zxilly/cangjie-mcp/issues"
 
 [dependency-groups]
 dev = [
