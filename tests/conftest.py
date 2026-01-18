@@ -3,16 +3,65 @@
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+from dotenv import load_dotenv
 
-from cangjie_mcp.config import Settings
+from cangjie_mcp.config import OpenAISettings, Settings
+
+if TYPE_CHECKING:
+    from _pytest.config import Config
+    from _pytest.nodes import Item
+
+# Load environment variables from .env file
+load_dotenv()
+
+
+def pytest_configure(config: "Config") -> None:
+    """Configure pytest with custom markers."""
+    config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
+    config.addinivalue_line(
+        "markers", "integration: Integration tests (may require credentials or external services)"
+    )
+    config.addinivalue_line(
+        "markers", "credentials: Tests that require credentials (skipped without valid credentials)"
+    )
+
+
+def pytest_collection_modifyitems(items: list["Item"]) -> None:
+    """Automatically mark tests based on their location."""
+    for item in items:
+        # Mark tests in tests/integration/ directory as integration tests
+        if "integration" in str(item.fspath):
+            item.add_marker(pytest.mark.integration)
+        # Mark tests in tests/unit/ directory as unit tests
+        elif "unit" in str(item.fspath):
+            item.add_marker(pytest.mark.unit)
+
+
+@pytest.fixture(scope="session")
+def has_openai_credentials() -> bool:
+    """Check if OpenAI credentials are available."""
+    settings = OpenAISettings()
+    return bool(settings.api_key and settings.api_key != "your-openai-api-key-here")
+
+
+@pytest.fixture
+def skip_without_openai_credentials(has_openai_credentials: bool) -> None:
+    """Skip test if OpenAI credentials are not available."""
+    if not has_openai_credentials:
+        pytest.skip("OpenAI credentials not configured (set OPENAI_API_KEY in .env)")
 
 
 @pytest.fixture
 def temp_data_dir() -> Generator[Path]:
-    """Create a temporary data directory for tests."""
-    with tempfile.TemporaryDirectory() as temp_dir:
+    """Create a temporary data directory for tests.
+
+    Uses ignore_cleanup_errors=True to handle Windows issues where
+    ChromaDB may keep file handles open during cleanup.
+    """
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
         yield Path(temp_dir)
 
 

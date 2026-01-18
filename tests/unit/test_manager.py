@@ -20,11 +20,11 @@ class TestPrebuiltMetadata:
     def test_create_metadata(self) -> None:
         """Test creating PrebuiltMetadata."""
         metadata = PrebuiltMetadata(
-            version="0.53.18",
+            version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
         )
-        assert metadata.version == "0.53.18"
+        assert metadata.version == "v1.0.7"
         assert metadata.lang == "zh"
         assert metadata.embedding_model == "BAAI/bge-small-zh-v1.5"
         assert metadata.format_version == "1.0"
@@ -42,7 +42,7 @@ class TestPrebuiltMetadata:
     def test_json_roundtrip(self) -> None:
         """Test JSON serialization and deserialization."""
         metadata = PrebuiltMetadata(
-            version="0.53.18",
+            version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
         )
@@ -60,15 +60,15 @@ class TestPrebuiltArchiveInfo:
     def test_create_info(self) -> None:
         """Test creating PrebuiltArchiveInfo."""
         info = PrebuiltArchiveInfo(
-            version="0.53.18",
+            version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
-            path="/data/prebuilt/cangjie-index-0.53.18-zh.tar.gz",
+            path="/data/prebuilt/cangjie-index-v1.0.7-zh.tar.gz",
         )
-        assert info.version == "0.53.18"
+        assert info.version == "v1.0.7"
         assert info.lang == "zh"
         assert info.embedding_model == "BAAI/bge-small-zh-v1.5"
-        assert info.path == "/data/prebuilt/cangjie-index-0.53.18-zh.tar.gz"
+        assert info.path == "/data/prebuilt/cangjie-index-v1.0.7-zh.tar.gz"
 
     def test_attribute_access(self) -> None:
         """Test attribute access pattern (replaces .get() pattern)."""
@@ -91,11 +91,11 @@ class TestInstalledMetadata:
     def test_create_metadata(self) -> None:
         """Test creating InstalledMetadata."""
         metadata = InstalledMetadata(
-            version="0.53.18",
+            version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
         )
-        assert metadata.version == "0.53.18"
+        assert metadata.version == "v1.0.7"
         assert metadata.lang == "zh"
         assert metadata.embedding_model == "BAAI/bge-small-zh-v1.5"
 
@@ -129,7 +129,7 @@ class TestPrebuiltManager:
         """Test build fails when ChromaDB doesn't exist."""
         mgr = PrebuiltManager(temp_data_dir)
         with pytest.raises(FileNotFoundError, match="ChromaDB directory not found"):
-            mgr.build(version="0.53.18", lang="zh", embedding_model="test")
+            mgr.build(version="v1.0.7", lang="zh", embedding_model="test")
 
     def test_build_and_list_local(self, temp_data_dir: Path) -> None:
         """Test building and listing local archives."""
@@ -142,18 +142,18 @@ class TestPrebuiltManager:
 
         # Build archive
         archive_path = mgr.build(
-            version="0.53.18",
+            version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
         )
 
         assert archive_path.exists()
-        assert archive_path.name == "cangjie-index-0.53.18-zh.tar.gz"
+        assert archive_path.name == "cangjie-index-v1.0.7-zh.tar.gz"
 
         # List local archives
         archives = mgr.list_local()
         assert len(archives) == 1
-        assert archives[0].version == "0.53.18"
+        assert archives[0].version == "v1.0.7"
         assert archives[0].lang == "zh"
 
     def test_install(self, temp_data_dir: Path) -> None:
@@ -172,7 +172,7 @@ class TestPrebuiltManager:
         (temp_content / "chroma_db" / "data.db").write_text("mock", encoding="utf-8")
 
         metadata = {
-            "version": "0.53.18",
+            "version": "v1.0.7",
             "lang": "zh",
             "embedding_model": "BAAI/bge-small-zh-v1.5",
             "format_version": "1.0",
@@ -188,13 +188,13 @@ class TestPrebuiltManager:
 
         # Install
         result = mgr.install(archive_path)
-        assert result.version == "0.53.18"
+        assert result.version == "v1.0.7"
         assert result.lang == "zh"
 
         # Check installed metadata
         installed = mgr.get_installed_metadata()
         assert installed is not None
-        assert installed.version == "0.53.18"
+        assert installed.version == "v1.0.7"
 
     def test_get_installed_metadata_not_installed(self, temp_data_dir: Path) -> None:
         """Test get_installed_metadata when nothing is installed."""

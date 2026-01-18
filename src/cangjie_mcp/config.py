@@ -7,6 +7,11 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _get_default_data_dir() -> Path:
+    """Get the default data directory (~/.cangjie-mcp)."""
+    return Path.home() / ".cangjie-mcp"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -30,8 +35,11 @@ class Settings(BaseSettings):
         description="Local HuggingFace model name",
     )
 
-    # Data directory
-    data_dir: Path = Field(default=Path("./data"), description="Data directory path")
+    # Data directory (default: ~/.cangjie-mcp)
+    data_dir: Path = Field(
+        default_factory=_get_default_data_dir,
+        description="Data directory path",
+    )
 
     # Prebuilt index URL
     prebuilt_url: str | None = Field(default=None, description="Prebuilt index download URL")
@@ -42,9 +50,18 @@ class Settings(BaseSettings):
         return self.data_dir / "docs_repo"
 
     @property
+    def index_dir(self) -> Path:
+        """Path to version-specific index directory.
+
+        Indexes are separated by version and language to prevent pollution.
+        Example: ~/.cangjie-mcp/indexes/v1.0.7-zh/
+        """
+        return self.data_dir / "indexes" / f"{self.docs_version}-{self.docs_lang}"
+
+    @property
     def chroma_db_dir(self) -> Path:
-        """Path to ChromaDB database."""
-        return self.data_dir / "chroma_db"
+        """Path to ChromaDB database (version-specific)."""
+        return self.index_dir / "chroma_db"
 
     @property
     def docs_source_dir(self) -> Path:

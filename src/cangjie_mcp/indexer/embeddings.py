@@ -5,11 +5,24 @@ from abc import ABC, abstractmethod
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 from rich.console import Console
 
 from cangjie_mcp.config import Settings, get_openai_settings
 
 console = Console()
+
+
+# Known OpenAI models that work with the standard OpenAIEmbedding class
+_OPENAI_NATIVE_MODELS = {
+    "text-embedding-ada-002",
+    "text-embedding-3-small",
+    "text-embedding-3-large",
+    "davinci",
+    "curie",
+    "babbage",
+    "ada",
+}
 
 
 class EmbeddingProvider(ABC):
@@ -60,7 +73,11 @@ class LocalEmbedding(EmbeddingProvider):
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    """OpenAI embedding provider with custom base URL support."""
+    """OpenAI embedding provider with custom base URL support.
+
+    Supports both native OpenAI models and OpenAI-compatible APIs
+    (like SiliconFlow) with custom models.
+    """
 
     def __init__(
         self,
@@ -72,23 +89,38 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
         Args:
             api_key: OpenAI API key
-            model: OpenAI embedding model name
-            base_url: OpenAI API base URL
+            model: Embedding model name (OpenAI model or custom model for compatible APIs)
+            base_url: API base URL (OpenAI or compatible API)
         """
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
-        self._embedding_model: OpenAIEmbedding | None = None
+        self._embedding_model: BaseEmbedding | None = None
 
     def get_embedding_model(self) -> BaseEmbedding:
-        """Get the OpenAI embedding model."""
+        """Get the embedding model.
+
+        Uses OpenAIEmbedding for native OpenAI models, and
+        OpenAILikeEmbedding for custom models on compatible APIs.
+        """
         if self._embedding_model is None:
             console.print(f"[blue]Initializing OpenAI embedding model: {self.model}...[/blue]")
-            self._embedding_model = OpenAIEmbedding(
-                api_key=self.api_key,
-                model=self.model,
-                api_base=self.base_url,
-            )
+
+            # Use native OpenAI embedding for known models, OpenAILikeEmbedding otherwise
+            if self.model in _OPENAI_NATIVE_MODELS:
+                self._embedding_model = OpenAIEmbedding(
+                    api_key=self.api_key,
+                    model=self.model,
+                    api_base=self.base_url,
+                )
+            else:
+                # Use OpenAILikeEmbedding for custom models (e.g., SiliconFlow's BAAI/bge-m3)
+                self._embedding_model = OpenAILikeEmbedding(
+                    api_key=self.api_key,
+                    model_name=self.model,
+                    api_base=self.base_url,
+                )
+
             console.print("[green]OpenAI embedding model initialized.[/green]")
         return self._embedding_model
 

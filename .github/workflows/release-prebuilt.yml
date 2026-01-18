@@ -1,0 +1,163 @@
+name: Release Prebuilt Index
+
+on:
+  workflow_dispatch:
+    inputs:
+      docs_version:
+        description: 'Cangjie docs version (git tag, e.g., v1.0.7)'
+        required: true
+        default: 'v1.0.7'
+      docs_lang:
+        description: 'Documentation language'
+        required: true
+        default: 'zh'
+        type: choice
+        options:
+          - zh
+          - en
+      embedding_type:
+        description: 'Embedding type'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - local
+          - openai
+      release_tag:
+        description: 'Release tag name (e.g., prebuilt-vv1.0.7-zh)'
+        required: true
+        default: 'prebuilt-vv1.0.7-zh'
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  build-and-release:
+    name: Build and Release Prebuilt Index
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Clone Cangjie docs repository
+        run: |
+          git clone https://gitcode.com/Cangjie/cangjie_docs.git data/docs_repo
+          cd data/docs_repo
+          git checkout ${{ github.event.inputs.docs_version }}
+          echo "Checked out version: $(git describe --tags --always)"
+
+      - name: Build index
+        run: |
+          uv run python -c "
+          from pathlib import Path
+          from cangjie_mcp.config import Settings
+          from cangjie_mcp.indexer.embeddings import get_embedding_provider
+          from cangjie_mcp.indexer.loader import DocumentLoader
+          from cangjie_mcp.indexer.store import VectorStore
+
+          # Configure settings
+          settings = Settings(
+              docs_version='${{ github.event.inputs.docs_version }}',
+              docs_lang='${{ github.event.inputs.docs_lang }}',
+              embedding_type='${{ github.event.inputs.embedding_type }}',
+              data_dir=Path('./data'),
+          )
+
+          # Load documents
+          loader = DocumentLoader(settings.docs_source_dir)
+          documents = loader.load_all_documents()
+          print(f'Loaded {len(documents)} documents')
+
+          # Create embedding provider and index
+          embedding_provider = get_embedding_provider(settings)
+          store = VectorStore(
+              db_path=settings.chroma_db_dir,
+              embedding_provider=embedding_provider,
+          )
+          store.index_documents(documents)
+          store.save_metadata(
+              version=settings.docs_version,
+              lang=settings.docs_lang,
+              embedding_model=embedding_provider.get_model_name(),
+          )
+          print('Index built successfully')
+          "
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+
+      - name: Build prebuilt archive
+        run: |
+          uv run python -c "
+          from pathlib import Path
+          from cangjie_mcp.config import Settings
+          from cangjie_mcp.indexer.embeddings import get_embedding_provider
+          from cangjie_mcp.prebuilt.manager import PrebuiltManager
+
+          settings = Settings(
+              docs_version='${{ github.event.inputs.docs_version }}',
+              docs_lang='${{ github.event.inputs.docs_lang }}',
+              embedding_type='${{ github.event.inputs.embedding_type }}',
+              data_dir=Path('./data'),
+          )
+
+          embedding_provider = get_embedding_provider(settings)
+          manager = PrebuiltManager(settings.index_dir)
+          archive_path = manager.build(
+              version=settings.docs_version,
+              lang=settings.docs_lang,
+              embedding_model=embedding_provider.get_model_name(),
+          )
+          print(f'Archive built: {archive_path}')
+          "
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+
+      - name: Find archive file
+        id: find-archive
+        run: |
+          ARCHIVE_PATH=$(find data/indexes -name "*.tar.gz" | head -1)
+          echo "archive_path=$ARCHIVE_PATH" >> $GITHUB_OUTPUT
+          echo "archive_name=$(basename $ARCHIVE_PATH)" >> $GITHUB_OUTPUT
+          echo "Found archive: $ARCHIVE_PATH"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: "Prebuilt Index - ${{ github.event.inputs.docs_version }} (${{ github.event.inputs.docs_lang }})"
+          body: |
+            ## Prebuilt Index for Cangjie Documentation
+
+            - **Docs Version**: ${{ github.event.inputs.docs_version }}
+            - **Language**: ${{ github.event.inputs.docs_lang }}
+            - **Embedding Type**: ${{ github.event.inputs.embedding_type }}
+
+            ### Usage
+
+            Download the archive and install it using the CLI:
+
+            ```bash
+            cangjie-mcp prebuilt download --url <download-url>
+            ```
+
+            Or manually extract to your data directory.
+          files: ${{ steps.find-archive.outputs.archive_path }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

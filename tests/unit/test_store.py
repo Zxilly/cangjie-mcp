@@ -16,12 +16,12 @@ class TestIndexMetadata:
     def test_create_metadata(self) -> None:
         """Test creating IndexMetadata."""
         metadata = IndexMetadata(
-            version="0.53.18",
+            version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
             document_count=100,
         )
-        assert metadata.version == "0.53.18"
+        assert metadata.version == "v1.0.7"
         assert metadata.lang == "zh"
         assert metadata.embedding_model == "BAAI/bge-small-zh-v1.5"
         assert metadata.document_count == 100
@@ -29,7 +29,7 @@ class TestIndexMetadata:
     def test_json_serialization(self) -> None:
         """Test JSON serialization and deserialization."""
         metadata = IndexMetadata(
-            version="0.53.18",
+            version="v1.0.7",
             lang="en",
             embedding_model="text-embedding-3-small",
             document_count=50,

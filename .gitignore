@@ -9,7 +9,17 @@ wheels/
 # Virtual environments
 .venv
 
+# Claude Code
 .claude/
 
 # Data directories
 data/
+
+# Environment variables (contains secrets)
+.env
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
