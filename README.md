@@ -229,7 +229,52 @@ CANGJIE_RERANK_INITIAL_K=20
 
 ## 与 Claude Code 集成
 
+### 方式一：命令行添加（推荐）
+
+使用 `claude mcp add` 命令快速添加 MCP 服务器：
+
+```bash
+claude mcp add cangjie -- uvx cangjie-mcp serve
+
+# 使用 uvx 运行并启用本地 rerank
+claude mcp add cangjie -- uvx cangjie-mcp serve --rerank local
+
+# 添加环境变量
+claude mcp add -e CANGJIE_RERANK_TYPE=local cangjie -- uvx cangjie-mcp serve
+
+# 使用已安装的 cangjie-mcp
+claude mcp add cangjie -- cangjie-mcp serve --rerank local
+```
+
+**常用 `claude mcp` 命令：**
+
+```bash
+# 查看已配置的 MCP 服务器
+claude mcp list
+
+# 查看服务器详情
+claude mcp get cangjie
+
+# 移除服务器
+claude mcp remove cangjie
+```
+
+### 方式二：配置文件
+
 在项目根目录创建 `.mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "cangjie": {
+      "command": "uvx",
+      "args": ["cangjie-mcp", "serve", "--rerank", "local"]
+    }
+  }
+}
+```
+
+或者使用已安装的命令：
 
 ```json
 {
