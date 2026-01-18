@@ -113,7 +113,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run integration tests (skip external services)
+      - name: Run integration tests
         run: |
           uv run pytest tests/integration \
             -v \
@@ -122,8 +122,9 @@ jobs:
             --cov-report=xml \
             --cov-report=term-missing
         env:
-          # Don't set OPENAI_API_KEY to skip OpenAI tests
-          OPENAI_API_KEY: ""
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -132,32 +133,3 @@ jobs:
           files: ./coverage.xml
           flags: integration
           fail_ci_if_error: false
-
-  # Optional: Run with OpenAI if secrets are available
-  integration-tests-openai:
-    name: Integration Tests (OpenAI)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --dev
-
-      - name: Run integration tests with OpenAI
-        run: |
-          uv run pytest tests/integration \
-            -v \
-            --tb=short
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
