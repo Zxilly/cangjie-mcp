@@ -23,3 +23,6 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+
+# Docs repo (cloned documentation)
+docs_repo/
