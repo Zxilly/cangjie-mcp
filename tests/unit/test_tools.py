@@ -67,7 +67,7 @@ class TestCodeExample:
         """Test creating CodeExample."""
         example: CodeExample = {
             "language": "cangjie",
-            "code": "func main() { println(\"Hello\") }",
+            "code": 'func main() { println("Hello") }',
             "context": "Basic hello world example",
             "source_topic": "hello_world",
             "source_file": "/docs/basics/hello_world.md",

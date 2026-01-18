@@ -233,9 +233,7 @@ class TestPrebuiltDownloadCommand:
         mock_manager_class.return_value = mock_manager
 
         # Use explicit --url flag to bypass prebuilt_url check
-        result = runner.invoke(
-            app, ["prebuilt", "download", "--url", "https://example.com/index"]
-        )
+        result = runner.invoke(app, ["prebuilt", "download", "--url", "https://example.com/index"])
 
         # Should attempt download with the explicit URL
         if result.exit_code == 0:

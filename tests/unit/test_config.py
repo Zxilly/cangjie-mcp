@@ -49,28 +49,20 @@ class TestSettings:
 
     def test_derived_paths(self, temp_data_dir: Path) -> None:
         """Test derived path properties."""
-        settings = Settings(
-            data_dir=temp_data_dir, docs_lang="zh", docs_version="v1.0.7"
-        )
+        settings = Settings(data_dir=temp_data_dir, docs_lang="zh", docs_version="v1.0.7")
         assert settings.docs_repo_dir == temp_data_dir / "docs_repo"
         assert settings.index_dir == temp_data_dir / "indexes" / "v1.0.7-zh"
         assert settings.chroma_db_dir == temp_data_dir / "indexes" / "v1.0.7-zh" / "chroma_db"
         assert "source_zh_cn" in str(settings.docs_source_dir)
 
-        settings_en = Settings(
-            data_dir=temp_data_dir, docs_lang="en", docs_version="v1.0.7"
-        )
+        settings_en = Settings(data_dir=temp_data_dir, docs_lang="en", docs_version="v1.0.7")
         assert settings_en.index_dir == temp_data_dir / "indexes" / "v1.0.7-en"
         assert "source_en" in str(settings_en.docs_source_dir)
 
     def test_version_isolation(self, temp_data_dir: Path) -> None:
         """Test that different versions have separate index directories."""
-        settings_v1 = Settings(
-            data_dir=temp_data_dir, docs_version="v1.0.6", docs_lang="zh"
-        )
-        settings_v2 = Settings(
-            data_dir=temp_data_dir, docs_version="v1.0.7", docs_lang="zh"
-        )
+        settings_v1 = Settings(data_dir=temp_data_dir, docs_version="v1.0.6", docs_lang="zh")
+        settings_v2 = Settings(data_dir=temp_data_dir, docs_version="v1.0.7", docs_lang="zh")
 
         # Different versions should have different index directories
         assert settings_v1.index_dir != settings_v2.index_dir

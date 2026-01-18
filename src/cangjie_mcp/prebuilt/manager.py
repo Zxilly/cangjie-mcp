@@ -223,9 +223,7 @@ class PrebuiltManager:
                 embedding_model=metadata.embedding_model,
             )
             index_metadata_path = self.chroma_dir / "index_metadata.json"
-            index_metadata_path.write_text(
-                installed.model_dump_json(indent=2), encoding="utf-8"
-            )
+            index_metadata_path.write_text(installed.model_dump_json(indent=2), encoding="utf-8")
 
         console.print("[green]Prebuilt index installed successfully.[/green]")
         console.print(f"  Version: {metadata.version}")
@@ -273,12 +271,14 @@ class PrebuiltManager:
                         metadata = PrebuiltMetadata.model_validate_json(
                             metadata_file.read().decode("utf-8")
                         )
-                        archives.append(PrebuiltArchiveInfo(
-                            version=metadata.version,
-                            lang=metadata.lang,
-                            embedding_model=metadata.embedding_model,
-                            path=str(archive_path),
-                        ))
+                        archives.append(
+                            PrebuiltArchiveInfo(
+                                version=metadata.version,
+                                lang=metadata.lang,
+                                embedding_model=metadata.embedding_model,
+                                path=str(archive_path),
+                            )
+                        )
             except Exception:
                 continue
 
@@ -292,7 +292,5 @@ class PrebuiltManager:
         """
         metadata_path = self.chroma_dir / "index_metadata.json"
         if metadata_path.exists():
-            return InstalledMetadata.model_validate_json(
-                metadata_path.read_text(encoding="utf-8")
-            )
+            return InstalledMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
         return None

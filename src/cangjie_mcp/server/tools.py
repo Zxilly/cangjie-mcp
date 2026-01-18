@@ -192,13 +192,15 @@ def get_code_examples(
         code_blocks = extract_code_blocks(result.text)
 
         for block in code_blocks:
-            examples.append(CodeExample(
-                language=block.language,
-                code=block.code,
-                context=block.context,
-                source_topic=result.metadata.topic,
-                source_file=result.metadata.file_path,
-            ))
+            examples.append(
+                CodeExample(
+                    language=block.language,
+                    code=block.code,
+                    context=block.context,
+                    source_topic=result.metadata.topic,
+                    source_file=result.metadata.file_path,
+                )
+            )
 
     return examples
 
@@ -233,10 +235,12 @@ def get_tool_usage(ctx: ToolContext, tool_name: str) -> ToolUsageResult | None:
         blocks = extract_code_blocks(result.text)
         for block in blocks:
             if block.language in ("bash", "shell", "sh", ""):
-                code_examples.append(ToolExample(
-                    code=block.code,
-                    context=block.context,
-                ))
+                code_examples.append(
+                    ToolExample(
+                        code=block.code,
+                        context=block.context,
+                    )
+                )
 
     return ToolUsageResult(
         tool_name=tool_name,

@@ -10,7 +10,6 @@ from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embeddi
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.prebuilt.manager import PrebuiltManager
-
 from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 
 

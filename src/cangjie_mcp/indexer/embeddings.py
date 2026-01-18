@@ -174,6 +174,7 @@ def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvide
     if _embedding_provider is None:
         if settings is None:
             from cangjie_mcp.config import get_settings
+
             settings = get_settings()
         _embedding_provider = create_embedding_provider(settings)
     return _embedding_provider

@@ -43,25 +43,19 @@ class TestDocumentChunker:
         assert chunker.buffer_size == 2
         assert chunker.breakpoint_percentile_threshold == 90
 
-    def test_init_default_values(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_init_default_values(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test DocumentChunker with default values."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
         assert chunker.buffer_size == 1
         assert chunker.breakpoint_percentile_threshold == 95
 
-    def test_chunk_empty_documents(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_chunk_empty_documents(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test chunking with empty document list."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
         result = chunker.chunk_documents([])
         assert result == []
 
-    def test_chunk_documents_fallback(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_chunk_documents_fallback(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test chunking with fallback to sentence splitter."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
 
@@ -119,9 +113,7 @@ class TestDocumentChunker:
 class TestCreateChunker:
     """Tests for create_chunker factory function."""
 
-    def test_create_chunker(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_create_chunker(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test creating a chunker with factory function."""
         chunker = create_chunker(mock_embedding_provider)
 

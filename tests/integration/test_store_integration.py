@@ -11,7 +11,6 @@ from cangjie_mcp.indexer.chunker import create_chunker
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
-
 from tests.constants import CANGJIE_LOCAL_MODEL
 
 

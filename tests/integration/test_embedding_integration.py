@@ -17,7 +17,6 @@ from cangjie_mcp.indexer.embeddings import (
 )
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
-
 from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 
 
@@ -58,18 +57,14 @@ class TestLocalEmbeddingIntegration:
         assert store.is_indexed()
         assert store.collection.count() > 0
 
-    def test_semantic_search_with_local_embedding(
-        self, local_indexed_store: VectorStore
-    ) -> None:
+    def test_semantic_search_with_local_embedding(self, local_indexed_store: VectorStore) -> None:
         """Test semantic search with local embeddings."""
         results = local_indexed_store.search(query="如何定义函数", top_k=3)
 
         assert len(results) > 0
         assert any("func" in r.text.lower() or "函数" in r.text for r in results)
 
-    def test_search_with_category_filter_local(
-        self, local_indexed_store: VectorStore
-    ) -> None:
+    def test_search_with_category_filter_local(self, local_indexed_store: VectorStore) -> None:
         """Test search with category filtering using local embeddings."""
         results = local_indexed_store.search(
             query="编译器使用",
@@ -101,13 +96,11 @@ class TestLocalEmbeddingIntegration:
             results = local_indexed_store.search(query=query, top_k=3)
             assert len(results) > 0, f"No results for query: {query}"
             combined_text = " ".join(r.text for r in results)
-            assert any(
-                kw in combined_text for kw in expected_keywords
-            ), f"Expected keywords not found for query: {query}"
+            assert any(kw in combined_text for kw in expected_keywords), (
+                f"Expected keywords not found for query: {query}"
+            )
 
-    def test_search_returns_sorted_by_score(
-        self, local_indexed_store: VectorStore
-    ) -> None:
+    def test_search_returns_sorted_by_score(self, local_indexed_store: VectorStore) -> None:
         """Test that search results are sorted by score (descending)."""
         results = local_indexed_store.search(query="函数定义", top_k=5)
 

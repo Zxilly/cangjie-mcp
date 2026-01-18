@@ -177,9 +177,7 @@ class TestPrebuiltManager:
             "embedding_model": "BAAI/bge-small-zh-v1.5",
             "format_version": "1.0",
         }
-        (temp_content / "prebuilt_metadata.json").write_text(
-            json.dumps(metadata), encoding="utf-8"
-        )
+        (temp_content / "prebuilt_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
 
         # Create tar.gz
         with tarfile.open(archive_path, "w:gz") as tar:

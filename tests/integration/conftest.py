@@ -8,7 +8,6 @@ from cangjie_mcp.config import OpenAISettings, Settings
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
-
 from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 
 
@@ -29,7 +28,7 @@ def integration_docs_dir(temp_data_dir: Path) -> Path:
     basics_dir.mkdir()
 
     (basics_dir / "hello_world.md").write_text(
-        '''# Hello World
+        """# Hello World
 
 仓颉语言的第一个程序。
 
@@ -49,12 +48,12 @@ func main() {
 cjc hello.cj -o hello
 ./hello
 ```
-''',
+""",
         encoding="utf-8",
     )
 
     (basics_dir / "variables.md").write_text(
-        '''# 变量与类型
+        """# 变量与类型
 
 仓颉语言支持多种数据类型。
 
@@ -73,7 +72,7 @@ var y: String = "Hello"
 - Float: 浮点类型
 - String: 字符串类型
 - Bool: 布尔类型
-''',
+""",
         encoding="utf-8",
     )
 
@@ -82,7 +81,7 @@ var y: String = "Hello"
     syntax_dir.mkdir()
 
     (syntax_dir / "functions.md").write_text(
-        '''# 函数
+        """# 函数
 
 函数是仓颉语言的基本构建块。
 
@@ -106,12 +105,12 @@ func greet(name: String): Unit {
 let result = add(1, 2)
 greet("World")
 ```
-''',
+""",
         encoding="utf-8",
     )
 
     (syntax_dir / "pattern_matching.md").write_text(
-        '''# 模式匹配
+        """# 模式匹配
 
 仓颉语言支持强大的模式匹配功能。
 
@@ -138,7 +137,7 @@ func process(value: Any): String {
     }
 }
 ```
-''',
+""",
         encoding="utf-8",
     )
 
@@ -147,7 +146,7 @@ func process(value: Any): String {
     tools_dir.mkdir()
 
     (tools_dir / "cjc.md").write_text(
-        '''# CJC 编译器
+        """# CJC 编译器
 
 cjc 是仓颉语言的编译器。
 
@@ -176,12 +175,12 @@ cjc main.cj -o main
 ```bash
 cjc main.cj utils.cj -o app
 ```
-''',
+""",
         encoding="utf-8",
     )
 
     (tools_dir / "cjpm.md").write_text(
-        '''# CJPM 包管理器
+        """# CJPM 包管理器
 
 cjpm 是仓颉语言的包管理器。
 
@@ -210,7 +209,7 @@ cjpm test
 ```bash
 cjpm add <package_name>
 ```
-''',
+""",
         encoding="utf-8",
     )
 

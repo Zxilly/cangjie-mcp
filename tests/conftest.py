@@ -79,7 +79,7 @@ def test_settings(temp_data_dir: Path) -> Settings:
 @pytest.fixture
 def sample_markdown_content() -> str:
     """Sample markdown content for testing."""
-    return '''# Sample Topic
+    return """# Sample Topic
 
 This is a sample document for testing.
 
@@ -98,7 +98,7 @@ More content here with `inline code`.
 ```bash
 cjc build main.cj
 ```
-'''
+"""
 
 
 @pytest.fixture
@@ -109,13 +109,11 @@ def sample_docs_dir(temp_data_dir: Path, sample_markdown_content: str) -> Path:
 
     # Create some sample files
     (docs_dir / "basics").mkdir()
-    (docs_dir / "basics" / "hello_world.md").write_text(
-        sample_markdown_content, encoding="utf-8"
-    )
+    (docs_dir / "basics" / "hello_world.md").write_text(sample_markdown_content, encoding="utf-8")
 
     (docs_dir / "tools").mkdir()
     (docs_dir / "tools" / "cjc.md").write_text(
-        '''# CJC Compiler
+        """# CJC Compiler
 
 The Cangjie compiler.
 
@@ -129,7 +127,7 @@ cjc [options] <files>
 
 - `-o`: Output file
 - `-O`: Optimization level
-''',
+""",
         encoding="utf-8",
     )
 

@@ -65,9 +65,7 @@ class TestGitManagerWithMockRepo:
         return repo
 
     @pytest.fixture
-    def manager_with_mock_repo(
-        self, temp_data_dir: Path, mock_repo: MagicMock
-    ) -> GitManager:
+    def manager_with_mock_repo(self, temp_data_dir: Path, mock_repo: MagicMock) -> GitManager:
         """Create a GitManager with a mocked repository."""
         repo_dir = temp_data_dir / "docs_repo"
         repo_dir.mkdir(parents=True)
@@ -81,9 +79,7 @@ class TestGitManagerWithMockRepo:
         """Test is_cloned returns True when .git exists."""
         assert manager_with_mock_repo.is_cloned() is True
 
-    def test_list_tags(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_list_tags(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test listing tags."""
         tag1 = MagicMock()
         tag1.name = "v1.0.7"
@@ -135,16 +131,12 @@ class TestGitManagerWithMockRepo:
         manager_with_mock_repo.checkout("v1.0.7")
         mock_repo.git.checkout.assert_called_with("v1.0.7")
 
-    def test_fetch(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_fetch(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test fetch from remote."""
         manager_with_mock_repo.fetch()
         mock_repo.remotes.origin.fetch.assert_called_once_with(tags=True)
 
-    def test_pull_on_branch(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_pull_on_branch(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test pull when on a branch."""
         mock_repo.head.is_detached = False
         manager_with_mock_repo.pull()

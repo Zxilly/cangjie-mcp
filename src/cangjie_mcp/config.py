@@ -81,12 +81,8 @@ class OpenAISettings(BaseSettings):
     )
 
     api_key: str | None = Field(default=None, description="OpenAI API Key")
-    base_url: str = Field(
-        default="https://api.openai.com/v1", description="OpenAI API Base URL"
-    )
-    model: str = Field(
-        default="text-embedding-3-small", description="OpenAI embedding model"
-    )
+    base_url: str = Field(default="https://api.openai.com/v1", description="OpenAI API Base URL")
+    model: str = Field(default="text-embedding-3-small", description="OpenAI embedding model")
 
 
 # Global settings instances

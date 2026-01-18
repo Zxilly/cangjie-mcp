@@ -107,9 +107,7 @@ class VectorStore:
         """
         metadata_path = self.db_path / METADATA_FILE
         if metadata_path.exists():
-            return IndexMetadata.model_validate_json(
-                metadata_path.read_text(encoding="utf-8")
-            )
+            return IndexMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
         return None
 
     def save_metadata(self, version: str, lang: str, embedding_model: str) -> None:
@@ -246,9 +244,8 @@ class VectorStore:
         filters = None
         if category:
             from llama_index.core.vector_stores import MetadataFilter, MetadataFilters
-            filters = MetadataFilters(
-                filters=[MetadataFilter(key="category", value=category)]
-            )
+
+            filters = MetadataFilters(filters=[MetadataFilter(key="category", value=category)])
 
         retriever = index.as_retriever(
             similarity_top_k=top_k,
@@ -265,11 +262,13 @@ class VectorStore:
                 topic=str(node.metadata.get("topic", "")),
                 title=str(node.metadata.get("title", "")),
             )
-            results.append(SearchResult(
-                text=node.text,
-                score=node.score if node.score is not None else 0.0,
-                metadata=metadata,
-            ))
+            results.append(
+                SearchResult(
+                    text=node.text,
+                    score=node.score if node.score is not None else 0.0,
+                    metadata=metadata,
+                )
+            )
 
         return results
 
