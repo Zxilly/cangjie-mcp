@@ -23,10 +23,10 @@ on:
         options:
           - local
           - openai
-      release_tag:
-        description: 'Release tag name (e.g., prebuilt-vv1.0.7-zh)'
-        required: true
-        default: 'prebuilt-vv1.0.7-zh'
+      embedding_model:
+        description: 'Embedding model name'
+        required: false
+        default: 'Qwen/Qwen3-Embedding-8B'
 
 env:
   PYTHON_VERSION: "3.13"
@@ -52,77 +52,14 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Clone Cangjie docs repository
-        run: |
-          git clone https://gitcode.com/Cangjie/cangjie_docs.git data/docs_repo
-          cd data/docs_repo
-          git checkout ${{ github.event.inputs.docs_version }}
-          echo "Checked out version: $(git describe --tags --always)"
-
-      - name: Build index
-        run: |
-          uv run python -c "
-          from pathlib import Path
-          from cangjie_mcp.config import Settings
-          from cangjie_mcp.indexer.embeddings import get_embedding_provider
-          from cangjie_mcp.indexer.loader import DocumentLoader
-          from cangjie_mcp.indexer.store import VectorStore
-
-          # Configure settings
-          settings = Settings(
-              docs_version='${{ github.event.inputs.docs_version }}',
-              docs_lang='${{ github.event.inputs.docs_lang }}',
-              embedding_type='${{ github.event.inputs.embedding_type }}',
-              data_dir=Path('./data'),
-          )
-
-          # Load documents
-          loader = DocumentLoader(settings.docs_source_dir)
-          documents = loader.load_all_documents()
-          print(f'Loaded {len(documents)} documents')
-
-          # Create embedding provider and index
-          embedding_provider = get_embedding_provider(settings)
-          store = VectorStore(
-              db_path=settings.chroma_db_dir,
-              embedding_provider=embedding_provider,
-          )
-          store.index_documents(documents)
-          store.save_metadata(
-              version=settings.docs_version,
-              lang=settings.docs_lang,
-              embedding_model=embedding_provider.get_model_name(),
-          )
-          print('Index built successfully')
-          "
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-
       - name: Build prebuilt archive
         run: |
-          uv run python -c "
-          from pathlib import Path
-          from cangjie_mcp.config import Settings
-          from cangjie_mcp.indexer.embeddings import get_embedding_provider
-          from cangjie_mcp.prebuilt.manager import PrebuiltManager
-
-          settings = Settings(
-              docs_version='${{ github.event.inputs.docs_version }}',
-              docs_lang='${{ github.event.inputs.docs_lang }}',
-              embedding_type='${{ github.event.inputs.embedding_type }}',
-              data_dir=Path('./data'),
-          )
-
-          embedding_provider = get_embedding_provider(settings)
-          manager = PrebuiltManager(settings.index_dir)
-          archive_path = manager.build(
-              version=settings.docs_version,
-              lang=settings.docs_lang,
-              embedding_model=embedding_provider.get_model_name(),
-          )
-          print(f'Archive built: {archive_path}')
-          "
+          uv run cangjie-mcp prebuilt build \
+            --version ${{ github.event.inputs.docs_version }} \
+            --lang ${{ github.event.inputs.docs_lang }} \
+            --embedding ${{ github.event.inputs.embedding_type }} \
+            --embedding-model "${{ github.event.inputs.embedding_model }}" \
+            --data-dir ./data
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
@@ -138,7 +75,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.release_tag }}
+          tag_name: prebuilt-${{ github.event.inputs.docs_version }}-${{ github.event.inputs.docs_lang }}
           name: "Prebuilt Index - ${{ github.event.inputs.docs_version }} (${{ github.event.inputs.docs_lang }})"
           body: |
             ## Prebuilt Index for Cangjie Documentation
@@ -146,6 +83,7 @@ jobs:
             - **Docs Version**: ${{ github.event.inputs.docs_version }}
             - **Language**: ${{ github.event.inputs.docs_lang }}
             - **Embedding Type**: ${{ github.event.inputs.embedding_type }}
+            - **Embedding Model**: ${{ github.event.inputs.embedding_model || 'default' }}
 
             ### Usage
 

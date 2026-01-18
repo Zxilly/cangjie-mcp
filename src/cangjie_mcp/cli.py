@@ -190,23 +190,107 @@ def prebuilt_download(
 
 @prebuilt_app.command("build")
 def prebuilt_build(
+    version: Annotated[
+        str | None,
+        typer.Option("--version", "-v", help="Documentation version (git tag)"),
+    ] = None,
+    lang: Annotated[
+        str | None,
+        typer.Option("--lang", "-l", help="Documentation language (zh/en)"),
+    ] = None,
+    embedding: Annotated[
+        str | None,
+        typer.Option("--embedding", "-e", help="Embedding type (local/openai)"),
+    ] = None,
+    embedding_model: Annotated[
+        str | None,
+        typer.Option("--embedding-model", "-m", help="Embedding model name"),
+    ] = None,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option("--data-dir", "-d", help="Data directory"),
+    ] = None,
     output: Annotated[
         Path | None,
         typer.Option("--output", "-o", help="Output directory or file path"),
     ] = None,
 ) -> None:
-    """Build a prebuilt index from current data."""
-    from cangjie_mcp.indexer.embeddings import get_embedding_provider
+    """Build a prebuilt index archive.
+
+    Automatically clones documentation repository and builds the vector index
+    before creating the archive.
+    """
+    from cangjie_mcp.indexer.chunker import create_chunker
+    from cangjie_mcp.indexer.embeddings import create_embedding_provider
+    from cangjie_mcp.indexer.loader import DocumentLoader
+    from cangjie_mcp.indexer.store import VectorStore
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
+    from cangjie_mcp.repo.git_manager import GitManager
 
-    settings = get_settings()
+    # Update settings with CLI overrides
+    overrides: dict[str, str | Path] = {}
+    if version:
+        overrides["docs_version"] = version
+    if lang:
+        overrides["docs_lang"] = lang
+    if embedding:
+        overrides["embedding_type"] = embedding
+    if data_dir:
+        overrides["data_dir"] = data_dir
 
-    # Check if index exists
-    if not settings.chroma_db_dir.exists():
-        console.print("[red]No index found. Run 'serve' first to build an index.[/red]")
+    settings = update_settings(**overrides)
+
+    console.print("[bold]Building Prebuilt Index Archive[/bold]")
+    console.print(f"  Version: {settings.docs_version}")
+    console.print(f"  Language: {settings.docs_lang}")
+    console.print(f"  Embedding: {settings.embedding_type}")
+    console.print(f"  Data dir: {settings.data_dir}")
+    console.print()
+
+    # Step 1: Ensure repo is ready
+    console.print("[blue]Ensuring documentation repository...[/blue]")
+    git_mgr = GitManager(settings.docs_repo_dir)
+    git_mgr.ensure_cloned()
+
+    current_version = git_mgr.get_current_version()
+    if current_version != settings.docs_version:
+        console.print(f"[blue]Checking out version {settings.docs_version}...[/blue]")
+        git_mgr.checkout(settings.docs_version)
+
+    # Step 2: Load documents
+    console.print("[blue]Loading documents...[/blue]")
+    loader = DocumentLoader(settings.docs_source_dir)
+    documents = loader.load_all_documents()
+
+    if not documents:
+        console.print("[red]No documents found![/red]")
         raise typer.Exit(1)
 
-    embedding_provider = get_embedding_provider(settings)
+    console.print(f"  Loaded {len(documents)} documents")
+
+    # Step 3: Chunk documents
+    console.print("[blue]Chunking documents...[/blue]")
+    embedding_provider = create_embedding_provider(settings, model_override=embedding_model)
+    chunker = create_chunker(embedding_provider)
+    nodes = chunker.chunk_documents(documents, use_semantic=True)
+    console.print(f"  Created {len(nodes)} chunks")
+
+    # Step 4: Build index
+    console.print("[blue]Building index...[/blue]")
+    store = VectorStore(
+        db_path=settings.chroma_db_dir,
+        embedding_provider=embedding_provider,
+    )
+    store.index_nodes(nodes)
+    store.save_metadata(
+        version=settings.docs_version,
+        lang=settings.docs_lang,
+        embedding_model=embedding_provider.get_model_name(),
+    )
+    console.print("[green]Index built successfully![/green]")
+
+    # Step 5: Create archive
+    console.print("[blue]Creating archive...[/blue]")
     mgr = PrebuiltManager(settings.data_dir)
 
     try:
@@ -216,9 +300,9 @@ def prebuilt_build(
             embedding_model=embedding_provider.get_model_name(),
             output_path=output,
         )
-        console.print(f"[green]Built: {archive_path}[/green]")
+        console.print(f"[green]Archive built: {archive_path}[/green]")
     except Exception as e:
-        console.print(f"[red]Failed to build: {e}[/red]")
+        console.print(f"[red]Failed to build archive: {e}[/red]")
         raise typer.Exit(1) from None
 
 

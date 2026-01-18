@@ -129,11 +129,15 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return f"openai:{self.model}"
 
 
-def create_embedding_provider(settings: Settings) -> EmbeddingProvider:
+def create_embedding_provider(
+    settings: Settings,
+    model_override: str | None = None,
+) -> EmbeddingProvider:
     """Factory function to create embedding provider based on settings.
 
     Args:
         settings: Application settings
+        model_override: Optional model name to override the default
 
     Returns:
         Configured embedding provider
@@ -142,15 +146,17 @@ def create_embedding_provider(settings: Settings) -> EmbeddingProvider:
         ValueError: If OpenAI is selected but API key is not set
     """
     if settings.embedding_type == "local":
-        return LocalEmbedding(model_name=settings.local_model)
+        model_name = model_override or settings.local_model
+        return LocalEmbedding(model_name=model_name)
 
     if settings.embedding_type == "openai":
         openai_settings = get_openai_settings()
         if not openai_settings.api_key:
             raise ValueError("OpenAI API key is required when using OpenAI embeddings")
+        model = model_override or openai_settings.model
         return OpenAIEmbeddingProvider(
             api_key=openai_settings.api_key,
-            model=openai_settings.model,
+            model=model,
             base_url=openai_settings.base_url,
         )
 
