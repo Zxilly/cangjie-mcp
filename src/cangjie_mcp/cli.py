@@ -76,7 +76,7 @@ def initialize_and_index(settings: Settings) -> None:
 
     # Chunk documents
     embedding_provider = get_embedding_provider(settings)
-    chunker = create_chunker(embedding_provider)
+    chunker = create_chunker(embedding_provider, max_chunk_size=settings.chunk_max_size)
     nodes = chunker.chunk_documents(documents, use_semantic=True)
 
     # Index
@@ -425,7 +425,7 @@ def prebuilt_build(
     # Step 3: Chunk documents
     console.print("[blue]Chunking documents...[/blue]")
     embedding_provider = create_embedding_provider(settings)
-    chunker = create_chunker(embedding_provider)
+    chunker = create_chunker(embedding_provider, max_chunk_size=settings.chunk_max_size)
     nodes = chunker.chunk_documents(documents, use_semantic=True)
     console.print(f"  Created {len(nodes)} chunks")
 

@@ -14,6 +14,7 @@ Environment variable mapping:
 - CANGJIE_RERANK_MODEL -> rerank_model
 - CANGJIE_RERANK_TOP_K -> rerank_top_k
 - CANGJIE_RERANK_INITIAL_K -> rerank_initial_k
+- CANGJIE_CHUNK_MAX_SIZE -> chunk_max_size
 - CANGJIE_DATA_DIR -> data_dir
 - CANGJIE_PREBUILT_URL -> prebuilt_url
 - CANGJIE_INDEXES -> indexes (for multi-index HTTP mode)
@@ -143,6 +144,12 @@ class Settings(BaseSettings):
         default=20, description="Number of candidates to retrieve before reranking"
     )
 
+    # Chunking settings
+    chunk_max_size: int = Field(
+        default=6000,
+        description="Max chunk size in chars to prevent exceeding embedding token limits",
+    )
+
     # Data directory (default: ~/.cangjie-mcp)
     data_dir: Path = Field(
         default_factory=_get_default_data_dir,
@@ -241,6 +248,7 @@ def update_settings(
     rerank_model: str | None = None,
     rerank_top_k: int | None = None,
     rerank_initial_k: int | None = None,
+    chunk_max_size: int | None = None,
     data_dir: Path | None = None,
     prebuilt_url: str | None = None,
     openai_api_key: str | None = None,
@@ -274,6 +282,8 @@ def update_settings(
         overrides["rerank_top_k"] = rerank_top_k
     if rerank_initial_k is not None:
         overrides["rerank_initial_k"] = rerank_initial_k
+    if chunk_max_size is not None:
+        overrides["chunk_max_size"] = chunk_max_size
     if data_dir is not None:
         overrides["data_dir"] = data_dir
     if prebuilt_url is not None:

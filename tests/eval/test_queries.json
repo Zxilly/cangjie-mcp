@@ -1,0 +1,146 @@
+{
+  "version": "1.0",
+  "description": "Cangjie RAG evaluation dataset",
+  "queries": [
+    {
+      "id": "class_definition",
+      "query": "如何定义一个类？",
+      "expected_files": ["class_and_interface/class.md"],
+      "expected_keywords": ["class", "构造函数", "成员变量"],
+      "category": "basic"
+    },
+    {
+      "id": "interface_definition",
+      "query": "如何定义接口？",
+      "expected_files": ["class_and_interface/interface.md"],
+      "expected_keywords": ["interface", "实现"],
+      "category": "basic"
+    },
+    {
+      "id": "compile_options",
+      "query": "cjc 编译选项有哪些？",
+      "expected_files": ["Appendix/compile_options.md", "compile_and_build/cjc_usage.md"],
+      "expected_keywords": ["--output-type", "-p", "-o"],
+      "category": "toolchain"
+    },
+    {
+      "id": "array_type",
+      "query": "数组类型怎么用？",
+      "expected_files": ["basic_data_type/array.md", "collections/collection_arraylist.md"],
+      "expected_keywords": ["Array", "索引"],
+      "category": "basic"
+    },
+    {
+      "id": "string_type",
+      "query": "字符串操作方法",
+      "expected_files": ["basic_data_type/strings.md"],
+      "expected_keywords": ["String", "字符串"],
+      "category": "basic"
+    },
+    {
+      "id": "function_definition",
+      "query": "如何定义函数？",
+      "expected_files": ["function/define_functions.md", "function/function.md"],
+      "expected_keywords": ["func", "函数", "参数"],
+      "category": "basic"
+    },
+    {
+      "id": "generic_type",
+      "query": "泛型怎么用？",
+      "expected_files": ["generic/generic_overview.md", "generic/generic_class.md"],
+      "expected_keywords": ["泛型", "类型参数"],
+      "category": "advanced"
+    },
+    {
+      "id": "exception_handling",
+      "query": "异常处理怎么写？",
+      "expected_files": ["error_handle/exception_overview.md", "error_handle/handle.md"],
+      "expected_keywords": ["try", "catch", "throw", "异常"],
+      "category": "advanced"
+    },
+    {
+      "id": "pattern_matching",
+      "query": "模式匹配的用法",
+      "expected_files": ["enum_and_pattern_match/pattern_overview.md", "enum_and_pattern_match/match.md"],
+      "expected_keywords": ["match", "模式"],
+      "category": "advanced"
+    },
+    {
+      "id": "enum_type",
+      "query": "枚举类型怎么定义？",
+      "expected_files": ["enum_and_pattern_match/enum.md"],
+      "expected_keywords": ["enum", "枚举"],
+      "category": "basic"
+    },
+    {
+      "id": "operator_overloading",
+      "query": "如何重载运算符？",
+      "expected_files": ["function/operator_overloading.md"],
+      "expected_keywords": ["operator", "运算符", "重载"],
+      "category": "advanced"
+    },
+    {
+      "id": "lambda_expression",
+      "query": "lambda 表达式怎么写？",
+      "expected_files": ["function/lambda.md"],
+      "expected_keywords": ["lambda", "匿名函数"],
+      "category": "advanced"
+    },
+    {
+      "id": "concurrent_programming",
+      "query": "并发编程怎么做？",
+      "expected_files": ["concurrency/concurrency_overview.md", "concurrency/create_thread.md"],
+      "expected_keywords": ["并发", "线程"],
+      "category": "advanced"
+    },
+    {
+      "id": "file_io",
+      "query": "文件读写操作",
+      "expected_files": ["Basic_IO/basic_IO_overview.md", "Basic_IO/basic_IO_source_stream.md"],
+      "expected_keywords": ["文件", "读", "写", "IO"],
+      "category": "io"
+    },
+    {
+      "id": "struct_type",
+      "query": "struct 和 class 有什么区别？",
+      "expected_files": ["struct/define_struct.md", "class_and_interface/class.md"],
+      "expected_keywords": ["struct", "值类型", "引用类型"],
+      "category": "basic"
+    },
+    {
+      "id": "integer_type",
+      "query": "整数类型有哪些？",
+      "expected_files": ["basic_data_type/integer.md"],
+      "expected_keywords": ["Int8", "Int16", "Int32", "Int64"],
+      "category": "basic"
+    },
+    {
+      "id": "float_type",
+      "query": "浮点数类型",
+      "expected_files": ["basic_data_type/float.md"],
+      "expected_keywords": ["Float", "浮点"],
+      "category": "basic"
+    },
+    {
+      "id": "tuple_type",
+      "query": "元组怎么用？",
+      "expected_files": ["basic_data_type/tuple.md"],
+      "expected_keywords": ["元组", "Tuple"],
+      "category": "basic"
+    },
+    {
+      "id": "property_definition",
+      "query": "属性怎么定义？",
+      "expected_files": ["class_and_interface/prop.md"],
+      "expected_keywords": ["prop", "属性", "get", "set"],
+      "category": "basic"
+    },
+    {
+      "id": "subtype_relation",
+      "query": "子类型关系",
+      "expected_files": ["class_and_interface/subtype.md"],
+      "expected_keywords": ["子类型", "继承"],
+      "category": "advanced"
+    }
+  ]
+}

@@ -6,7 +6,11 @@ import pytest
 from llama_index.core import Document
 from llama_index.core.embeddings import BaseEmbedding
 
-from cangjie_mcp.indexer.chunker import DocumentChunker, create_chunker
+from cangjie_mcp.indexer.chunker import (
+    CODE_BLOCK_PATTERN,
+    DocumentChunker,
+    create_chunker,
+)
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
 
 
@@ -110,6 +114,99 @@ class TestDocumentChunker:
             assert "category" in node.metadata or node.get_content()
 
 
+class TestCodeAwareSplitting:
+    """Tests for code-aware splitting functionality."""
+
+    def test_code_block_pattern_matches(self) -> None:
+        """Test that CODE_BLOCK_PATTERN matches code blocks."""
+        text = """Some text.
+
+```cangjie
+class Foo {
+    let x: Int64
+}
+```
+
+More text."""
+        matches = list(CODE_BLOCK_PATTERN.finditer(text))
+        assert len(matches) == 1
+        assert "class Foo" in matches[0].group()
+
+    def test_code_block_pattern_multiple(self) -> None:
+        """Test pattern matches multiple code blocks."""
+        text = """First block:
+
+```python
+def foo():
+    pass
+```
+
+Second block:
+
+```shell
+echo hello
+```
+"""
+        matches = list(CODE_BLOCK_PATTERN.finditer(text))
+        assert len(matches) == 2
+
+    def test_split_text_preserving_code_no_code(
+        self, mock_embedding_provider: MockEmbeddingProvider
+    ) -> None:
+        """Test splitting text without code blocks."""
+        chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
+        segments = chunker._split_text_preserving_code("Just plain text here.")
+
+        assert len(segments) == 1
+        assert not segments[0].has_code
+        assert segments[0].code_count == 0
+
+    def test_split_text_preserving_code_with_code(
+        self, mock_embedding_provider: MockEmbeddingProvider
+    ) -> None:
+        """Test splitting text with code block preserves context."""
+        chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
+        text = """Introduction paragraph.
+
+Here is an example:
+
+```cangjie
+let x = 42
+```
+
+Following text."""
+
+        segments = chunker._split_text_preserving_code(text)
+
+        # Should have: intro text, context+code, following text
+        code_segments = [s for s in segments if s.has_code]
+        assert len(code_segments) >= 1
+        # Code block should be intact
+        assert "let x = 42" in code_segments[0].text
+
+    def test_split_text_preserving_code_keeps_context(
+        self, mock_embedding_provider: MockEmbeddingProvider
+    ) -> None:
+        """Test that code blocks are kept with their preceding context."""
+        chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
+        text = """## Example Section
+
+This explains the code:
+
+```cangjie
+func test() {}
+```"""
+
+        segments = chunker._split_text_preserving_code(text)
+        code_segment = next(s for s in segments if s.has_code)
+
+        # Should contain both context and code
+        assert "explains the code" in code_segment.text or any(
+            "explains" in s.text for s in segments
+        )
+        assert "func test()" in code_segment.text
+
+
 class TestCreateChunker:
     """Tests for create_chunker factory function."""
 
@@ -122,3 +219,11 @@ class TestCreateChunker:
         # Should use default values
         assert chunker.buffer_size == 1
         assert chunker.breakpoint_percentile_threshold == 95
+
+    def test_create_chunker_with_max_chunk_size(
+        self, mock_embedding_provider: MockEmbeddingProvider
+    ) -> None:
+        """Test creating a chunker with custom max_chunk_size."""
+        chunker = create_chunker(mock_embedding_provider, max_chunk_size=4000)
+
+        assert chunker.max_chunk_size == 4000
