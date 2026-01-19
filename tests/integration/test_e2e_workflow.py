@@ -11,6 +11,13 @@ from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embeddi
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
+from cangjie_mcp.server.tools import (
+    GetCodeExamplesInput,
+    GetToolUsageInput,
+    GetTopicInput,
+    ListTopicsInput,
+    SearchDocsInput,
+)
 
 
 class TestEndToEndWorkflow:
@@ -52,18 +59,18 @@ class TestEndToEndWorkflow:
             loader=loader,
         )
 
-        topics = tools.list_topics(ctx)
-        assert len(topics) > 0
+        result = tools.list_topics(ctx, ListTopicsInput())
+        assert result["total_topics"] > 0
 
-        for category, topic_list in topics.items():
+        for category, topic_list in result["categories"].items():
             if topic_list:
                 topic = topic_list[0]
-                doc = tools.get_topic(ctx, topic=topic, category=category)
+                doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
                 assert doc is not None
                 break
 
-        search_results = tools.search_docs(ctx, query="仓颉语言", top_k=5)
-        assert len(search_results) > 0
+        search_results = tools.search_docs(ctx, SearchDocsInput(query="仓颉语言", top_k=5))
+        assert search_results["count"] > 0
 
     def test_category_based_exploration(
         self,
@@ -79,21 +86,19 @@ class TestEndToEndWorkflow:
             loader=loader,
         )
 
-        topics = tools.list_topics(ctx)
+        result = tools.list_topics(ctx, ListTopicsInput())
 
-        for category in topics:
-            filtered_topics = tools.list_topics(ctx, category=category)
-            assert category in filtered_topics
-            assert len(filtered_topics[category]) > 0
+        for category in result["categories"]:
+            filtered = tools.list_topics(ctx, ListTopicsInput(category=category))
+            assert category in filtered["categories"]
+            assert len(filtered["categories"][category]) > 0
 
             search_results = tools.search_docs(
                 ctx,
-                query="使用方法",
-                category=category,
-                top_k=2,
+                SearchDocsInput(query="使用方法", category=category, top_k=2),
             )
-            if search_results:
-                assert all(r["category"] == category for r in search_results)
+            if search_results["count"] > 0:
+                assert all(r["category"] == category for r in search_results["items"])
 
     def test_full_document_discovery_workflow(
         self,
@@ -110,17 +115,16 @@ class TestEndToEndWorkflow:
         )
 
         # 1. List all topics
-        all_topics = tools.list_topics(ctx)
-        assert len(all_topics) > 0
+        result = tools.list_topics(ctx, ListTopicsInput())
+        assert result["total_categories"] > 0
 
         # 2. Get topics count
-        total_topics = sum(len(topics) for topics in all_topics.values())
-        assert total_topics == 6  # We have 6 test documents
+        assert result["total_topics"] == 6  # We have 6 test documents
 
         # 3. Read each topic
-        for category, topic_list in all_topics.items():
+        for category, topic_list in result["categories"].items():
             for topic in topic_list:
-                doc = tools.get_topic(ctx, topic=topic, category=category)
+                doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
                 assert doc is not None
                 assert doc["category"] == category
                 assert doc["topic"] == topic
@@ -141,16 +145,16 @@ class TestEndToEndWorkflow:
         )
 
         # Search for a topic
-        results = tools.search_docs(ctx, query="函数定义", top_k=3)
-        assert len(results) > 0
+        results = tools.search_docs(ctx, SearchDocsInput(query="函数定义", top_k=3))
+        assert results["count"] > 0
 
         # Get the top result's topic
-        top_result = results[0]
+        top_result = results["items"][0]
         topic = top_result["topic"]
         category = top_result["category"]
 
         # Retrieve full document
-        doc = tools.get_topic(ctx, topic=topic, category=category)
+        doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
         assert doc is not None
         assert len(doc["content"]) >= len(top_result["content"])
 
@@ -169,7 +173,9 @@ class TestEndToEndWorkflow:
         )
 
         # Get code examples for a feature
-        examples = tools.get_code_examples(ctx, feature="Hello World", top_k=5)
+        examples = tools.get_code_examples(
+            ctx, GetCodeExamplesInput(feature="Hello World", top_k=5)
+        )
         assert len(examples) > 0
 
         # Verify examples have required fields
@@ -179,7 +185,7 @@ class TestEndToEndWorkflow:
             assert len(example["code"]) > 0
 
         # Get tool usage
-        tool_result = tools.get_tool_usage(ctx, tool_name="cjc")
+        tool_result = tools.get_tool_usage(ctx, GetToolUsageInput(tool_name="cjc"))
         assert tool_result is not None
         assert "examples" in tool_result
 

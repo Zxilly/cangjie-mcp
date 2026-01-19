@@ -5,10 +5,11 @@
 ## 功能特性
 
 - 基于向量检索的语义搜索
-- 支持本地嵌入模型和 OpenAI 嵌入模型
-- 支持本地 Rerank 和 SiliconFlow Rerank 提升搜索质量
+- 支持本地嵌入模型和 OpenAI 兼容嵌入模型
+- 支持本地 Rerank 和 OpenAI 兼容 Rerank API（SiliconFlow 等）
 - 自动下载和索引仓颉官方文档
 - 支持预构建索引的创建和下载
+- 支持多索引 HTTP 服务器模式
 - 完整的 MCP 协议支持
 
 ## 安装
@@ -24,24 +25,24 @@ uv pip install cangjie-mcp
 ## 快速开始
 
 ```bash
-# 启动 MCP 服务器（使用默认配置）
-cangjie-mcp serve
+# 启动 MCP 服务器（stdio 模式，默认）
+cangjie-mcp
 
 # 使用本地 rerank 提升搜索质量
-cangjie-mcp serve --rerank local
+cangjie-mcp --rerank local
 
 # 指定文档版本和语言
-cangjie-mcp serve --version v1.0.4 --lang zh
+cangjie-mcp --version v1.0.4 --lang zh
 ```
 
 ## 命令
 
-### `serve` - 启动 MCP 服务器
+### 默认命令 - 启动 MCP 服务器 (stdio)
 
-启动 MCP 服务器，自动初始化文档仓库并构建索引（如果需要）。
+直接运行 `cangjie-mcp` 启动 stdio 模式的 MCP 服务器，适用于 Claude Code 等 MCP 客户端集成。
 
 ```bash
-cangjie-mcp serve [OPTIONS]
+cangjie-mcp [OPTIONS]
 ```
 
 **选项：**
@@ -52,34 +53,65 @@ cangjie-mcp serve [OPTIONS]
 | `--lang` | `-l` | TEXT | `zh` | 文档语言（zh/en） |
 | `--embedding` | `-e` | TEXT | `local` | 嵌入类型（local/openai） |
 | `--local-model` | | TEXT | `paraphrase-multilingual-MiniLM-L12-v2` | 本地 HuggingFace 嵌入模型名称 |
-| `--openai-api-key` | | TEXT | | OpenAI API 密钥 |
-| `--openai-base-url` | | TEXT | `https://api.openai.com/v1` | OpenAI API 基础 URL |
+| `--openai-api-key` | | TEXT | | OpenAI 兼容 API 密钥 |
+| `--openai-base-url` | | TEXT | `https://api.openai.com/v1` | OpenAI 兼容 API 基础 URL |
 | `--openai-model` | | TEXT | `text-embedding-3-small` | OpenAI 嵌入模型 |
-| `--rerank` | `-r` | TEXT | `none` | Rerank 类型（none/local/siliconflow） |
-| `--rerank-model` | | TEXT | `BAAI/bge-reranker-v2-m3` | Rerank 模型名称（用于本地 rerank） |
+| `--rerank` | `-r` | TEXT | `none` | Rerank 类型（none/local/openai） |
+| `--rerank-model` | | TEXT | `BAAI/bge-reranker-v2-m3` | Rerank 模型名称 |
 | `--rerank-top-k` | | INTEGER | `5` | Rerank 后返回的结果数量 |
 | `--rerank-initial-k` | | INTEGER | `20` | Rerank 前检索的候选数量 |
-| `--siliconflow-api-key` | | TEXT | | SiliconFlow API 密钥 |
-| `--siliconflow-base-url` | | TEXT | `https://api.siliconflow.cn/v1` | SiliconFlow API 基础 URL |
-| `--siliconflow-rerank-model` | | TEXT | `BAAI/bge-reranker-v2-m3` | SiliconFlow Rerank 模型 |
 | `--data-dir` | `-d` | PATH | `~/.cangjie-mcp` | 数据目录路径 |
-| `--transport` | `-t` | TEXT | `stdio` | 传输类型（stdio/http） |
-| `--port` | `-p` | INTEGER | `8000` | HTTP 端口（仅用于 http 传输） |
 
 **示例：**
 
 ```bash
 # 使用本地嵌入和本地 rerank
-cangjie-mcp serve --embedding local --rerank local
+cangjie-mcp --embedding local --rerank local
 
 # 使用 OpenAI 嵌入
-cangjie-mcp serve --embedding openai --openai-api-key sk-xxx
+cangjie-mcp --embedding openai --openai-api-key sk-xxx
 
-# 使用 SiliconFlow rerank
-cangjie-mcp serve --rerank siliconflow --siliconflow-api-key sk-xxx
+# 使用 SiliconFlow（OpenAI 兼容）进行 rerank
+cangjie-mcp --rerank openai \
+  --openai-api-key sk-xxx \
+  --openai-base-url https://api.siliconflow.cn/v1 \
+  --rerank-model BAAI/bge-reranker-v2-m3
+```
 
-# 使用 HTTP 传输
-cangjie-mcp serve --transport http --port 8080
+### `serve` - 启动 HTTP 服务器（多索引模式）
+
+启动支持多索引的 HTTP 服务器，从 URL 加载预构建索引。
+
+```bash
+cangjie-mcp serve [OPTIONS]
+```
+
+**选项：**
+
+| 选项 | 简写 | 类型 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `--indexes` | `-i` | TEXT | | 预构建索引 URL 列表（逗号分隔） |
+| `--host` | `-H` | TEXT | `127.0.0.1` | HTTP 服务器主机地址 |
+| `--port` | `-p` | INTEGER | `8000` | HTTP 服务器端口 |
+| `--embedding` | `-e` | TEXT | `local` | 嵌入类型（local/openai） |
+| `--rerank` | `-r` | TEXT | `none` | Rerank 类型（none/local/openai） |
+| `--rerank-model` | | TEXT | `BAAI/bge-reranker-v2-m3` | Rerank 模型名称 |
+
+**示例：**
+
+```bash
+# 从 URL 加载单个索引
+cangjie-mcp serve --indexes "https://example.com/cangjie-index-v1-zh.tar.gz"
+
+# 加载多个索引
+cangjie-mcp serve --indexes "https://example.com/v1-zh.tar.gz,https://example.com/v2-en.tar.gz"
+
+# 指定主机和端口
+cangjie-mcp serve --indexes "..." --host 0.0.0.0 --port 8080
+
+# 访问方式（路由从索引元数据派生）：
+# POST http://localhost:8000/v1/zh/mcp    -> v1 中文文档
+# POST http://localhost:8000/v2/en/mcp    -> v2 英文文档
 ```
 
 ### `prebuilt build` - 构建预构建索引
@@ -168,21 +200,33 @@ cangjie-mcp prebuilt list
 |----------|--------|------|
 | `CANGJIE_EMBEDDING_TYPE` | `local` | 嵌入类型（local/openai） |
 | `CANGJIE_LOCAL_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | 本地 HuggingFace 嵌入模型 |
-| `OPENAI_API_KEY` | | OpenAI API 密钥 |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API 基础 URL |
-| `OPENAI_MODEL` | `text-embedding-3-small` | OpenAI 嵌入模型 |
+
+### OpenAI 兼容 API 配置
+
+适用于 OpenAI、SiliconFlow 等兼容 API。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `OPENAI_API_KEY` | | API 密钥 |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API 基础 URL |
+| `OPENAI_MODEL` | `text-embedding-3-small` | 嵌入模型 |
 
 ### Rerank 配置
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `CANGJIE_RERANK_TYPE` | `none` | Rerank 类型（none/local/siliconflow） |
-| `CANGJIE_RERANK_LOCAL_MODEL` | `BAAI/bge-reranker-v2-m3` | 本地 Rerank 模型 |
+| `CANGJIE_RERANK_TYPE` | `none` | Rerank 类型（none/local/openai） |
+| `CANGJIE_RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | Rerank 模型名称 |
 | `CANGJIE_RERANK_TOP_K` | `5` | Rerank 后返回的结果数量 |
 | `CANGJIE_RERANK_INITIAL_K` | `20` | Rerank 前检索的候选数量 |
-| `SILICONFLOW_API_KEY` | | SiliconFlow API 密钥 |
-| `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` | SiliconFlow API 基础 URL |
-| `SILICONFLOW_RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | SiliconFlow Rerank 模型 |
+
+### HTTP 服务器配置
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `CANGJIE_HTTP_HOST` | `127.0.0.1` | HTTP 服务器主机地址 |
+| `CANGJIE_HTTP_PORT` | `8000` | HTTP 服务器端口 |
+| `CANGJIE_INDEXES` | | 预构建索引 URL 列表（逗号分隔） |
 
 ## 配置文件示例
 
@@ -205,13 +249,15 @@ CANGJIE_LOCAL_MODEL=paraphrase-multilingual-MiniLM-L12-v2
 
 # Rerank 配置（使用本地 rerank）
 CANGJIE_RERANK_TYPE=local
-CANGJIE_RERANK_LOCAL_MODEL=BAAI/bge-reranker-v2-m3
+CANGJIE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 CANGJIE_RERANK_TOP_K=5
 CANGJIE_RERANK_INITIAL_K=20
 
-# 或使用 SiliconFlow rerank
-# CANGJIE_RERANK_TYPE=siliconflow
-# SILICONFLOW_API_KEY=sk-your-api-key
+# 或使用 SiliconFlow 等 OpenAI 兼容 API 进行 rerank
+# CANGJIE_RERANK_TYPE=openai
+# OPENAI_API_KEY=sk-your-siliconflow-key
+# OPENAI_BASE_URL=https://api.siliconflow.cn/v1
+# CANGJIE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 ```
 
 ## MCP 工具
@@ -220,11 +266,11 @@ CANGJIE_RERANK_INITIAL_K=20
 
 | 工具名称 | 说明 |
 |----------|------|
-| `search_docs` | 搜索文档，支持语义搜索和分类过滤 |
-| `get_topic` | 获取指定主题的完整文档内容 |
-| `list_topics` | 列出所有可用主题，支持按分类筛选 |
-| `get_code_examples` | 获取代码示例，支持按语言过滤 |
-| `get_tool_usage` | 获取工具使用说明（如 cjc、cjpm） |
+| `cangjie_search_docs` | 搜索文档，支持语义搜索、分类过滤和分页 |
+| `cangjie_get_topic` | 获取指定主题的完整文档内容 |
+| `cangjie_list_topics` | 列出所有可用主题，支持按分类筛选 |
+| `cangjie_get_code_examples` | 获取代码示例 |
+| `cangjie_get_tool_usage` | 获取工具使用说明（如 cjc、cjpm） |
 
 
 ## 与 Claude Code 集成
@@ -234,16 +280,16 @@ CANGJIE_RERANK_INITIAL_K=20
 使用 `claude mcp add` 命令快速添加 MCP 服务器：
 
 ```bash
-claude mcp add cangjie -- uvx cangjie-mcp serve
+claude mcp add cangjie -- uvx cangjie-mcp
 
 # 使用 uvx 运行并启用本地 rerank
-claude mcp add cangjie -- uvx cangjie-mcp serve --rerank local
+claude mcp add cangjie -- uvx cangjie-mcp --rerank local
 
 # 添加环境变量
-claude mcp add -e CANGJIE_RERANK_TYPE=local cangjie -- uvx cangjie-mcp serve
+claude mcp add -e CANGJIE_RERANK_TYPE=local cangjie -- uvx cangjie-mcp
 
 # 使用已安装的 cangjie-mcp
-claude mcp add cangjie -- cangjie-mcp serve --rerank local
+claude mcp add cangjie -- cangjie-mcp --rerank local
 ```
 
 **常用 `claude mcp` 命令：**
@@ -268,7 +314,7 @@ claude mcp remove cangjie
   "mcpServers": {
     "cangjie": {
       "command": "uvx",
-      "args": ["cangjie-mcp", "serve", "--rerank", "local"]
+      "args": ["cangjie-mcp", "--rerank", "local"]
     }
   }
 }
@@ -281,7 +327,7 @@ claude mcp remove cangjie
   "mcpServers": {
     "cangjie": {
       "command": "cangjie-mcp",
-      "args": ["serve", "--rerank", "local"]
+      "args": ["--rerank", "local"]
     }
   }
 }

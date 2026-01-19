@@ -12,6 +12,7 @@ from cangjie_mcp.config import Settings, get_settings, update_settings
 app = typer.Typer(
     name="cangjie-mcp",
     help="MCP server for Cangjie programming language documentation",
+    invoke_without_command=True,
 )
 
 prebuilt_app = typer.Typer(help="Prebuilt index management commands")
@@ -92,8 +93,9 @@ def initialize_and_index(settings: Settings) -> None:
     console.print("[green]Index built successfully![/green]")
 
 
-@app.command()
-def serve(
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
     version: Annotated[
         str | None,
         typer.Option("--version", "-v", help="Documentation version (git tag)"),
@@ -124,11 +126,11 @@ def serve(
     ] = None,
     rerank: Annotated[
         str | None,
-        typer.Option("--rerank", "-r", help="Rerank type (none/local/siliconflow)"),
+        typer.Option("--rerank", "-r", help="Rerank type (none/local/openai)"),
     ] = None,
     rerank_model: Annotated[
         str | None,
-        typer.Option("--rerank-model", help="Rerank model name (for local rerank)"),
+        typer.Option("--rerank-model", help="Rerank model name"),
     ] = None,
     rerank_top_k: Annotated[
         int | None,
@@ -138,81 +140,176 @@ def serve(
         int | None,
         typer.Option("--rerank-initial-k", help="Number of candidates before reranking"),
     ] = None,
-    siliconflow_api_key: Annotated[
-        str | None,
-        typer.Option(
-            "--siliconflow-api-key", help="SiliconFlow API key", envvar="SILICONFLOW_API_KEY"
-        ),
-    ] = None,
-    siliconflow_base_url: Annotated[
-        str | None,
-        typer.Option("--siliconflow-base-url", help="SiliconFlow API base URL"),
-    ] = None,
-    siliconflow_rerank_model: Annotated[
-        str | None,
-        typer.Option("--siliconflow-rerank-model", help="SiliconFlow rerank model"),
-    ] = None,
     data_dir: Annotated[
         Path | None,
         typer.Option("--data-dir", "-d", help="Data directory path"),
     ] = None,
-    transport: Annotated[
-        str,
-        typer.Option("--transport", "-t", help="Transport type (stdio/http)"),
-    ] = "stdio",
-    port: Annotated[
-        int,
-        typer.Option("--port", "-p", help="HTTP port (only for http transport)"),
-    ] = 8000,
 ) -> None:
-    """Start the MCP server.
+    """Start the MCP server in stdio mode (default).
 
-    Automatically initializes documentation repository and builds index if needed.
+    When invoked without a subcommand, starts the MCP server using stdio transport.
+    This is the default behavior for MCP client integration.
+
+    For HTTP server mode, use: cangjie-mcp serve
     """
-    # Update settings with CLI overrides
-    overrides = {
-        "docs_version": version,
-        "docs_lang": lang,
-        "embedding_type": embedding,
-        "local_model": local_model,
-        "openai_api_key": openai_api_key,
-        "openai_base_url": openai_base_url,
-        "openai_model": openai_model,
-        "rerank_type": rerank,
-        "rerank_local_model": rerank_model,
-        "rerank_top_k": rerank_top_k,
-        "rerank_initial_k": rerank_initial_k,
-        "siliconflow_api_key": siliconflow_api_key,
-        "siliconflow_base_url": siliconflow_base_url,
-        "siliconflow_rerank_model": siliconflow_rerank_model,
-        "data_dir": data_dir,
-    }
-    settings = update_settings(**{k: v for k, v in overrides.items() if v is not None})
+    # If a subcommand is invoked, let it handle execution
+    if ctx.invoked_subcommand is not None:
+        return
 
-    console.print("[bold]Cangjie MCP Server[/bold]")
+    # Update settings with CLI overrides
+    settings = update_settings(
+        docs_version=version,
+        docs_lang=lang,
+        embedding_type=embedding,
+        local_model=local_model,
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url,
+        openai_model=openai_model,
+        rerank_type=rerank,
+        rerank_model=rerank_model,
+        rerank_top_k=rerank_top_k,
+        rerank_initial_k=rerank_initial_k,
+        data_dir=data_dir,
+    )
+
+    console.print("[bold]Cangjie MCP Server (stdio)[/bold]")
     console.print(f"  Version: {settings.docs_version}")
     console.print(f"  Language: {settings.docs_lang}")
     console.print(f"  Embedding: {settings.embedding_type}")
     console.print(f"  Rerank: {settings.rerank_type}")
     if settings.rerank_type != "none":
-        console.print(f"  Rerank Model: {settings.rerank_local_model}")
-    console.print(f"  Transport: {transport}")
+        console.print(f"  Rerank Model: {settings.rerank_model}")
     console.print()
 
     # Initialize and index
     initialize_and_index(settings)
 
-    # Start server
+    # Start server in stdio mode
     from cangjie_mcp.server.app import create_mcp_server
 
     mcp = create_mcp_server(settings)
+    console.print("[blue]Starting MCP server (stdio)...[/blue]")
+    mcp.run(transport="stdio")
 
-    if transport == "stdio":
-        console.print("[blue]Starting MCP server (stdio)...[/blue]")
-        mcp.run(transport="stdio")
-    else:
-        console.print(f"[blue]Starting MCP server (sse on port {port})...[/blue]")
-        mcp.run(transport="sse")
+
+@app.command()
+def serve(
+    indexes: Annotated[
+        str | None,
+        typer.Option(
+            "--indexes", "-i",
+            help="Comma-separated list of URLs to prebuilt index archives"
+        ),
+    ] = None,
+    host: Annotated[
+        str | None,
+        typer.Option("--host", "-H", help="HTTP server host address"),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", "-p", help="HTTP server port"),
+    ] = None,
+    embedding: Annotated[
+        str | None,
+        typer.Option("--embedding", "-e", help="Embedding type (local/openai)"),
+    ] = None,
+    local_model: Annotated[
+        str | None,
+        typer.Option("--local-model", help="Local HuggingFace embedding model name"),
+    ] = None,
+    openai_api_key: Annotated[
+        str | None,
+        typer.Option("--openai-api-key", help="OpenAI API key", envvar="OPENAI_API_KEY"),
+    ] = None,
+    openai_base_url: Annotated[
+        str | None,
+        typer.Option("--openai-base-url", help="OpenAI API base URL"),
+    ] = None,
+    openai_model: Annotated[
+        str | None,
+        typer.Option("--openai-model", help="OpenAI embedding model"),
+    ] = None,
+    rerank: Annotated[
+        str | None,
+        typer.Option("--rerank", "-r", help="Rerank type (none/local/openai)"),
+    ] = None,
+    rerank_model: Annotated[
+        str | None,
+        typer.Option("--rerank-model", help="Rerank model name"),
+    ] = None,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option("--data-dir", "-d", help="Data directory path"),
+    ] = None,
+) -> None:
+    """Start the HTTP server with multi-index support.
+
+    Downloads prebuilt indexes from URLs and serves them via HTTP.
+    The version and language are derived from each archive's metadata.
+    Archives are cached locally using the URL's MD5 hash.
+
+    Examples:
+        # Load single index from URL
+        cangjie-mcp serve --indexes "https://example.com/cangjie-index-v1-zh.tar.gz"
+
+        # Load multiple indexes
+        cangjie-mcp serve --indexes "https://example.com/v1-zh.tar.gz,https://example.com/v2-en.tar.gz"
+
+        # Access via HTTP (routes derived from archive metadata):
+        # POST http://localhost:8000/v1/zh/mcp    -> v1 Chinese docs
+        # POST http://localhost:8000/v2/en/mcp   -> v2 English docs
+    """
+    from cangjie_mcp.indexer.multi_store import parse_index_urls
+
+    # Update settings with CLI overrides
+    settings = update_settings(
+        embedding_type=embedding,
+        local_model=local_model,
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url,
+        openai_model=openai_model,
+        rerank_type=rerank,
+        rerank_model=rerank_model,
+        data_dir=data_dir,
+        http_host=host,
+        http_port=port,
+        indexes=indexes,
+    )
+
+    # Parse index URLs
+    indexes_str = settings.indexes
+    if not indexes_str:
+        console.print("[red]No indexes specified. Use --indexes or CANGJIE_INDEXES.[/red]")
+        console.print(
+            "[yellow]Example: cangjie-mcp serve --indexes "
+            "'https://example.com/cangjie-index-v1-zh.tar.gz'[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    index_urls = parse_index_urls(indexes_str)
+    if not index_urls:
+        console.print(f"[red]No valid URLs in: {indexes_str}[/red]")
+        raise typer.Exit(1)
+
+    console.print("[bold]Cangjie MCP HTTP Server[/bold]")
+    console.print(f"  Host: {settings.http_host}")
+    console.print(f"  Port: {settings.http_port}")
+    console.print(f"  Embedding: {settings.embedding_type}")
+    console.print(f"  Rerank: {settings.rerank_type}")
+    console.print(f"  Index URLs: {len(index_urls)}")
+    for url in index_urls:
+        console.print(f"    - {url}")
+    console.print()
+
+    # Start HTTP server
+    from cangjie_mcp.server.http import MultiIndexHTTPServer
+
+    server = MultiIndexHTTPServer(settings=settings, index_urls=index_urls)
+
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Server stopped.[/yellow]")
 
 
 @prebuilt_app.command("download")
@@ -293,17 +390,12 @@ def prebuilt_build(
     from cangjie_mcp.repo.git_manager import GitManager
 
     # Update settings with CLI overrides
-    overrides: dict[str, str | Path] = {}
-    if version:
-        overrides["docs_version"] = version
-    if lang:
-        overrides["docs_lang"] = lang
-    if embedding:
-        overrides["embedding_type"] = embedding
-    if data_dir:
-        overrides["data_dir"] = data_dir
-
-    settings = update_settings(**overrides)
+    settings = update_settings(
+        docs_version=version,
+        docs_lang=lang,
+        embedding_type=embedding,
+        data_dir=data_dir,
+    )
 
     console.print("[bold]Building Prebuilt Index Archive[/bold]")
     console.print(f"  Version: {settings.docs_version}")
@@ -401,11 +493,11 @@ def prebuilt_list() -> None:
 
         console.print(table)
 
-    # Show installed
+    # Show currently installed index (for stdio mode)
     installed = mgr.get_installed_metadata()
     if installed:
         console.print()
-        console.print("[bold]Currently Installed:[/bold]")
+        console.print("[bold]Currently Installed (stdio mode):[/bold]")
         console.print(f"  Version: {installed.version}")
         console.print(f"  Language: {installed.lang}")
         console.print(f"  Embedding: {installed.embedding_model}")

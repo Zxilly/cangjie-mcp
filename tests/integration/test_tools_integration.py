@@ -10,6 +10,13 @@ from cangjie_mcp.config import Settings
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
+from cangjie_mcp.server.tools import (
+    GetCodeExamplesInput,
+    GetToolUsageInput,
+    GetTopicInput,
+    ListTopicsInput,
+    SearchDocsInput,
+)
 
 
 class TestToolsIntegration:
@@ -29,11 +36,11 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        results = tools.search_docs(ctx, query="变量声明", top_k=3)
+        results = tools.search_docs(ctx, SearchDocsInput(query="变量声明", top_k=3))
 
-        assert len(results) > 0
-        assert all(isinstance(r, dict) for r in results)
-        assert all("content" in r and "score" in r for r in results)
+        assert results["count"] > 0
+        assert all(isinstance(r, dict) for r in results["items"])
+        assert all("content" in r and "score" in r for r in results["items"])
 
     def test_get_topic_tool(
         self,
@@ -49,7 +56,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        result = tools.get_topic(ctx, topic="hello_world")
+        result = tools.get_topic(ctx, GetTopicInput(topic="hello_world"))
 
         assert result is not None
         assert "Hello World" in result["content"] or "Hello, Cangjie" in result["content"]
@@ -70,7 +77,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        result = tools.get_topic(ctx, topic="nonexistent_topic")
+        result = tools.get_topic(ctx, GetTopicInput(topic="nonexistent_topic"))
         assert result is None
 
     def test_list_topics_tool(
@@ -87,13 +94,13 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        all_topics = tools.list_topics(ctx)
+        result = tools.list_topics(ctx, ListTopicsInput())
 
-        assert "basics" in all_topics
-        assert "syntax" in all_topics
-        assert "tools" in all_topics
-        assert "hello_world" in all_topics["basics"]
-        assert "functions" in all_topics["syntax"]
+        assert "basics" in result["categories"]
+        assert "syntax" in result["categories"]
+        assert "tools" in result["categories"]
+        assert "hello_world" in result["categories"]["basics"]
+        assert "functions" in result["categories"]["syntax"]
 
     def test_list_topics_by_category(
         self,
@@ -109,12 +116,12 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        topics = tools.list_topics(ctx, category="tools")
+        result = tools.list_topics(ctx, ListTopicsInput(category="tools"))
 
-        assert len(topics) == 1
-        assert "tools" in topics
-        assert "cjc" in topics["tools"]
-        assert "cjpm" in topics["tools"]
+        assert result["total_categories"] == 1
+        assert "tools" in result["categories"]
+        assert "cjc" in result["categories"]["tools"]
+        assert "cjpm" in result["categories"]["tools"]
 
     def test_get_code_examples_tool(
         self,
@@ -130,7 +137,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        examples = tools.get_code_examples(ctx, feature="函数", top_k=3)
+        examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="函数", top_k=3))
 
         assert len(examples) > 0
         assert all(isinstance(e, dict) for e in examples)
@@ -150,7 +157,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        result = tools.get_tool_usage(ctx, tool_name="cjpm")
+        result = tools.get_tool_usage(ctx, GetToolUsageInput(tool_name="cjpm"))
 
         assert result is not None
         assert result["tool_name"] == "cjpm"
@@ -171,10 +178,12 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        results = tools.search_docs(ctx, query="编译", category="tools", top_k=3)
+        results = tools.search_docs(
+            ctx, SearchDocsInput(query="编译", category="tools", top_k=3)
+        )
 
-        assert len(results) > 0
-        assert all(r["category"] == "tools" for r in results)
+        assert results["count"] > 0
+        assert all(r["category"] == "tools" for r in results["items"])
 
     def test_get_topic_with_category(
         self,
@@ -190,7 +199,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        result = tools.get_topic(ctx, topic="cjc", category="tools")
+        result = tools.get_topic(ctx, GetTopicInput(topic="cjc", category="tools"))
 
         assert result is not None
         assert result["category"] == "tools"
@@ -210,7 +219,9 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        examples = tools.get_code_examples(ctx, feature="编译", top_k=5)
+        examples = tools.get_code_examples(
+            ctx, GetCodeExamplesInput(feature="编译", top_k=5)
+        )
 
         languages = {e["language"] for e in examples}
         # Should have bash or cangjie examples

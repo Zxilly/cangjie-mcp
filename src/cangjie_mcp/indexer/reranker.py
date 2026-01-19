@@ -1,7 +1,7 @@
 """Reranker abstraction layer for improving search result relevance.
 
 Uses LlamaIndex's native SentenceTransformerRerank for local reranking,
-and custom implementation for SiliconFlow API.
+and custom implementation for OpenAI-compatible rerank APIs (SiliconFlow, etc.).
 """
 
 from __future__ import annotations
@@ -127,10 +127,14 @@ class LocalReranker(RerankerProvider):
         return f"local:{self.model_name}"
 
 
-class SiliconFlowReranker(RerankerProvider):
-    """SiliconFlow reranker using their API."""
+class OpenAICompatibleReranker(RerankerProvider):
+    """Reranker using OpenAI-compatible rerank API.
 
-    DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1"
+    Works with SiliconFlow, Jina, and other providers that implement
+    the OpenAI-compatible /rerank endpoint.
+    """
+
+    DEFAULT_BASE_URL = "https://api.openai.com/v1"
     DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
 
     def __init__(
@@ -139,12 +143,12 @@ class SiliconFlowReranker(RerankerProvider):
         model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
     ) -> None:
-        """Initialize SiliconFlow reranker.
+        """Initialize OpenAI-compatible reranker.
 
         Args:
-            api_key: SiliconFlow API key
+            api_key: API key for the provider
             model: Reranker model name (default: BAAI/bge-reranker-v2-m3)
-            base_url: API base URL
+            base_url: API base URL (e.g., https://api.siliconflow.cn/v1)
         """
         self.api_key = api_key
         self.model = model
@@ -156,18 +160,18 @@ class SiliconFlowReranker(RerankerProvider):
         nodes: list[NodeWithScore],
         top_k: int = 5,
     ) -> list[NodeWithScore]:
-        """Rerank nodes using SiliconFlow API."""
+        """Rerank nodes using OpenAI-compatible rerank API."""
         if not nodes:
             return []
 
         import httpx
 
-        console.print(f"[blue]Reranking {len(nodes)} results with SiliconFlow API...[/blue]")
+        console.print(f"[blue]Reranking {len(nodes)} results with API ({self.base_url})...[/blue]")
 
         # Prepare documents for API call
         documents = [node.text for node in nodes]
 
-        # Call SiliconFlow rerank API
+        # Call rerank API
         response = httpx.post(
             f"{self.base_url}/rerank",
             headers={
@@ -202,7 +206,7 @@ class SiliconFlowReranker(RerankerProvider):
 
     def get_model_name(self) -> str:
         """Get the model name."""
-        return f"siliconflow:{self.model}"
+        return f"openai:{self.model}"
 
 
 def create_reranker_provider(
@@ -215,17 +219,17 @@ def create_reranker_provider(
     """Factory function to create reranker provider.
 
     Args:
-        rerank_type: Type of reranker (none, local, siliconflow)
+        rerank_type: Type of reranker (none, local, openai)
         local_model: Model name for local reranking
-        api_key: API key for SiliconFlow reranker
-        api_model: Model name for SiliconFlow reranker
-        api_base_url: Base URL for SiliconFlow API
+        api_key: API key for OpenAI-compatible reranker
+        api_model: Model name for reranking
+        api_base_url: Base URL for OpenAI-compatible API
 
     Returns:
         Configured reranker provider
 
     Raises:
-        ValueError: If SiliconFlow reranker is selected but API key is not set
+        ValueError: If OpenAI reranker is selected but API key is not set
     """
     if rerank_type == "none":
         return NoOpReranker()
@@ -233,13 +237,13 @@ def create_reranker_provider(
     if rerank_type == "local":
         return LocalReranker(model_name=local_model)
 
-    if rerank_type == "siliconflow":
+    if rerank_type == "openai":
         if not api_key:
-            raise ValueError("SiliconFlow API key is required for SiliconFlow reranker")
-        return SiliconFlowReranker(
+            raise ValueError("OpenAI API key is required for OpenAI-compatible reranker")
+        return OpenAICompatibleReranker(
             api_key=api_key,
-            model=api_model or SiliconFlowReranker.DEFAULT_MODEL,
-            base_url=api_base_url or SiliconFlowReranker.DEFAULT_BASE_URL,
+            model=api_model or OpenAICompatibleReranker.DEFAULT_MODEL,
+            base_url=api_base_url or OpenAICompatibleReranker.DEFAULT_BASE_URL,
         )
 
     raise ValueError(f"Unknown rerank type: {rerank_type}")
@@ -263,10 +267,10 @@ def get_reranker_provider() -> RerankerProvider:
 
         _reranker_provider = create_reranker_provider(
             rerank_type=settings.rerank_type,
-            local_model=settings.rerank_local_model,
-            api_key=settings.siliconflow_api_key,
-            api_model=settings.siliconflow_rerank_model,
-            api_base_url=settings.siliconflow_base_url,
+            local_model=settings.rerank_model,
+            api_key=settings.openai_api_key,
+            api_model=settings.rerank_model,
+            api_base_url=settings.openai_base_url,
         )
     return _reranker_provider
 

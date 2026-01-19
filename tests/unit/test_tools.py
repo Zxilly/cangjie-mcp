@@ -3,18 +3,19 @@
 from cangjie_mcp.server.tools import (
     CodeExample,
     SearchResult,
+    SearchResultItem,
     ToolExample,
     ToolUsageResult,
     TopicResult,
 )
 
 
-class TestSearchResult:
-    """Tests for SearchResult TypedDict."""
+class TestSearchResultItem:
+    """Tests for SearchResultItem TypedDict."""
 
     def test_create_result(self) -> None:
-        """Test creating SearchResult."""
-        result: SearchResult = {
+        """Test creating SearchResultItem."""
+        result: SearchResultItem = {
             "content": "Functions are defined using func keyword.",
             "score": 0.95,
             "file_path": "/docs/syntax/functions.md",
@@ -31,7 +32,7 @@ class TestSearchResult:
 
     def test_empty_fields(self) -> None:
         """Test with empty string fields."""
-        result: SearchResult = {
+        result: SearchResultItem = {
             "content": "Some content",
             "score": 0.5,
             "file_path": "",
@@ -41,6 +42,37 @@ class TestSearchResult:
         }
         assert result["content"] == "Some content"
         assert result["file_path"] == ""
+
+
+class TestSearchResult:
+    """Tests for SearchResult with pagination TypedDict."""
+
+    def test_create_result_with_pagination(self) -> None:
+        """Test creating SearchResult with pagination metadata."""
+        items: list[SearchResultItem] = [
+            {
+                "content": "Functions are defined using func keyword.",
+                "score": 0.95,
+                "file_path": "/docs/syntax/functions.md",
+                "category": "syntax",
+                "topic": "functions",
+                "title": "Functions",
+            }
+        ]
+        result: SearchResult = {
+            "items": items,
+            "total": 10,
+            "count": 1,
+            "offset": 0,
+            "has_more": True,
+            "next_offset": 1,
+        }
+        assert result["total"] == 10
+        assert result["count"] == 1
+        assert result["has_more"] is True
+        assert result["next_offset"] == 1
+        assert len(result["items"]) == 1
+        assert result["items"][0]["content"] == "Functions are defined using func keyword."
 
 
 class TestTopicResult:

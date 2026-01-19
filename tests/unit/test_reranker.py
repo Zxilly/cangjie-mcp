@@ -7,7 +7,7 @@ import pytest
 from cangjie_mcp.indexer.reranker import (
     LocalReranker,
     NoOpReranker,
-    SiliconFlowReranker,
+    OpenAICompatibleReranker,
     create_reranker_provider,
     get_reranker_provider,
     reset_reranker_provider,
@@ -32,7 +32,7 @@ class TestNoOpReranker:
             node.text = f"Document {i}"
             node.score = 1.0 - i * 0.1
 
-        result = reranker.rerank(query="test query", nodes=mock_nodes, top_k=3)
+        result = reranker.rerank(query="test query", nodes=mock_nodes, top_k=3)  # type: ignore[arg-type]
 
         assert len(result) == 3
         assert result == mock_nodes[:3]
@@ -86,19 +86,19 @@ class TestLocalReranker:
         assert result == []
 
 
-class TestSiliconFlowReranker:
-    """Tests for SiliconFlowReranker class."""
+class TestOpenAICompatibleReranker:
+    """Tests for OpenAICompatibleReranker class."""
 
     def test_init_defaults(self) -> None:
-        """Test SiliconFlowReranker with default values."""
-        reranker = SiliconFlowReranker(api_key="test-key")
+        """Test OpenAICompatibleReranker with default values."""
+        reranker = OpenAICompatibleReranker(api_key="test-key")
         assert reranker.api_key == "test-key"
         assert reranker.model == "BAAI/bge-reranker-v2-m3"
-        assert reranker.base_url == "https://api.siliconflow.cn/v1"
+        assert reranker.base_url == "https://api.openai.com/v1"
 
     def test_init_custom_values(self) -> None:
-        """Test SiliconFlowReranker with custom values."""
-        reranker = SiliconFlowReranker(
+        """Test OpenAICompatibleReranker with custom values."""
+        reranker = OpenAICompatibleReranker(
             api_key="custom-key",
             model="custom-model",
             base_url="https://custom.api.com/v1/",
@@ -109,12 +109,12 @@ class TestSiliconFlowReranker:
 
     def test_get_model_name(self) -> None:
         """Test get_model_name returns correct format."""
-        reranker = SiliconFlowReranker(api_key="test-key", model="test-model")
-        assert reranker.get_model_name() == "siliconflow:test-model"
+        reranker = OpenAICompatibleReranker(api_key="test-key", model="test-model")
+        assert reranker.get_model_name() == "openai:test-model"
 
     def test_rerank_empty_nodes(self) -> None:
         """Test rerank with empty node list."""
-        reranker = SiliconFlowReranker(api_key="test-key")
+        reranker = OpenAICompatibleReranker(api_key="test-key")
         result = reranker.rerank(query="test", nodes=[], top_k=5)
         assert result == []
 
@@ -130,7 +130,7 @@ class TestSiliconFlowReranker:
         }
         mock_post.return_value = mock_response
 
-        reranker = SiliconFlowReranker(api_key="test-key")
+        reranker = OpenAICompatibleReranker(api_key="test-key")
 
         # Create mock nodes
         mock_nodes = []
@@ -175,33 +175,33 @@ class TestCreateRerankerProvider:
         assert isinstance(provider, LocalReranker)
         assert provider.model_name == "test-model"
 
-    def test_create_siliconflow_provider(self) -> None:
-        """Test creating SiliconFlow reranker provider."""
+    def test_create_openai_provider(self) -> None:
+        """Test creating OpenAI-compatible reranker provider."""
         provider = create_reranker_provider(
-            rerank_type="siliconflow",
+            rerank_type="openai",
             api_key="test-key",
             api_model="test-model",
             api_base_url="https://custom.api.com/v1",
         )
-        assert isinstance(provider, SiliconFlowReranker)
+        assert isinstance(provider, OpenAICompatibleReranker)
         assert provider.api_key == "test-key"
         assert provider.model == "test-model"
         assert provider.base_url == "https://custom.api.com/v1"
 
-    def test_create_siliconflow_provider_defaults(self) -> None:
-        """Test creating SiliconFlow reranker with default model and URL."""
+    def test_create_openai_provider_defaults(self) -> None:
+        """Test creating OpenAI-compatible reranker with default model and URL."""
         provider = create_reranker_provider(
-            rerank_type="siliconflow",
+            rerank_type="openai",
             api_key="test-key",
         )
-        assert isinstance(provider, SiliconFlowReranker)
+        assert isinstance(provider, OpenAICompatibleReranker)
         assert provider.model == "BAAI/bge-reranker-v2-m3"
-        assert provider.base_url == "https://api.siliconflow.cn/v1"
+        assert provider.base_url == "https://api.openai.com/v1"
 
-    def test_create_siliconflow_no_key(self) -> None:
-        """Test error when SiliconFlow key is not set."""
-        with pytest.raises(ValueError, match="SiliconFlow API key is required"):
-            create_reranker_provider(rerank_type="siliconflow")
+    def test_create_openai_no_key(self) -> None:
+        """Test error when OpenAI API key is not set."""
+        with pytest.raises(ValueError, match="OpenAI API key is required"):
+            create_reranker_provider(rerank_type="openai")
 
     def test_create_unknown_type(self) -> None:
         """Test error for unknown reranker type."""
@@ -228,10 +228,9 @@ class TestGetRerankerProvider:
         """Test get_reranker_provider with none type."""
         mock_settings = MagicMock()
         mock_settings.rerank_type = "none"
-        mock_settings.rerank_local_model = "BAAI/bge-reranker-v2-m3"
-        mock_settings.siliconflow_api_key = None
-        mock_settings.siliconflow_rerank_model = None
-        mock_settings.siliconflow_base_url = None
+        mock_settings.rerank_model = "BAAI/bge-reranker-v2-m3"
+        mock_settings.openai_api_key = None
+        mock_settings.openai_base_url = None
         mock_get_settings.return_value = mock_settings
 
         provider = get_reranker_provider()
@@ -245,10 +244,9 @@ class TestGetRerankerProvider:
         """Test get_reranker_provider with local type."""
         mock_settings = MagicMock()
         mock_settings.rerank_type = "local"
-        mock_settings.rerank_local_model = "custom-model"
-        mock_settings.siliconflow_api_key = None
-        mock_settings.siliconflow_rerank_model = None
-        mock_settings.siliconflow_base_url = None
+        mock_settings.rerank_model = "custom-model"
+        mock_settings.openai_api_key = None
+        mock_settings.openai_base_url = None
         mock_get_settings.return_value = mock_settings
 
         provider = get_reranker_provider()
@@ -263,10 +261,9 @@ class TestGetRerankerProvider:
         """Test that provider is cached."""
         mock_settings = MagicMock()
         mock_settings.rerank_type = "none"
-        mock_settings.rerank_local_model = "test-model"
-        mock_settings.siliconflow_api_key = None
-        mock_settings.siliconflow_rerank_model = None
-        mock_settings.siliconflow_base_url = None
+        mock_settings.rerank_model = "test-model"
+        mock_settings.openai_api_key = None
+        mock_settings.openai_base_url = None
         mock_get_settings.return_value = mock_settings
 
         provider1 = get_reranker_provider()
@@ -286,10 +283,9 @@ class TestResetRerankerProvider:
         """Test resetting the global provider."""
         mock_settings = MagicMock()
         mock_settings.rerank_type = "none"
-        mock_settings.rerank_local_model = "test-model"
-        mock_settings.siliconflow_api_key = None
-        mock_settings.siliconflow_rerank_model = None
-        mock_settings.siliconflow_base_url = None
+        mock_settings.rerank_model = "test-model"
+        mock_settings.openai_api_key = None
+        mock_settings.openai_base_url = None
         mock_get_settings.return_value = mock_settings
 
         provider1 = get_reranker_provider()

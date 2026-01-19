@@ -13,7 +13,7 @@ from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embeddi
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.reranker import LocalReranker, reset_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
-from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
+from tests.constants import CANGJIE_LOCAL_MODEL
 
 # Default local reranker model for testing
 CANGJIE_LOCAL_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"

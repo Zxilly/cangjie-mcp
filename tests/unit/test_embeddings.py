@@ -1,7 +1,7 @@
 """Tests for indexer/embeddings.py embedding providers."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch  # noqa: F401
+from unittest.mock import MagicMock, patch
 
 import pytest
 

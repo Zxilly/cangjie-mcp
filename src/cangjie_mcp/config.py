@@ -10,25 +10,91 @@ Environment variable mapping:
 - CANGJIE_DOCS_LANG -> docs_lang
 - CANGJIE_EMBEDDING_TYPE -> embedding_type
 - CANGJIE_LOCAL_MODEL -> local_model
-- CANGJIE_RERANK_TYPE -> rerank_type
-- CANGJIE_RERANK_LOCAL_MODEL -> rerank_local_model
+- CANGJIE_RERANK_TYPE -> rerank_type (none/local/openai)
+- CANGJIE_RERANK_MODEL -> rerank_model
 - CANGJIE_RERANK_TOP_K -> rerank_top_k
 - CANGJIE_RERANK_INITIAL_K -> rerank_initial_k
 - CANGJIE_DATA_DIR -> data_dir
 - CANGJIE_PREBUILT_URL -> prebuilt_url
+- CANGJIE_INDEXES -> indexes (for multi-index HTTP mode)
+- CANGJIE_HTTP_HOST -> http_host
+- CANGJIE_HTTP_PORT -> http_port
 - OPENAI_API_KEY -> openai_api_key
 - OPENAI_BASE_URL -> openai_base_url
-- OPENAI_MODEL -> openai_model
-- SILICONFLOW_API_KEY -> siliconflow_api_key
-- SILICONFLOW_BASE_URL -> siliconflow_base_url
-- SILICONFLOW_RERANK_MODEL -> siliconflow_rerank_model
+- OPENAI_MODEL -> openai_model (for embeddings)
+
+Note: SiliconFlow and other OpenAI-compatible APIs can be used by setting
+OPENAI_BASE_URL to the provider's endpoint (e.g., https://api.siliconflow.cn/v1).
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@dataclass(frozen=True)
+class IndexKey:
+    """Index identifier for multi-index support.
+
+    An IndexKey uniquely identifies a documentation index by version and language.
+    It is hashable and can be used as a dictionary key.
+    """
+
+    version: str
+    lang: str
+
+    def __str__(self) -> str:
+        """Return string representation as 'version:lang'."""
+        return f"{self.version}:{self.lang}"
+
+    def __repr__(self) -> str:
+        """Return repr string."""
+        return f"IndexKey(version={self.version!r}, lang={self.lang!r})"
+
+    @classmethod
+    def from_string(cls, s: str) -> "IndexKey":
+        """Parse IndexKey from 'version:lang' string format.
+
+        Args:
+            s: String in 'version:lang' format (e.g., 'v1:zh', 'latest:en')
+
+        Returns:
+            IndexKey instance
+
+        Raises:
+            ValueError: If string format is invalid
+        """
+        parts = s.split(":")
+        if len(parts) != 2:
+            raise ValueError(
+                f"Invalid IndexKey format: '{s}'. Expected 'version:lang' (e.g., 'v1:zh')"
+            )
+        version, lang = parts
+        if not version or not lang:
+            raise ValueError(f"Invalid IndexKey format: '{s}'. Version and lang cannot be empty")
+        return cls(version=version.strip(), lang=lang.strip())
+
+    @classmethod
+    def parse_list(cls, indexes_str: str) -> list["IndexKey"]:
+        """Parse comma-separated list of index keys.
+
+        Args:
+            indexes_str: Comma-separated string (e.g., 'v1:zh,latest:en')
+
+        Returns:
+            List of IndexKey instances
+        """
+        if not indexes_str or not indexes_str.strip():
+            return []
+        return [cls.from_string(s.strip()) for s in indexes_str.split(",") if s.strip()]
+
+    @property
+    def path_segment(self) -> str:
+        """Return path segment for URL routing (e.g., 'v1/zh')."""
+        return f"{self.version}/{self.lang}"
 
 
 def _get_default_data_dir() -> Path:
@@ -64,12 +130,12 @@ class Settings(BaseSettings):
     )
 
     # Rerank settings
-    rerank_type: Literal["none", "local", "siliconflow"] = Field(
-        default="none", description="Reranker type (none to disable)"
+    rerank_type: Literal["none", "local", "openai"] = Field(
+        default="none", description="Reranker type (none/local/openai)"
     )
-    rerank_local_model: str = Field(
+    rerank_model: str = Field(
         default="BAAI/bge-reranker-v2-m3",
-        description="Local cross-encoder model for reranking",
+        description="Rerank model name (used for both local and OpenAI-compatible reranking)",
     )
     rerank_top_k: int = Field(
         default=5, description="Number of results to return after reranking"
@@ -87,38 +153,39 @@ class Settings(BaseSettings):
     # Prebuilt index URL
     prebuilt_url: str | None = Field(default=None, description="Prebuilt index download URL")
 
-    # OpenAI settings (accepts both field name and OPENAI_ env var)
+    # OpenAI-compatible API settings
+    # These settings work with OpenAI, SiliconFlow, and other compatible providers.
+    # Set OPENAI_BASE_URL to use alternative providers (e.g., https://api.siliconflow.cn/v1)
     openai_api_key: str | None = Field(
         default=None,
-        description="OpenAI API Key",
+        description="OpenAI-compatible API Key (works with SiliconFlow, etc.)",
         validation_alias=AliasChoices("openai_api_key", "OPENAI_API_KEY"),
     )
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
-        description="OpenAI API Base URL",
+        description="OpenAI-compatible API Base URL",
         validation_alias=AliasChoices("openai_base_url", "OPENAI_BASE_URL"),
     )
     openai_model: str = Field(
         default="text-embedding-3-small",
-        description="OpenAI embedding model",
+        description="OpenAI-compatible embedding model",
         validation_alias=AliasChoices("openai_model", "OPENAI_MODEL"),
     )
 
-    # SiliconFlow settings (for rerank API)
-    siliconflow_api_key: str | None = Field(
+    # HTTP server settings (for serve command)
+    http_host: str = Field(
+        default="127.0.0.1",
+        description="HTTP server host address",
+    )
+    http_port: int = Field(
+        default=8000,
+        description="HTTP server port",
+    )
+
+    # Multi-index settings (for HTTP mode)
+    indexes: str | None = Field(
         default=None,
-        description="SiliconFlow API Key for reranking",
-        validation_alias=AliasChoices("siliconflow_api_key", "SILICONFLOW_API_KEY"),
-    )
-    siliconflow_base_url: str = Field(
-        default="https://api.siliconflow.cn/v1",
-        description="SiliconFlow API Base URL",
-        validation_alias=AliasChoices("siliconflow_base_url", "SILICONFLOW_BASE_URL"),
-    )
-    siliconflow_rerank_model: str = Field(
-        default="BAAI/bge-reranker-v2-m3",
-        description="SiliconFlow rerank model",
-        validation_alias=AliasChoices("siliconflow_rerank_model", "SILICONFLOW_RERANK_MODEL"),
+        description="Comma-separated list of indexes to load (e.g., 'v1:zh,latest:en')",
     )
 
     @property
@@ -193,7 +260,7 @@ def update_settings(
     embedding_type: str | None = None,
     local_model: str | None = None,
     rerank_type: str | None = None,
-    rerank_local_model: str | None = None,
+    rerank_model: str | None = None,
     rerank_top_k: int | None = None,
     rerank_initial_k: int | None = None,
     data_dir: Path | None = None,
@@ -201,9 +268,9 @@ def update_settings(
     openai_api_key: str | None = None,
     openai_base_url: str | None = None,
     openai_model: str | None = None,
-    siliconflow_api_key: str | None = None,
-    siliconflow_base_url: str | None = None,
-    siliconflow_rerank_model: str | None = None,
+    http_host: str | None = None,
+    http_port: int | None = None,
+    indexes: str | None = None,
 ) -> Settings:
     """Update settings with new values (used by CLI to override env vars).
 
@@ -220,7 +287,7 @@ def update_settings(
         "embedding_type": embedding_type,
         "local_model": local_model,
         "rerank_type": rerank_type,
-        "rerank_local_model": rerank_local_model,
+        "rerank_model": rerank_model,
         "rerank_top_k": rerank_top_k,
         "rerank_initial_k": rerank_initial_k,
         "data_dir": data_dir,
@@ -228,9 +295,9 @@ def update_settings(
         "openai_api_key": openai_api_key,
         "openai_base_url": openai_base_url,
         "openai_model": openai_model,
-        "siliconflow_api_key": siliconflow_api_key,
-        "siliconflow_base_url": siliconflow_base_url,
-        "siliconflow_rerank_model": siliconflow_rerank_model,
+        "http_host": http_host,
+        "http_port": http_port,
+        "indexes": indexes,
     }
 
     for key, value in overrides.items():
