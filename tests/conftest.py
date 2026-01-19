@@ -46,9 +46,7 @@ def pytest_collection_modifyitems(items: list["Item"]) -> None:
 def has_openai_credentials() -> bool:
     """Check if OpenAI credentials are available."""
     settings = Settings()
-    return bool(
-        settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here"
-    )
+    return bool(settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here")
 
 
 @pytest.fixture

@@ -23,9 +23,7 @@ from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 def _has_openai_credentials() -> bool:
     """Check if OpenAI credentials are available."""
     settings = Settings()
-    return bool(
-        settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here"
-    )
+    return bool(settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here")
 
 
 class TestLocalEmbeddingIntegration:

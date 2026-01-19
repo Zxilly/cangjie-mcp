@@ -160,9 +160,7 @@ class MultiIndexStore:
         if not metadata_path.exists():
             raise ValueError(f"Invalid archive from {url}: missing metadata file")
 
-        metadata = PrebuiltMetadata.model_validate_json(
-            metadata_path.read_text(encoding="utf-8")
-        )
+        metadata = PrebuiltMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
 
         # Verify chroma_db exists
         chroma_path = temp_dir / "chroma_db"
@@ -172,9 +170,7 @@ class MultiIndexStore:
         # Create IndexKey from metadata
         key = IndexKey(version=metadata.version, lang=metadata.lang)
 
-        console.print(
-            f"  [green]Loaded: {key} (embedding: {metadata.embedding_model})[/green]"
-        )
+        console.print(f"  [green]Loaded: {key} (embedding: {metadata.embedding_model})[/green]")
 
         # Create VectorStore
         reranker = get_reranker_provider() if self.enable_rerank else None

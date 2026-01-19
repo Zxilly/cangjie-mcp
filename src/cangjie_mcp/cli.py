@@ -194,8 +194,7 @@ def serve(
     indexes: Annotated[
         str | None,
         typer.Option(
-            "--indexes", "-i",
-            help="Comma-separated list of URLs to prebuilt index archives"
+            "--indexes", "-i", help="Comma-separated list of URLs to prebuilt index archives"
         ),
     ] = None,
     host: Annotated[

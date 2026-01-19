@@ -138,9 +138,7 @@ class Settings(BaseSettings):
         default="BAAI/bge-reranker-v2-m3",
         description="Rerank model name (used for both local and OpenAI-compatible reranking)",
     )
-    rerank_top_k: int = Field(
-        default=5, description="Number of results to return after reranking"
-    )
+    rerank_top_k: int = Field(default=5, description="Number of results to return after reranking")
     rerank_initial_k: int = Field(
         default=20, description="Number of candidates to retrieve before reranking"
     )

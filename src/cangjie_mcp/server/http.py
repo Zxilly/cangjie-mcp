@@ -75,28 +75,34 @@ class MultiIndexHTTPServer:
 
     async def _health_check(self, _request: Request) -> Response:
         """Health check endpoint."""
-        return JSONResponse({
-            "status": "healthy",
-            "indexes": [str(k) for k in self._mcp_servers],
-        })
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "indexes": [str(k) for k in self._mcp_servers],
+            }
+        )
 
     async def _list_indexes(self, _request: Request) -> Response:
         """List loaded indexes endpoint."""
         indexes = []
         for key, loaded in self._loaded_indexes.items():
-            indexes.append({
-                "version": key.version,
-                "lang": key.lang,
-                "path": f"/{key.path_segment}",
-                "mcp_endpoint": f"/{key.path_segment}/mcp",
-                "source_url": loaded.url,
-                "embedding_model": loaded.metadata.embedding_model,
-            })
+            indexes.append(
+                {
+                    "version": key.version,
+                    "lang": key.lang,
+                    "path": f"/{key.path_segment}",
+                    "mcp_endpoint": f"/{key.path_segment}/mcp",
+                    "source_url": loaded.url,
+                    "embedding_model": loaded.metadata.embedding_model,
+                }
+            )
 
-        return JSONResponse({
-            "indexes": indexes,
-            "total": len(indexes),
-        })
+        return JSONResponse(
+            {
+                "indexes": indexes,
+                "total": len(indexes),
+            }
+        )
 
     def _create_404_handler(self) -> ExceptionHandler:
         """Create a 404 exception handler with access to server state."""
@@ -179,7 +185,9 @@ class MultiIndexHTTPServer:
 
         console.print()
         console.print("[bold green]Server ready![/bold green]")
-        console.print(f"  Health: http://{self.settings.http_host}:{self.settings.http_port}/health")
+        console.print(
+            f"  Health: http://{self.settings.http_host}:{self.settings.http_port}/health"
+        )
         console.print(
             f"  Indexes: http://{self.settings.http_host}:{self.settings.http_port}/indexes"
         )

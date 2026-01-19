@@ -333,11 +333,7 @@ def list_topics(ctx: ToolContext, params: ListTopicsInput) -> TopicsListResult:
         TopicsListResult with categories mapping and counts
     """
     cats = [params.category] if params.category else ctx.loader.get_categories()
-    categories = {
-        cat: topics
-        for cat in cats
-        if (topics := ctx.loader.get_topics_in_category(cat))
-    }
+    categories = {cat: topics for cat in cats if (topics := ctx.loader.get_topics_in_category(cat))}
 
     return TopicsListResult(
         categories=categories,

@@ -340,9 +340,7 @@ def create_vector_store(
 
     embedding_provider = get_embedding_provider(settings)
     reranker = (
-        get_reranker_provider(settings)
-        if with_rerank and settings.rerank_type != "none"
-        else None
+        get_reranker_provider(settings) if with_rerank and settings.rerank_type != "none" else None
     )
 
     return VectorStore(

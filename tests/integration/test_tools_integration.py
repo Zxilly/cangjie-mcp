@@ -178,9 +178,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        results = tools.search_docs(
-            ctx, SearchDocsInput(query="编译", category="tools", top_k=3)
-        )
+        results = tools.search_docs(ctx, SearchDocsInput(query="编译", category="tools", top_k=3))
 
         assert results["count"] > 0
         assert all(r["category"] == "tools" for r in results["items"])
@@ -219,9 +217,7 @@ class TestToolsIntegration:
             loader=loader,
         )
 
-        examples = tools.get_code_examples(
-            ctx, GetCodeExamplesInput(feature="编译", top_k=5)
-        )
+        examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="编译", top_k=5))
 
         languages = {e["language"] for e in examples}
         # Should have bash or cangjie examples
