@@ -18,13 +18,13 @@ on:
       embedding_type:
         description: 'Embedding type'
         required: true
-        default: 'local'
+        default: 'openai'
         type: choice
         options:
           - local
           - openai
       embedding_model:
-        description: 'Embedding model name'
+        description: 'Embedding model name (local: paraphrase-multilingual-MiniLM-L12-v2, openai: Qwen/Qwen3-Embedding-8B)'
         required: false
         default: 'Qwen/Qwen3-Embedding-8B'
 

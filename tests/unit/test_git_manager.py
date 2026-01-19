@@ -134,7 +134,7 @@ class TestGitManagerWithMockRepo:
     def test_fetch(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test fetch from remote."""
         manager_with_mock_repo.fetch()
-        mock_repo.remotes.origin.fetch.assert_called_once_with(tags=True)
+        mock_repo.remotes.origin.fetch.assert_called_once_with(tags=True, prune=True)
 
     def test_pull_on_branch(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test pull when on a branch."""
@@ -186,7 +186,7 @@ class TestGitManagerClone:
         assert result == mock_cloned_repo
 
     def test_ensure_cloned_when_already_cloned(self, temp_data_dir: Path) -> None:
-        """Test ensure_cloned returns existing repo."""
+        """Test ensure_cloned returns existing repo and fetches."""
         repo_dir = temp_data_dir / "docs_repo"
         repo_dir.mkdir(parents=True)
         (repo_dir / ".git").mkdir()
@@ -197,6 +197,23 @@ class TestGitManagerClone:
 
         result = manager.ensure_cloned()
         assert result == mock_repo
+        # Verify fetch was called
+        mock_repo.remotes.origin.fetch.assert_called_once_with(tags=True, prune=True)
+
+    def test_ensure_cloned_without_fetch(self, temp_data_dir: Path) -> None:
+        """Test ensure_cloned with fetch=False skips fetching."""
+        repo_dir = temp_data_dir / "docs_repo"
+        repo_dir.mkdir(parents=True)
+        (repo_dir / ".git").mkdir()
+
+        mock_repo = MagicMock()
+        manager = GitManager(repo_dir)
+        manager._repo = mock_repo
+
+        result = manager.ensure_cloned(fetch=False)
+        assert result == mock_repo
+        # Verify fetch was NOT called
+        mock_repo.remotes.origin.fetch.assert_not_called()
 
 
 class TestDocsRepoUrl:

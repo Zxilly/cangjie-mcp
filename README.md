@@ -335,12 +335,20 @@ claude mcp remove cangjie
 
 ## 开发
 
+### 环境要求
+
+- Python 3.13+
+
+### 安装开发依赖
+
 ```bash
-
-# 安装开发依赖
 uv sync --all-extras
+```
 
-# 运行测试
+### 运行测试
+
+```bash
+# 运行所有测试
 uv run pytest
 
 # 运行单元测试
@@ -348,6 +356,45 @@ uv run pytest tests/unit/
 
 # 运行集成测试
 uv run pytest tests/integration/
+```
+
+### 代码检查
+
+```bash
+# 代码风格检查
+uv run ruff check src/ tests/
+
+# 自动修复
+uv run ruff check src/ tests/ --fix
+
+# 类型检查
+uv run mypy src/
+uv run pyright src/
+```
+
+### 项目结构
+
+```
+src/cangjie_mcp/
+├── __init__.py
+├── cli.py              # CLI 入口 (typer)
+├── config.py           # 配置管理 (pydantic-settings)
+├── utils.py            # 通用工具函数
+├── indexer/            # 文档索引模块
+│   ├── chunker.py      # 文档分块
+│   ├── embeddings.py   # 嵌入模型抽象层
+│   ├── loader.py       # 文档加载器
+│   ├── multi_store.py  # 多索引管理
+│   ├── reranker.py     # 重排序抽象层
+│   └── store.py        # 向量存储 (ChromaDB)
+├── prebuilt/           # 预构建索引模块
+│   └── manager.py      # 索引构建/下载/安装
+├── repo/               # 文档仓库管理
+│   └── git_manager.py  # Git 操作
+└── server/             # MCP 服务器
+    ├── app.py          # MCP 应用 (FastMCP)
+    ├── http.py         # HTTP 服务器 (多索引)
+    └── tools.py        # MCP 工具实现
 ```
 
 ## 许可证

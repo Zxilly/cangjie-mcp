@@ -48,8 +48,14 @@ class GitManager:
         console.print("[green]Repository cloned successfully.[/green]")
         return self._repo
 
-    def ensure_cloned(self) -> Repo:
-        """Ensure repository is cloned, clone if not.
+    def ensure_cloned(self, fetch: bool = True) -> Repo:
+        """Ensure repository is cloned and up-to-date.
+
+        If the repository already exists, fetches all tags and commits
+        from remote to ensure we have the latest versions available.
+
+        Args:
+            fetch: Whether to fetch from remote if repo exists (default: True)
 
         Returns:
             The repository
@@ -57,8 +63,24 @@ class GitManager:
         if self.is_cloned():
             repo = self.repo
             if repo is not None:
+                if fetch:
+                    self._fetch_all(repo)
                 return repo
         return self.clone()
+
+    def _fetch_all(self, repo: Repo) -> None:
+        """Fetch all tags and commits from remote.
+
+        Args:
+            repo: The git repository
+        """
+        console.print("[blue]Fetching latest tags and commits...[/blue]")
+        try:
+            # Fetch all branches and tags
+            repo.remotes.origin.fetch(tags=True, prune=True)
+            console.print("[green]Fetch complete.[/green]")
+        except GitCommandError as e:
+            console.print(f"[yellow]Warning: Failed to fetch from remote: {e}[/yellow]")
 
     def list_tags(self) -> list[str]:
         """List all available tags in the repository.
@@ -123,14 +145,13 @@ class GitManager:
 
     def fetch(self) -> None:
         """Fetch latest changes from remote."""
-        repo = self.ensure_cloned()
-        console.print("[blue]Fetching latest changes...[/blue]")
-        repo.remotes.origin.fetch(tags=True)
-        console.print("[green]Fetch complete.[/green]")
+        repo = self.ensure_cloned(fetch=False)
+        self._fetch_all(repo)
 
     def pull(self) -> None:
         """Pull latest changes (for branches, not tags)."""
-        repo = self.ensure_cloned()
+        repo = self.ensure_cloned(fetch=False)
+        self._fetch_all(repo)
         if not repo.head.is_detached:
             console.print("[blue]Pulling latest changes...[/blue]")
             repo.remotes.origin.pull()
