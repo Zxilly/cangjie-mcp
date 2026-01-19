@@ -15,18 +15,6 @@ on:
         options:
           - zh
           - en
-      embedding_type:
-        description: 'Embedding type'
-        required: true
-        default: 'openai'
-        type: choice
-        options:
-          - local
-          - openai
-      embedding_model:
-        description: 'Embedding model name (local: paraphrase-multilingual-MiniLM-L12-v2, openai: Qwen/Qwen3-Embedding-8B)'
-        required: false
-        default: 'Qwen/Qwen3-Embedding-8B'
 
 env:
   PYTHON_VERSION: "3.13"
@@ -57,12 +45,12 @@ jobs:
           uv run cangjie-mcp prebuilt build \
             --version ${{ github.event.inputs.docs_version }} \
             --lang ${{ github.event.inputs.docs_lang }} \
-            --embedding ${{ github.event.inputs.embedding_type }} \
-            --embedding-model "${{ github.event.inputs.embedding_model }}" \
+            --embedding openai \
             --data-dir ./data
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
 
       - name: Find archive file
         id: find-archive
