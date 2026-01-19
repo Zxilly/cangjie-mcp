@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import tarfile
 import tempfile
@@ -11,7 +10,8 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+from cangjie_mcp.utils import create_download_progress
 
 console = Console()
 
@@ -103,14 +103,13 @@ class PrebuiltManager:
             shutil.copytree(self.chroma_dir, temp_chroma)
 
             # Create metadata file
-            metadata = {
-                "version": version,
-                "lang": lang,
-                "embedding_model": embedding_model,
-                "format_version": "1.0",
-            }
+            metadata = PrebuiltMetadata(
+                version=version,
+                lang=lang,
+                embedding_model=embedding_model,
+            )
             metadata_path = temp_path / ARCHIVE_METADATA_FILE
-            metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            metadata_path.write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
 
             # Create tar.gz archive
             with tarfile.open(output_path, "w:gz") as tar:
@@ -154,13 +153,7 @@ class PrebuiltManager:
             response.raise_for_status()
             total = int(response.headers.get("content-length", 0))
 
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                console=console,
-            ) as progress:
+            with create_download_progress() as progress:
                 task = progress.add_task("Downloading...", total=total)
 
                 with output_path.open("wb") as f:

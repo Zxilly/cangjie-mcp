@@ -26,7 +26,7 @@ def initialize_and_index(settings: Settings) -> None:
     from cangjie_mcp.indexer.chunker import create_chunker
     from cangjie_mcp.indexer.embeddings import get_embedding_provider
     from cangjie_mcp.indexer.loader import DocumentLoader
-    from cangjie_mcp.indexer.store import VectorStore
+    from cangjie_mcp.indexer.store import create_vector_store
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
     from cangjie_mcp.repo.git_manager import GitManager
 
@@ -46,11 +46,7 @@ def initialize_and_index(settings: Settings) -> None:
         return
 
     # Check existing index
-    embedding_provider = get_embedding_provider(settings)
-    store = VectorStore(
-        db_path=settings.chroma_db_dir,
-        embedding_provider=embedding_provider,
-    )
+    store = create_vector_store(settings, with_rerank=False)
 
     if store.is_indexed() and store.version_matches(settings.docs_version, settings.docs_lang):
         console.print(
@@ -79,6 +75,7 @@ def initialize_and_index(settings: Settings) -> None:
         raise typer.Exit(1)
 
     # Chunk documents
+    embedding_provider = get_embedding_provider(settings)
     chunker = create_chunker(embedding_provider)
     nodes = chunker.chunk_documents(documents, use_semantic=True)
 
@@ -394,6 +391,7 @@ def prebuilt_build(
         docs_version=version,
         docs_lang=lang,
         embedding_type=embedding,
+        local_model=embedding_model,
         data_dir=data_dir,
     )
 
@@ -427,7 +425,7 @@ def prebuilt_build(
 
     # Step 3: Chunk documents
     console.print("[blue]Chunking documents...[/blue]")
-    embedding_provider = create_embedding_provider(settings, model_override=embedding_model)
+    embedding_provider = create_embedding_provider(settings)
     chunker = create_chunker(embedding_provider)
     nodes = chunker.chunk_documents(documents, use_semantic=True)
     console.print(f"  Created {len(nodes)} chunks")

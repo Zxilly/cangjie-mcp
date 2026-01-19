@@ -8,10 +8,8 @@ from typing import TypedDict
 from pydantic import BaseModel, ConfigDict, Field
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.embeddings import get_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader, extract_code_blocks
-from cangjie_mcp.indexer.reranker import get_reranker_provider
-from cangjie_mcp.indexer.store import VectorStore
+from cangjie_mcp.indexer.store import VectorStore, create_vector_store
 
 # =============================================================================
 # Input Models (Pydantic)
@@ -213,50 +211,24 @@ class ToolContext:
     loader: DocumentLoader
 
 
-def create_tool_context(settings: Settings) -> ToolContext:
+def create_tool_context(
+    settings: Settings,
+    store: VectorStore | None = None,
+) -> ToolContext:
     """Create tool context from settings.
 
     Args:
         settings: Application settings
+        store: Optional pre-loaded VectorStore. If None, creates a new one.
+               Used by HTTP server where store is already loaded by MultiIndexStore.
 
     Returns:
         ToolContext with initialized components
     """
-    embedding_provider = get_embedding_provider(settings)
-    reranker = get_reranker_provider() if settings.rerank_type != "none" else None
-    store = VectorStore(
-        db_path=settings.chroma_db_dir,
-        embedding_provider=embedding_provider,
-        reranker=reranker,
-    )
-    loader = DocumentLoader(settings.docs_source_dir)
-
     return ToolContext(
         settings=settings,
-        store=store,
-        loader=loader,
-    )
-
-
-def create_tool_context_with_store(settings: Settings, store: VectorStore) -> ToolContext:
-    """Create tool context with a pre-loaded VectorStore.
-
-    This is used by the HTTP server where the store is already loaded
-    by MultiIndexStore.
-
-    Args:
-        settings: Application settings
-        store: Pre-loaded VectorStore instance
-
-    Returns:
-        ToolContext with the provided store
-    """
-    loader = DocumentLoader(settings.docs_source_dir)
-
-    return ToolContext(
-        settings=settings,
-        store=store,
-        loader=loader,
+        store=store if store is not None else create_vector_store(settings),
+        loader=DocumentLoader(settings.docs_source_dir),
     )
 
 
@@ -360,22 +332,17 @@ def list_topics(ctx: ToolContext, params: ListTopicsInput) -> TopicsListResult:
     Returns:
         TopicsListResult with categories mapping and counts
     """
-    if params.category:
-        topics = ctx.loader.get_topics_in_category(params.category)
-        categories = {params.category: topics}
-    else:
-        categories = {}
-        for cat in ctx.loader.get_categories():
-            topics = ctx.loader.get_topics_in_category(cat)
-            if topics:
-                categories[cat] = topics
-
-    total_topics = sum(len(t) for t in categories.values())
+    cats = [params.category] if params.category else ctx.loader.get_categories()
+    categories = {
+        cat: topics
+        for cat in cats
+        if (topics := ctx.loader.get_topics_in_category(cat))
+    }
 
     return TopicsListResult(
         categories=categories,
         total_categories=len(categories),
-        total_topics=total_topics,
+        total_topics=sum(len(t) for t in categories.values()),
     )
 
 

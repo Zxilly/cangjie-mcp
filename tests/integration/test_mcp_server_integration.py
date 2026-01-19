@@ -17,7 +17,7 @@ class TestMCPServerCreation:
         mcp = create_mcp_server(local_settings)
 
         assert mcp is not None
-        assert mcp.name == "cangjie-docs"
+        assert mcp.name == "cangjie_mcp"
 
     @pytest.mark.asyncio
     async def test_mcp_server_has_tools(self, local_settings: Settings) -> None:
@@ -27,11 +27,11 @@ class TestMCPServerCreation:
         tools_list = await mcp.list_tools()
         tool_names = [tool.name for tool in tools_list]
         expected_tools = [
-            "search_docs",
-            "get_topic",
-            "list_topics",
-            "get_code_examples",
-            "get_tool_usage",
+            "cangjie_search_docs",
+            "cangjie_get_topic",
+            "cangjie_list_topics",
+            "cangjie_get_code_examples",
+            "cangjie_get_tool_usage",
         ]
 
         for expected in expected_tools:
@@ -40,7 +40,7 @@ class TestMCPServerCreation:
     def test_mcp_server_name(self, local_settings: Settings) -> None:
         """Test MCP server has correct name."""
         mcp = create_mcp_server(local_settings)
-        assert mcp.name == "cangjie-docs"
+        assert mcp.name == "cangjie_mcp"
 
     @pytest.mark.asyncio
     async def test_mcp_server_tool_count(self, local_settings: Settings) -> None:

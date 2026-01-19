@@ -80,17 +80,14 @@ class GitManager:
         if repo is None:
             return None
 
-        # Check if HEAD matches any tag
         try:
+            # Check if HEAD matches any tag
             head_commit = repo.head.commit
             for tag in repo.tags:
                 if tag.commit == head_commit:
                     return tag.name
-        except Exception:
-            pass
 
-        # Return branch name if available
-        try:
+            # Return branch name if not detached
             if not repo.head.is_detached:
                 return repo.active_branch.name
         except Exception:
@@ -106,19 +103,16 @@ class GitManager:
         """
         repo = self.ensure_cloned()
 
-        # Handle "latest" - checkout main/master branch
+        # Handle "latest" - try main, then master
         if version == "latest":
-            try:
-                repo.git.checkout("main")
-                console.print("[green]Checked out main branch.[/green]")
-                return
-            except GitCommandError:
+            for branch in ("main", "master"):
                 try:
-                    repo.git.checkout("master")
-                    console.print("[green]Checked out master branch.[/green]")
+                    repo.git.checkout(branch)
+                    console.print(f"[green]Checked out {branch} branch.[/green]")
                     return
                 except GitCommandError:
-                    pass
+                    continue
+            # Fall through to try "latest" as a literal tag/branch name
 
         # Try to checkout the specified version
         try:

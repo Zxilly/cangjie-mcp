@@ -9,6 +9,7 @@ from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 from rich.console import Console
 
 from cangjie_mcp.config import Settings
+from cangjie_mcp.utils import SingletonProvider
 
 console = Console()
 
@@ -145,25 +146,23 @@ def create_embedding_provider(
     Raises:
         ValueError: If OpenAI is selected but API key is not set
     """
-    if settings.embedding_type == "local":
-        model_name = model_override or settings.local_model
-        return LocalEmbedding(model_name=model_name)
-
-    if settings.embedding_type == "openai":
-        if not settings.openai_api_key:
-            raise ValueError("OpenAI API key is required when using OpenAI embeddings")
-        model = model_override or settings.openai_model
-        return OpenAIEmbeddingProvider(
-            api_key=settings.openai_api_key,
-            model=model,
-            base_url=settings.openai_base_url,
-        )
-
-    raise ValueError(f"Unknown embedding type: {settings.embedding_type}")
+    match settings.embedding_type:
+        case "local":
+            return LocalEmbedding(model_name=model_override or settings.local_model)
+        case "openai":
+            if not settings.openai_api_key:
+                raise ValueError("OpenAI API key is required when using OpenAI embeddings")
+            return OpenAIEmbeddingProvider(
+                api_key=settings.openai_api_key,
+                model=model_override or settings.openai_model,
+                base_url=settings.openai_base_url,
+            )
+        case _:
+            raise ValueError(f"Unknown embedding type: {settings.embedding_type}")
 
 
-# Global embedding provider instance
-_embedding_provider: EmbeddingProvider | None = None
+# Global embedding provider singleton
+_embedding_provider = SingletonProvider[EmbeddingProvider](create_embedding_provider)
 
 
 def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvider:
@@ -175,17 +174,9 @@ def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvide
     Returns:
         The embedding provider instance
     """
-    global _embedding_provider
-    if _embedding_provider is None:
-        if settings is None:
-            from cangjie_mcp.config import get_settings
-
-            settings = get_settings()
-        _embedding_provider = create_embedding_provider(settings)
-    return _embedding_provider
+    return _embedding_provider.get(settings)
 
 
 def reset_embedding_provider() -> None:
     """Reset the global embedding provider (useful for testing)."""
-    global _embedding_provider
-    _embedding_provider = None
+    _embedding_provider.reset()

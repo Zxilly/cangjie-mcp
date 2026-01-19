@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 import pytest
 from dotenv import load_dotenv
 
-from cangjie_mcp.config import Settings
+from cangjie_mcp.config import Settings, reset_settings
+from cangjie_mcp.indexer.embeddings import reset_embedding_provider
+from cangjie_mcp.indexer.reranker import reset_reranker_provider
 
 if TYPE_CHECKING:
     from _pytest.config import Config
@@ -134,3 +136,29 @@ cjc [options] <files>
     )
 
     return docs_dir
+
+
+@pytest.fixture(autouse=True)
+def auto_reset_providers() -> Generator[None]:
+    """Automatically reset singleton providers after each test.
+
+    This fixture runs automatically for all tests and ensures a clean
+    state by resetting all singleton providers after each test completes.
+    """
+    yield
+    # Reset after test
+    reset_embedding_provider()
+    reset_reranker_provider()
+    reset_settings()
+
+
+@pytest.fixture
+def reset_providers() -> None:
+    """Explicitly reset all singleton providers before a test.
+
+    Use this fixture when you need to ensure providers are reset
+    BEFORE a test runs (in addition to after).
+    """
+    reset_embedding_provider()
+    reset_reranker_provider()
+    reset_settings()

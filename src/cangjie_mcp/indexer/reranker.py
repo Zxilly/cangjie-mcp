@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING
 from llama_index.core.postprocessor import SentenceTransformerRerank
 from rich.console import Console
 
+from cangjie_mcp.utils import SingletonProvider
+
 if TYPE_CHECKING:
     from llama_index.core.schema import NodeWithScore
+
+    from cangjie_mcp.config import Settings
 
 console = Console()
 
@@ -231,51 +235,57 @@ def create_reranker_provider(
     Raises:
         ValueError: If OpenAI reranker is selected but API key is not set
     """
-    if rerank_type == "none":
-        return NoOpReranker()
-
-    if rerank_type == "local":
-        return LocalReranker(model_name=local_model)
-
-    if rerank_type == "openai":
-        if not api_key:
-            raise ValueError("OpenAI API key is required for OpenAI-compatible reranker")
-        return OpenAICompatibleReranker(
-            api_key=api_key,
-            model=api_model or OpenAICompatibleReranker.DEFAULT_MODEL,
-            base_url=api_base_url or OpenAICompatibleReranker.DEFAULT_BASE_URL,
-        )
-
-    raise ValueError(f"Unknown rerank type: {rerank_type}")
-
-
-# Global reranker provider instance
-_reranker_provider: RerankerProvider | None = None
+    match rerank_type:
+        case "none":
+            return NoOpReranker()
+        case "local":
+            return LocalReranker(model_name=local_model)
+        case "openai":
+            if not api_key:
+                raise ValueError("OpenAI API key is required for OpenAI-compatible reranker")
+            return OpenAICompatibleReranker(
+                api_key=api_key,
+                model=api_model or OpenAICompatibleReranker.DEFAULT_MODEL,
+                base_url=api_base_url or OpenAICompatibleReranker.DEFAULT_BASE_URL,
+            )
+        case _:
+            raise ValueError(f"Unknown rerank type: {rerank_type}")
 
 
-def get_reranker_provider() -> RerankerProvider:
+def _create_reranker_from_settings(settings: Settings) -> RerankerProvider:
+    """Create reranker provider from settings.
+
+    Args:
+        settings: Application settings
+
+    Returns:
+        Configured reranker provider
+    """
+    return create_reranker_provider(
+        rerank_type=settings.rerank_type,
+        local_model=settings.rerank_model,
+        api_key=settings.openai_api_key,
+        api_model=settings.rerank_model,
+        api_base_url=settings.openai_base_url,
+    )
+
+
+# Global reranker provider singleton
+_reranker_provider = SingletonProvider[RerankerProvider](_create_reranker_from_settings)
+
+
+def get_reranker_provider(settings: Settings | None = None) -> RerankerProvider:
     """Get or create the global reranker provider.
+
+    Args:
+        settings: Optional settings to use for creation
 
     Returns:
         The reranker provider instance
     """
-    global _reranker_provider
-    if _reranker_provider is None:
-        from cangjie_mcp.config import get_settings
-
-        settings = get_settings()
-
-        _reranker_provider = create_reranker_provider(
-            rerank_type=settings.rerank_type,
-            local_model=settings.rerank_model,
-            api_key=settings.openai_api_key,
-            api_model=settings.rerank_model,
-            api_base_url=settings.openai_base_url,
-        )
-    return _reranker_provider
+    return _reranker_provider.get(settings)
 
 
 def reset_reranker_provider() -> None:
     """Reset the global reranker provider (useful for testing)."""
-    global _reranker_provider
-    _reranker_provider = None
+    _reranker_provider.reset()

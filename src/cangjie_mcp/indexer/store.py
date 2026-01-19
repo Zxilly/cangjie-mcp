@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from chromadb.api import ClientAPI
     from chromadb.api.models.Collection import Collection
 
+    from cangjie_mcp.config import Settings
+
 console = Console()
 
 # Metadata file for version tracking
@@ -43,6 +45,23 @@ class SearchResultMetadata(BaseModel):
     category: str = ""
     topic: str = ""
     title: str = ""
+
+    @classmethod
+    def from_node_metadata(cls, metadata: dict[str, str]) -> SearchResultMetadata:
+        """Create SearchResultMetadata from node metadata dict.
+
+        Args:
+            metadata: Node metadata dictionary
+
+        Returns:
+            SearchResultMetadata instance
+        """
+        return cls(
+            file_path=str(metadata.get("file_path", "")),
+            category=str(metadata.get("category", "")),
+            topic=str(metadata.get("topic", "")),
+            title=str(metadata.get("title", "")),
+        )
 
 
 class SearchResult(BaseModel):
@@ -277,17 +296,11 @@ class VectorStore:
 
         results: list[SearchResult] = []
         for node in nodes[:top_k]:
-            metadata = SearchResultMetadata(
-                file_path=str(node.metadata.get("file_path", "")),
-                category=str(node.metadata.get("category", "")),
-                topic=str(node.metadata.get("topic", "")),
-                title=str(node.metadata.get("title", "")),
-            )
             results.append(
                 SearchResult(
                     text=node.text,
                     score=node.score if node.score is not None else 0.0,
-                    metadata=metadata,
+                    metadata=SearchResultMetadata.from_node_metadata(node.metadata),
                 )
             )
 
@@ -307,3 +320,33 @@ class VectorStore:
         metadata_path = self.db_path / METADATA_FILE
         if metadata_path.exists():
             metadata_path.unlink()
+
+
+def create_vector_store(
+    settings: Settings,
+    with_rerank: bool = True,
+) -> VectorStore:
+    """Factory function to create VectorStore from settings.
+
+    Args:
+        settings: Application settings
+        with_rerank: Whether to enable reranking
+
+    Returns:
+        Configured VectorStore instance
+    """
+    from cangjie_mcp.indexer.embeddings import get_embedding_provider
+    from cangjie_mcp.indexer.reranker import get_reranker_provider
+
+    embedding_provider = get_embedding_provider(settings)
+    reranker = (
+        get_reranker_provider(settings)
+        if with_rerank and settings.rerank_type != "none"
+        else None
+    )
+
+    return VectorStore(
+        db_path=settings.chroma_db_dir,
+        embedding_provider=embedding_provider,
+        reranker=reranker,
+    )

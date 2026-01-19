@@ -304,7 +304,7 @@ def create_mcp_server_with_store(
         instructions=instructions,
     )
 
-    ctx = tools.create_tool_context_with_store(settings, store)
+    ctx = tools.create_tool_context(settings, store=store)
     _register_tools(mcp, ctx)
 
     return mcp

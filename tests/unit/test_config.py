@@ -7,7 +7,6 @@ import pytest
 
 from cangjie_mcp.config import (
     Settings,
-    get_openai_settings,
     get_settings,
     update_settings,
 )
@@ -119,25 +118,6 @@ class TestGetSettings:
         with patch("cangjie_mcp.config._settings", None):
             settings1 = get_settings()
             settings2 = get_settings()
-            assert settings1 is settings2
-
-
-class TestGetOpenAISettings:
-    """Tests for get_openai_settings function (legacy compatibility)."""
-
-    def test_get_openai_settings_returns_settings(self) -> None:
-        """Test that get_openai_settings returns a Settings instance."""
-        with patch("cangjie_mcp.config._settings", None):
-            settings = get_openai_settings()
-            # get_openai_settings now returns the unified Settings instance
-            assert isinstance(settings, Settings)
-
-    def test_get_openai_settings_caches_instance(self) -> None:
-        """Test that get_openai_settings returns the same instance as get_settings."""
-        with patch("cangjie_mcp.config._settings", None):
-            settings1 = get_openai_settings()
-            settings2 = get_settings()
-            # Both should return the same cached instance
             assert settings1 is settings2
 
 

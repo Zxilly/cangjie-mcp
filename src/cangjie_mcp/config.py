@@ -114,6 +114,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Documentation settings
@@ -214,11 +215,6 @@ class Settings(BaseSettings):
         return self.docs_repo_dir / "docs" / "dev-guide" / lang_dir
 
 
-# Legacy compatibility aliases
-OpenAISettings = Settings
-RerankSettings = Settings
-
-
 # Global settings instance
 _settings: Settings | None = None
 
@@ -229,22 +225,6 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
     return _settings
-
-
-def get_openai_settings() -> Settings:
-    """Get settings instance (legacy compatibility).
-
-    Deprecated: Use get_settings() instead.
-    """
-    return get_settings()
-
-
-def get_rerank_settings() -> Settings:
-    """Get settings instance (legacy compatibility).
-
-    Deprecated: Use get_settings() instead.
-    """
-    return get_settings()
 
 
 def reset_settings() -> None:
@@ -277,32 +257,41 @@ def update_settings(
     Only non-None values will override existing settings.
     """
     global _settings
-    current = get_settings()
-    new_values = current.model_dump()
 
-    # Update only provided values
-    overrides = {
-        "docs_version": docs_version,
-        "docs_lang": docs_lang,
-        "embedding_type": embedding_type,
-        "local_model": local_model,
-        "rerank_type": rerank_type,
-        "rerank_model": rerank_model,
-        "rerank_top_k": rerank_top_k,
-        "rerank_initial_k": rerank_initial_k,
-        "data_dir": data_dir,
-        "prebuilt_url": prebuilt_url,
-        "openai_api_key": openai_api_key,
-        "openai_base_url": openai_base_url,
-        "openai_model": openai_model,
-        "http_host": http_host,
-        "http_port": http_port,
-        "indexes": indexes,
-    }
+    # Collect non-None overrides
+    overrides: dict[str, str | int | Path] = {}
+    if docs_version is not None:
+        overrides["docs_version"] = docs_version
+    if docs_lang is not None:
+        overrides["docs_lang"] = docs_lang
+    if embedding_type is not None:
+        overrides["embedding_type"] = embedding_type
+    if local_model is not None:
+        overrides["local_model"] = local_model
+    if rerank_type is not None:
+        overrides["rerank_type"] = rerank_type
+    if rerank_model is not None:
+        overrides["rerank_model"] = rerank_model
+    if rerank_top_k is not None:
+        overrides["rerank_top_k"] = rerank_top_k
+    if rerank_initial_k is not None:
+        overrides["rerank_initial_k"] = rerank_initial_k
+    if data_dir is not None:
+        overrides["data_dir"] = data_dir
+    if prebuilt_url is not None:
+        overrides["prebuilt_url"] = prebuilt_url
+    if openai_api_key is not None:
+        overrides["openai_api_key"] = openai_api_key
+    if openai_base_url is not None:
+        overrides["openai_base_url"] = openai_base_url
+    if openai_model is not None:
+        overrides["openai_model"] = openai_model
+    if http_host is not None:
+        overrides["http_host"] = http_host
+    if http_port is not None:
+        overrides["http_port"] = http_port
+    if indexes is not None:
+        overrides["indexes"] = indexes
 
-    for key, value in overrides.items():
-        if value is not None:
-            new_values[key] = value
-
-    _settings = Settings(**new_values)
+    _settings = get_settings().model_copy(update=overrides)
     return _settings

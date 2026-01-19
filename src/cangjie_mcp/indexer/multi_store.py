@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING
 
 import httpx
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
 from cangjie_mcp.config import IndexKey, Settings
 from cangjie_mcp.indexer.embeddings import create_embedding_provider
 from cangjie_mcp.indexer.reranker import get_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.prebuilt.manager import ARCHIVE_METADATA_FILE, PrebuiltMetadata
+from cangjie_mcp.utils import create_download_progress
 
 if TYPE_CHECKING:
     from cangjie_mcp.indexer.embeddings import EmbeddingProvider
@@ -120,13 +120,7 @@ class MultiIndexStore:
             response.raise_for_status()
             total = int(response.headers.get("content-length", 0))
 
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                console=console,
-            ) as progress:
+            with create_download_progress() as progress:
                 task = progress.add_task("    Downloading...", total=total)
 
                 # Write to temp file first, then rename
