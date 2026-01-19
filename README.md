@@ -15,24 +15,30 @@
 ## 安装
 
 ```bash
-# 使用 pip 安装
 pip install cangjie-mcp
 
-# 或使用 uv 安装
+# 或
 uv pip install cangjie-mcp
 ```
 
 ## 快速开始
 
+### 推荐配置（使用预构建索引 + 本地 Rerank）
+
+为获得最佳体验，配置预构建索引 URL 并启用本地 rerank：
+
 ```bash
-# 启动 MCP 服务器（stdio 模式，默认）
-cangjie-mcp
-
-# 使用本地 rerank 提升搜索质量
+export CANGJIE_PREBUILT_URL=https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz
 cangjie-mcp --rerank local
+```
 
-# 指定文档版本和语言
-cangjie-mcp --version v1.0.4 --lang zh
+或创建 `.env` 文件保存配置（见下方配置文件示例）。
+
+### 其他启动方式
+
+```bash
+cangjie-mcp
+cangjie-mcp --version v1.0.7 --lang zh
 ```
 
 ## 命令
@@ -65,17 +71,9 @@ cangjie-mcp [OPTIONS]
 **示例：**
 
 ```bash
-# 使用本地嵌入和本地 rerank
 cangjie-mcp --embedding local --rerank local
-
-# 使用 OpenAI 嵌入
 cangjie-mcp --embedding openai --openai-api-key sk-xxx
-
-# 使用 SiliconFlow（OpenAI 兼容）进行 rerank
-cangjie-mcp --rerank openai \
-  --openai-api-key sk-xxx \
-  --openai-base-url https://api.siliconflow.cn/v1 \
-  --rerank-model BAAI/bge-reranker-v2-m3
+cangjie-mcp --rerank openai --openai-api-key sk-xxx --openai-base-url https://api.siliconflow.cn/v1
 ```
 
 ### `serve` - 启动 HTTP 服务器（多索引模式）
@@ -100,19 +98,14 @@ cangjie-mcp serve [OPTIONS]
 **示例：**
 
 ```bash
-# 从 URL 加载单个索引
 cangjie-mcp serve --indexes "https://example.com/cangjie-index-v1-zh.tar.gz"
-
-# 加载多个索引
 cangjie-mcp serve --indexes "https://example.com/v1-zh.tar.gz,https://example.com/v2-en.tar.gz"
-
-# 指定主机和端口
 cangjie-mcp serve --indexes "..." --host 0.0.0.0 --port 8080
-
-# 访问方式（路由从索引元数据派生）：
-# POST http://localhost:8000/v1/zh/mcp    -> v1 中文文档
-# POST http://localhost:8000/v2/en/mcp    -> v2 英文文档
 ```
+
+访问方式（路由从索引元数据派生）：
+- `POST http://localhost:8000/v1/zh/mcp` → v1 中文文档
+- `POST http://localhost:8000/v2/en/mcp` → v2 英文文档
 
 ### `prebuilt build` - 构建预构建索引
 
@@ -136,13 +129,8 @@ cangjie-mcp prebuilt build [OPTIONS]
 **示例：**
 
 ```bash
-# 构建默认版本的预构建索引
 cangjie-mcp prebuilt build
-
-# 构建指定版本的索引
 cangjie-mcp prebuilt build --version v0.53.18 --lang zh
-
-# 指定输出路径
 cangjie-mcp prebuilt build --output ./my-index.tar.gz
 ```
 
@@ -165,12 +153,7 @@ cangjie-mcp prebuilt download [OPTIONS]
 **示例：**
 
 ```bash
-# 从指定 URL 下载
-cangjie-mcp prebuilt download --url https://example.com/index.tar.gz
-
-# 使用环境变量配置的 URL
-export CANGJIE_PREBUILT_URL=https://example.com/index.tar.gz
-cangjie-mcp prebuilt download
+cangjie-mcp prebuilt download --url https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz
 ```
 
 ### `prebuilt list` - 列出预构建索引
@@ -233,31 +216,11 @@ cangjie-mcp prebuilt list
 创建 `.env` 文件：
 
 ```env
-# 文档配置
-CANGJIE_DOCS_VERSION=v0.53.18
+CANGJIE_DOCS_VERSION=v1.0.7
 CANGJIE_DOCS_LANG=zh
-CANGJIE_DATA_DIR=~/.cangjie-mcp
-
-# 嵌入配置（使用本地模型）
+CANGJIE_PREBUILT_URL=https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz
 CANGJIE_EMBEDDING_TYPE=local
-CANGJIE_LOCAL_MODEL=paraphrase-multilingual-MiniLM-L12-v2
-
-# 或使用 OpenAI 嵌入
-# CANGJIE_EMBEDDING_TYPE=openai
-# OPENAI_API_KEY=sk-your-api-key
-# OPENAI_MODEL=text-embedding-3-small
-
-# Rerank 配置（使用本地 rerank）
 CANGJIE_RERANK_TYPE=local
-CANGJIE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
-CANGJIE_RERANK_TOP_K=5
-CANGJIE_RERANK_INITIAL_K=20
-
-# 或使用 SiliconFlow 等 OpenAI 兼容 API 进行 rerank
-# CANGJIE_RERANK_TYPE=openai
-# OPENAI_API_KEY=sk-your-siliconflow-key
-# OPENAI_BASE_URL=https://api.siliconflow.cn/v1
-# CANGJIE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 ```
 
 ## MCP 工具
@@ -273,39 +236,23 @@ CANGJIE_RERANK_INITIAL_K=20
 | `cangjie_get_tool_usage` | 获取工具使用说明（如 cjc、cjpm） |
 
 
-## 与 Claude Code 集成
+## MCP 客户端配置
 
-### 方式一：命令行添加（推荐）
+以下是在各种 MCP 客户端中配置 Cangjie MCP 的方法。
 
-使用 `claude mcp add` 命令快速添加 MCP 服务器：
+<details>
+<summary>Claude Code</summary>
 
-```bash
-claude mcp add cangjie -- uvx cangjie-mcp
-
-# 使用 uvx 运行并启用本地 rerank
-claude mcp add cangjie -- uvx cangjie-mcp --rerank local
-
-# 添加环境变量
-claude mcp add -e CANGJIE_RERANK_TYPE=local cangjie -- uvx cangjie-mcp
-
-# 使用已安装的 cangjie-mcp
-claude mcp add cangjie -- cangjie-mcp --rerank local
-```
-
-**常用 `claude mcp` 命令：**
+#### 命令行添加（推荐）
 
 ```bash
-# 查看已配置的 MCP 服务器
-claude mcp list
-
-# 查看服务器详情
-claude mcp get cangjie
-
-# 移除服务器
-claude mcp remove cangjie
+claude mcp add \
+  -e CANGJIE_PREBUILT_URL=https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz \
+  -e CANGJIE_RERANK_TYPE=local \
+  cangjie -- uvx cangjie-mcp
 ```
 
-### 方式二：配置文件
+#### 配置文件
 
 在项目根目录创建 `.mcp.json`：
 
@@ -314,24 +261,181 @@ claude mcp remove cangjie
   "mcpServers": {
     "cangjie": {
       "command": "uvx",
-      "args": ["cangjie-mcp", "--rerank", "local"]
+      "args": ["cangjie-mcp", "--rerank", "local"],
+      "env": {
+        "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz"
+      }
     }
   }
 }
 ```
 
-或者使用已安装的命令：
+#### 常用命令
+
+```bash
+claude mcp list
+claude mcp get cangjie
+claude mcp remove cangjie
+```
+
+</details>
+
+<details>
+<summary>Cursor</summary>
+
+在 Cursor 设置中添加 MCP 服务器，或编辑 `~/.cursor/mcp.json`：
 
 ```json
 {
   "mcpServers": {
     "cangjie": {
-      "command": "cangjie-mcp",
-      "args": ["--rerank", "local"]
+      "command": "uvx",
+      "args": ["cangjie-mcp", "--rerank", "local"],
+      "env": {
+        "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz"
+      }
     }
   }
 }
 ```
+
+</details>
+
+<details>
+<summary>Windsurf</summary>
+
+在 Windsurf 配置目录创建或编辑 MCP 配置文件 `~/.codeium/windsurf/mcp_config.json`：
+
+```json
+{
+  "mcpServers": {
+    "cangjie": {
+      "command": "uvx",
+      "args": ["cangjie-mcp", "--rerank", "local"],
+      "env": {
+        "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>VS Code (Copilot / Continue / Cline)</summary>
+
+#### GitHub Copilot
+
+在 VS Code 设置中添加（`settings.json`）：
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "cangjie": {
+        "command": "uvx",
+        "args": ["cangjie-mcp", "--rerank", "local"],
+        "env": {
+          "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz"
+        }
+      }
+    }
+  }
+}
+```
+
+#### Continue
+
+编辑 `~/.continue/config.yaml`：
+
+```yaml
+mcpServers:
+  - name: cangjie
+    command: uvx
+    args:
+      - cangjie-mcp
+      - --rerank
+      - local
+    env:
+      CANGJIE_PREBUILT_URL: https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz
+```
+
+#### Cline
+
+在 Cline 设置中添加 MCP 服务器，配置格式与 Cursor 相同。
+
+</details>
+
+<details>
+<summary>Claude Desktop</summary>
+
+编辑 Claude Desktop 配置文件：
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "cangjie": {
+      "command": "uvx",
+      "args": ["cangjie-mcp", "--rerank", "local"],
+      "env": {
+        "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Zed</summary>
+
+在 Zed 设置文件 `~/.config/zed/settings.json` 中添加：
+
+```json
+{
+  "context_servers": {
+    "cangjie": {
+      "command": {
+        "path": "uvx",
+        "args": ["cangjie-mcp", "--rerank", "local"],
+        "env": {
+          "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz"
+        }
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>通用配置说明</summary>
+
+所有配置中的关键参数：
+
+| 参数 | 说明 |
+|------|------|
+| `command` | 运行命令，推荐使用 `uvx` 自动管理依赖 |
+| `args` | 命令参数，`--rerank local` 启用本地重排序提升搜索质量 |
+| `env.CANGJIE_PREBUILT_URL` | 预构建索引 URL，首次运行自动下载 |
+
+如果已通过 `pip install cangjie-mcp` 安装，可将 `command` 改为 `cangjie-mcp`，`args` 中移除 `cangjie-mcp`：
+
+```json
+{
+  "command": "cangjie-mcp",
+  "args": ["--rerank", "local"],
+  "env": { ... }
+}
+```
+
+</details>
 
 ## 开发
 
@@ -348,26 +452,16 @@ uv sync --all-extras
 ### 运行测试
 
 ```bash
-# 运行所有测试
 uv run pytest
-
-# 运行单元测试
 uv run pytest tests/unit/
-
-# 运行集成测试
 uv run pytest tests/integration/
 ```
 
 ### 代码检查
 
 ```bash
-# 代码风格检查
 uv run ruff check src/ tests/
-
-# 自动修复
 uv run ruff check src/ tests/ --fix
-
-# 类型检查
 uv run mypy src/
 uv run pyright src/
 ```
