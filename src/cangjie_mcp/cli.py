@@ -364,6 +364,10 @@ def prebuilt_build(
         str | None,
         typer.Option("--embedding-model", "-m", help="Embedding model name"),
     ] = None,
+    chunk_size: Annotated[
+        int | None,
+        typer.Option("--chunk-size", "-c", help="Max chunk size in characters"),
+    ] = None,
     data_dir: Annotated[
         Path | None,
         typer.Option("--data-dir", "-d", help="Data directory"),
@@ -391,6 +395,7 @@ def prebuilt_build(
         docs_lang=lang,
         embedding_type=embedding,
         local_model=embedding_model,
+        chunk_max_size=chunk_size,
         data_dir=data_dir,
     )
 
@@ -398,6 +403,7 @@ def prebuilt_build(
     console.print(f"  Version: {settings.docs_version}")
     console.print(f"  Language: {settings.docs_lang}")
     console.print(f"  Embedding: {settings.embedding_type}")
+    console.print(f"  Chunk size: {settings.chunk_max_size}")
     console.print(f"  Data dir: {settings.data_dir}")
     console.print()
 
