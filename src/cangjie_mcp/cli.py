@@ -34,14 +34,9 @@ def initialize_and_index(settings: Settings) -> None:
     prebuilt_mgr = PrebuiltManager(settings.data_dir)
     installed = prebuilt_mgr.get_installed_metadata()
 
-    if (
-        installed
-        and installed.version == settings.docs_version
-        and installed.lang == settings.docs_lang
-    ):
+    if installed and installed.version == settings.docs_version and installed.lang == settings.docs_lang:
         console.print(
-            f"[green]Using prebuilt index (version: {settings.docs_version}, "
-            f"lang: {settings.docs_lang})[/green]"
+            f"[green]Using prebuilt index (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
         )
         return
 
@@ -50,8 +45,7 @@ def initialize_and_index(settings: Settings) -> None:
 
     if store.is_indexed() and store.version_matches(settings.docs_version, settings.docs_lang):
         console.print(
-            f"[green]Index already exists (version: {settings.docs_version}, "
-            f"lang: {settings.docs_lang})[/green]"
+            f"[green]Index already exists (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
         )
         return
 
@@ -193,9 +187,7 @@ def main(
 def serve(
     indexes: Annotated[
         str | None,
-        typer.Option(
-            "--indexes", "-i", help="Comma-separated list of URLs to prebuilt index archives"
-        ),
+        typer.Option("--indexes", "-i", help="Comma-separated list of URLs to prebuilt index archives"),
     ] = None,
     host: Annotated[
         str | None,
@@ -277,8 +269,7 @@ def serve(
     if not indexes_str:
         console.print("[red]No indexes specified. Use --indexes or CANGJIE_INDEXES.[/red]")
         console.print(
-            "[yellow]Example: cangjie-mcp serve --indexes "
-            "'https://example.com/cangjie-index-v1-zh.tar.gz'[/yellow]"
+            "[yellow]Example: cangjie-mcp serve --indexes 'https://example.com/cangjie-index-v1-zh.tar.gz'[/yellow]"
         )
         raise typer.Exit(1)
 
@@ -451,7 +442,7 @@ def prebuilt_build(
 
     # Step 5: Create archive
     console.print("[blue]Creating archive...[/blue]")
-    mgr = PrebuiltManager(settings.data_dir)
+    mgr = PrebuiltManager(settings.index_dir)
 
     try:
         archive_path = mgr.build(

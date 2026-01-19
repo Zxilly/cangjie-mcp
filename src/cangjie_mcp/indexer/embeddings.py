@@ -157,8 +157,6 @@ def create_embedding_provider(
                 model=model_override or settings.openai_model,
                 base_url=settings.openai_base_url,
             )
-        case _:
-            raise ValueError(f"Unknown embedding type: {settings.embedding_type}")
 
 
 # Global embedding provider singleton

@@ -32,22 +32,372 @@ if TYPE_CHECKING:
 # =============================================================================
 
 SERVER_INSTRUCTIONS = """
-Cangjie Documentation Server - Provides semantic search and retrieval of
-Cangjie programming language documentation.
+Cangjie Documentation Server - Semantic search and retrieval for Cangjie programming language.
 
-Available tools:
-- cangjie_search_docs: Semantic search across documentation with pagination
-- cangjie_get_topic: Get complete documentation for a specific topic
-- cangjie_list_topics: List available documentation topics by category
-- cangjie_get_code_examples: Get code examples for a language feature
-- cangjie_get_tool_usage: Get usage information for Cangjie CLI tools
+## About Cangjie
+Cangjie is a modern programming language developed by Huawei for building native applications
+on HarmonyOS. File extension: `.cj`. Features: strong static typing with type inference,
+pattern matching, first-class functions, built-in concurrency, and seamless C/C++ interop.
 
-Workflow recommendations:
-1. Use cangjie_list_topics to discover available documentation categories and topics
-2. Use cangjie_search_docs for semantic queries about specific concepts
-3. Use cangjie_get_topic to retrieve full documentation for a known topic
-4. Use cangjie_get_code_examples to find practical code examples
-5. Use cangjie_get_tool_usage for CLI tool documentation (cjc, cjpm, etc.)
+## Syntax Reference
+
+### 1. Variables
+
+Declaration syntax: `modifier name: Type = value`
+
+Mutability modifiers:
+- `let` - immutable variable (can only be assigned once at initialization)
+- `var` - mutable variable (can be reassigned)
+
+IMPORTANT: `let` does NOT support variable shadowing like Rust. Cannot redeclare same name in same scope.
+
+Visibility modifiers:
+- `private` - visible only within class definition
+- `internal` - visible in current package and subpackages (DEFAULT)
+- `protected` - visible in current module and subclasses
+- `public` - visible everywhere
+
+Static modifier: `static` - affects member storage and reference
+
+Example:
+```
+main() {
+    let a: Int64 = 20      // immutable
+    var b: Int64 = 12      // mutable
+    b = 23                 // OK: var can be reassigned
+    println("${a}${b}")
+}
+```
+
+### 2. Basic Types
+
+Signed integers: `Int8`, `Int16`, `Int32`, `Int64`, `IntNative`
+Unsigned integers: `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UIntNative`
+Floating point: `Float16`, `Float32`, `Float64`
+Boolean: `true`, `false`
+
+Character (Rune):
+- Represents Unicode characters: `let a: Rune = r'a'`
+- Escape sequences: `r'\\n'`, `r'\\t'`, `r'\\\\'`
+- Unicode literals: `r'\\u{4f60}'` (Chinese character)
+- Convert to UInt32: `UInt32(rune)`
+- Convert from int: `Rune(num)` (must be valid Unicode range)
+
+String:
+- Basic: `"Hello Cangjie"`
+- Interpolation: `"Count: ${count * 2}"` (uses `${}` NOT `{}`)
+- To rune array: `"hello".toRuneArray()`
+- Raw multiline (no escaping): `#"raw \\n stays as backslash-n"#`
+- Multi-hash raw: `##"can contain #"##`
+
+Tuple:
+- Type: `(T1, T2, ..., TN)` (minimum 2 elements)
+- Access by index: `tuple[0]`, `tuple[1]`
+- Example: `var t = (true, 42); println(t[0])`
+
+Array: `Array<T>` - element type can be any type
+
+Range:
+- Type: `Range<T>` with `start`, `end`, `step` (step is Int64, cannot be 0)
+- Inclusive: `1..=10` (1 to 10 including 10)
+- Exclusive: `1..10` (1 to 9)
+
+Unit:
+- Single value: `()`
+- Only supports: assignment, equality, inequality
+- Does NOT support other operations
+
+### 3. Control Flow
+
+IMPORTANT: Parentheses around conditions are REQUIRED (unlike some languages).
+
+if expression:
+```
+if (condition) {
+    branch1
+} else {
+    branch2
+}
+```
+
+Pattern matching in if (let pattern):
+```
+let opt = Some(3)
+if (let Some(value) <- opt) {
+    println("Got ${value}")
+}
+```
+
+while expression:
+```
+while (condition) { body }
+do { body } while (condition)
+```
+
+for-in expression:
+```
+for (item in collection) { body }
+for (i in 1..=100) { sum += i }        // range iteration
+for ((x, y) in tupleArray) { ... }     // tuple destructuring
+```
+
+Jump control:
+- `break` and `continue` are supported
+- NO labeled jumps (cannot break/continue to outer loop)
+- NO `goto` statement
+
+### 4. Functions
+
+Functions are first-class citizens (can be passed, returned, assigned).
+
+Function type syntax: `(ParamTypes) -> ReturnType`
+
+Definition:
+```
+func add(a: Int64, b: Int64): Int64 {
+    return a + b
+}
+
+// Implicit return (last expression)
+func add(a: Int64, b: Int64): Int64 {
+    a + b
+}
+```
+
+Named parameters with default values:
+```
+func greet(name!: String = "World") {
+    println("Hello ${name}")
+}
+greet()                    // uses default
+greet(name: "Alice")       // named argument
+```
+
+IMPORTANT: Function parameters are immutable (`let`) by default.
+
+Lambda expressions:
+```
+// Full syntax
+{ param1: Type1, param2: Type2 => expression }
+
+// Examples
+let f = { a: Int64, b: Int64 => a + b }
+var display = { => println("Hello") }           // no params
+var sum: (Int64, Int64) -> Int64 = { a, b => a + b }  // type inference
+
+// Immediate invocation
+let result = { => 123 }()    // result = 123
+```
+
+### 5. Enum Types
+
+Definition (constructors separated by `|`):
+```
+enum RGBColor {
+    | Red | Green | Blue
+}
+
+enum Color {
+    | Red(UInt8)
+    | Green(UInt8)
+    | Blue(UInt8)
+}
+```
+
+Constructors: parameterless `Name` or with params `Name(p1, p2, ...)`
+
+### 6. Pattern Matching
+
+match expression:
+```
+match (value) {
+    case pattern1 => result1
+    case pattern2 => result2
+    case _ => default_result    // wildcard
+}
+```
+
+IMPORTANT: case does NOT need braces `{}`, just `=>` followed by expression.
+
+Pattern types:
+
+1. Constant pattern: integers, floats, chars, bools, strings, Unit
+   - String interpolation NOT supported in patterns
+
+2. Wildcard pattern: `_` matches anything
+
+3. Binding pattern: identifier captures matched value
+   ```
+   case n => "value is ${n}"
+   ```
+
+4. Tuple pattern:
+   ```
+   case ("Alice", age) => "Alice is ${age}"
+   case (_, _) => "unknown"
+   ```
+
+5. Type pattern:
+   ```
+   case x: SomeType => x.method()
+   ```
+
+6. Enum pattern:
+   ```
+   case Year(n) => "${n * 12} months"
+   case TimeUnit.Month(n) => "${n} months"   // qualified name
+   ```
+
+7. Multiple values: `case 2 | 3 | 4 => "small"`
+
+Nested patterns allowed in tuples and enums:
+```
+case (SetTimeUnit(Year(year)), _) => println("Year: ${year}")
+```
+
+### 7. Option Type
+
+Definition:
+```
+enum Option<T> {
+    | Some(T)   // has value
+    | None      // no value
+}
+```
+
+Common operations:
+- Unwrap with default: `opt ?? defaultValue`
+- Check: `opt.isSome()`, `opt.isNone()`
+- Pattern match: `if (let Some(v) <- opt) { ... }`
+- Early return: `opt ?? return errorValue`
+- Throw on None: `opt ?? throw Exception("error")`
+
+### 8. Class Types
+
+Definition:
+```
+class ClassName {
+    // member variables
+    // member properties
+    // static initializers
+    // constructors (init)
+    // member functions
+    // operator functions
+}
+```
+
+Example:
+```
+class Rectangle {
+    let width: Int64
+    let height: Int64
+
+    public init(width: Int64, height: Int64) {
+        this.width = width
+        this.height = height
+    }
+
+    public func area(): Int64 {
+        width * height
+    }
+}
+
+let rect = Rectangle(10, 20)
+let h = rect.height    // h = 20
+```
+
+IMPORTANT: Member default visibility is `internal`, NOT `private` or `public`.
+
+### 9. Collections
+
+All use `add()` to add, `[]` to modify, `remove()` to delete.
+
+- `Array<T>`: fixed size, modify with `[]`
+  - Literal: `let arr: Array<String> = ["A", "B", "C"]`
+
+- `ArrayList<T>`: dynamic, frequent add/remove
+  - `list.add(item)`, `list.remove(at: index)`
+
+- `HashSet<T>`: unique elements only
+
+- `HashMap<K, V>`: key-value mapping
+  - Literal: `let map = HashMap(("A", 1), ("B", 2))`
+
+### 10. Packages
+
+Directory structure determines package hierarchy:
+```
+src/
+  demo/
+    sub/
+      a.cj    // package demo.sub
+    b.cj      // package demo
+  main.cj     // package demo
+```
+
+Declaration: `package demo.subpackage`
+
+Import:
+```
+import std.math.*                           // all from package
+import package1.foo                         // single item
+import {package1.foo, package2.Bar}         // multiple items
+```
+
+### 11. Unit Testing
+
+Test macros:
+- `@Test` - marks class or function as test
+- `@TestCase` - marks method as test case
+- `@Fail("message")` - explicit failure
+
+Assertions:
+- `@Assert(left, right)` - equality check, stops on failure
+- `@Assert(condition)` - condition check, stops on failure
+- `@Expect(left, right)` - equality check, continues on failure
+- `@Expect(condition)` - condition check, continues on failure
+
+Example:
+```
+@Test
+class CalculatorTest {
+    @TestCase
+    func testAdd() {
+        let result = add(2, 3)
+        @Assert(result, 5)
+    }
+}
+```
+
+## Critical Pitfalls (Common Errors)
+
+1. `let` does NOT support shadowing - cannot redeclare same variable name in same scope
+2. Condition parentheses REQUIRED: `if (x)` not `if x`
+3. String interpolation uses `${}` not `{}`
+4. Class members default to `internal`, NOT `private`
+5. Function parameters are immutable (`let`) by default
+6. match case does NOT need braces: `case 1 => expr` not `case 1 => { expr }`
+7. NO `goto`, NO labeled break/continue
+8. `Unit` type only supports assignment and equality operations
+9. Rune must be in valid Unicode range when converting from integer
+10. Raw strings (`#"..."#`) do NOT process escape sequences
+11. `Duration` and `sleep` are in `std.core` (no import needed)
+
+## Available Tools
+
+- `cangjie_search_docs`: Semantic search across documentation with pagination
+- `cangjie_get_topic`: Get complete documentation for a specific topic
+- `cangjie_list_topics`: List available documentation topics by category
+- `cangjie_get_code_examples`: Get code examples for a language feature
+- `cangjie_get_tool_usage`: Get usage information for Cangjie CLI tools (cjc, cjpm, cjfmt)
+
+## Recommended Workflow
+
+1. Use `cangjie_list_topics` to discover available categories and topics
+2. Use `cangjie_search_docs` for semantic queries about concepts
+3. Use `cangjie_get_topic` to retrieve full documentation for known topics
+4. Use `cangjie_get_code_examples` to find practical code examples
+5. Use `cangjie_get_tool_usage` for CLI tool documentation
 """.strip()
 
 
