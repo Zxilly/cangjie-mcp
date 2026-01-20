@@ -173,9 +173,7 @@ class TestEndToEndWorkflow:
         )
 
         # Get code examples for a feature
-        examples = tools.get_code_examples(
-            ctx, GetCodeExamplesInput(feature="Hello World", top_k=5)
-        )
+        examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="Hello World", top_k=5))
         assert len(examples) > 0
 
         # Verify examples have required fields

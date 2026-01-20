@@ -244,13 +244,10 @@ class DocumentChunker:
 
         if split_count > 0:
             console.print(
-                f"[yellow]Split {split_count} oversized text segments "
-                f"(>{self.max_chunk_size} chars).[/yellow]"
+                f"[yellow]Split {split_count} oversized text segments (>{self.max_chunk_size} chars).[/yellow]"
             )
         if preserved_code_count > 0:
-            console.print(
-                f"[blue]Preserved {preserved_code_count} oversized code blocks intact.[/blue]"
-            )
+            console.print(f"[blue]Preserved {preserved_code_count} oversized code blocks intact.[/blue]")
 
         return result
 
@@ -330,10 +327,7 @@ class DocumentChunker:
                 splitter = self._get_semantic_splitter()
                 nodes = splitter.get_nodes_from_documents(documents, show_progress=True)
             except Exception as e:
-                console.print(
-                    f"[yellow]Semantic splitting failed: {e}. "
-                    "Falling back to sentence splitting.[/yellow]"
-                )
+                console.print(f"[yellow]Semantic splitting failed: {e}. Falling back to sentence splitting.[/yellow]")
                 splitter = self._get_fallback_splitter()
                 nodes = splitter.get_nodes_from_documents(documents, show_progress=True)
         else:

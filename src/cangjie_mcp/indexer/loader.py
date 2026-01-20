@@ -27,7 +27,7 @@ class DocMetadata:
     category: str
     topic: str
     title: str = ""
-    code_blocks: list[CodeBlock] = field(default_factory=list)
+    code_blocks: list[CodeBlock] = field(default_factory=lambda: [])
 
 
 def extract_title_from_content(content: str) -> str:
@@ -55,7 +55,7 @@ def extract_code_blocks(content: str) -> list[CodeBlock]:
     Returns:
         List of CodeBlock objects
     """
-    code_blocks = []
+    code_blocks: list[CodeBlock] = []
     # Pattern to match fenced code blocks with optional language
     pattern = r"```(\w*)\n(.*?)```"
     matches = re.finditer(pattern, content, re.DOTALL)
@@ -120,7 +120,7 @@ class DocumentLoader:
         Returns:
             List of LlamaIndex Document objects
         """
-        documents = []
+        documents: list[Document] = []
         md_files = list(self.source_dir.rglob("*.md"))
 
         console.print(f"[blue]Found {len(md_files)} markdown files.[/blue]")
@@ -181,7 +181,7 @@ class DocumentLoader:
         if not category_dir.exists():
             return []
 
-        documents = []
+        documents: list[Document] = []
         for file_path in category_dir.rglob("*.md"):
             try:
                 doc = self._load_document(file_path)
@@ -199,9 +199,7 @@ class DocumentLoader:
             List of category names
         """
         return sorted(
-            item.name
-            for item in self.source_dir.iterdir()
-            if item.is_dir() and not item.name.startswith((".", "_"))
+            item.name for item in self.source_dir.iterdir() if item.is_dir() and not item.name.startswith((".", "_"))
         )
 
     def get_topics_in_category(self, category: str) -> list[str]:

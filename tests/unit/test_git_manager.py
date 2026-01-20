@@ -91,9 +91,7 @@ class TestGitManagerWithMockRepo:
         assert "v1.0.7" in tags
         assert "v0.52.0" in tags
 
-    def test_get_current_version_on_branch(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_get_current_version_on_branch(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test get_current_version when on a branch."""
         mock_repo.head.is_detached = False
         mock_repo.active_branch.name = "main"
@@ -102,9 +100,7 @@ class TestGitManagerWithMockRepo:
         version = manager_with_mock_repo.get_current_version()
         assert version == "main"
 
-    def test_get_current_version_on_tag(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_get_current_version_on_tag(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test get_current_version when HEAD matches a tag."""
         head_commit = MagicMock()
         mock_repo.head.commit = head_commit
@@ -117,16 +113,12 @@ class TestGitManagerWithMockRepo:
         version = manager_with_mock_repo.get_current_version()
         assert version == "v1.0.7"
 
-    def test_checkout_latest(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_checkout_latest(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test checkout 'latest' tries main then master."""
         manager_with_mock_repo.checkout("latest")
         mock_repo.git.checkout.assert_called_with("main")
 
-    def test_checkout_version(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_checkout_version(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test checkout specific version."""
         manager_with_mock_repo.checkout("v1.0.7")
         mock_repo.git.checkout.assert_called_with("v1.0.7")
@@ -142,9 +134,7 @@ class TestGitManagerWithMockRepo:
         manager_with_mock_repo.pull()
         mock_repo.remotes.origin.pull.assert_called_once()
 
-    def test_pull_detached_head(
-        self, manager_with_mock_repo: GitManager, mock_repo: MagicMock
-    ) -> None:
+    def test_pull_detached_head(self, manager_with_mock_repo: GitManager, mock_repo: MagicMock) -> None:
         """Test pull when HEAD is detached (no pull)."""
         mock_repo.head.is_detached = True
         manager_with_mock_repo.pull()
@@ -170,9 +160,7 @@ class TestGitManagerClone:
         assert manager._repo == mock_cloned_repo
 
     @patch("cangjie_mcp.repo.git_manager.Repo")
-    def test_ensure_cloned_when_not_cloned(
-        self, mock_repo_class: MagicMock, temp_data_dir: Path
-    ) -> None:
+    def test_ensure_cloned_when_not_cloned(self, mock_repo_class: MagicMock, temp_data_dir: Path) -> None:
         """Test ensure_cloned clones when repo doesn't exist."""
         mock_cloned_repo = MagicMock()
         mock_repo_class.clone_from.return_value = mock_cloned_repo

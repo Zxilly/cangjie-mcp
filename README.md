@@ -166,7 +166,7 @@ cangjie-mcp prebuilt list
 
 ## 环境变量配置
 
-所有配置都可以通过环境变量设置，支持 `.env` 文件。
+所有配置都可以通过 CLI 参数或环境变量设置。运行 `cangjie-mcp --help` 查看所有选项及其对应的环境变量。
 
 ### 文档配置
 
@@ -192,7 +192,7 @@ cangjie-mcp prebuilt list
 |----------|--------|------|
 | `OPENAI_API_KEY` | | API 密钥 |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API 基础 URL |
-| `OPENAI_MODEL` | `text-embedding-3-small` | 嵌入模型 |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | 嵌入模型 |
 
 ### Rerank 配置
 

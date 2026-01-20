@@ -194,9 +194,7 @@ class PrebuiltManager:
             if not metadata_path.exists():
                 raise ValueError("Invalid archive: missing metadata file")
 
-            metadata = PrebuiltMetadata.model_validate_json(
-                metadata_path.read_text(encoding="utf-8")
-            )
+            metadata = PrebuiltMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
 
             # Check for chroma_db directory
             temp_chroma = temp_path / "chroma_db"
@@ -263,9 +261,7 @@ class PrebuiltManager:
                 with tarfile.open(archive_path, "r:gz") as tar:
                     metadata_file = tar.extractfile(ARCHIVE_METADATA_FILE)
                     if metadata_file:
-                        metadata = PrebuiltMetadata.model_validate_json(
-                            metadata_file.read().decode("utf-8")
-                        )
+                        metadata = PrebuiltMetadata.model_validate_json(metadata_file.read().decode("utf-8"))
                         archives.append(
                             PrebuiltArchiveInfo(
                                 version=metadata.version,

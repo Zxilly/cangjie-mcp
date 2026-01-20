@@ -23,9 +23,7 @@ load_dotenv()
 def pytest_configure(config: "Config") -> None:
     """Configure pytest with custom markers."""
     config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
-    config.addinivalue_line(
-        "markers", "integration: Integration tests (may require credentials or external services)"
-    )
+    config.addinivalue_line("markers", "integration: Integration tests (may require credentials or external services)")
     config.addinivalue_line(
         "markers", "credentials: Tests that require credentials (skipped without valid credentials)"
     )

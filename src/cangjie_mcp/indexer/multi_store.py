@@ -215,8 +215,7 @@ class MultiIndexStore:
         if loaded.key in self._indexes:
             existing = self._indexes[loaded.key]
             console.print(
-                f"  [yellow]Warning: {loaded.key} already loaded from {existing.url}, "
-                f"replacing with {url}[/yellow]"
+                f"  [yellow]Warning: {loaded.key} already loaded from {existing.url}, replacing with {url}[/yellow]"
             )
 
         self._indexes[loaded.key] = loaded

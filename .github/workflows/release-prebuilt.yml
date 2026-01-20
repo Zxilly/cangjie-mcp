@@ -15,14 +15,6 @@ on:
         options:
           - zh
           - en
-      embedding_model:
-        description: 'Embedding model name (leave empty for default)'
-        required: false
-        default: ''
-      chunk_size:
-        description: 'Max chunk size in characters (leave empty for default: 6000)'
-        required: false
-        default: ''
 
 env:
   PYTHON_VERSION: "3.13"
@@ -50,24 +42,15 @@ jobs:
 
       - name: Build prebuilt archive
         run: |
-          ARGS="--version ${{ github.event.inputs.docs_version }}"
-          ARGS="$ARGS --lang ${{ github.event.inputs.docs_lang }}"
-          ARGS="$ARGS --embedding openai"
-          ARGS="$ARGS --data-dir ./data"
-
-          if [ -n "${{ github.event.inputs.embedding_model }}" ]; then
-            ARGS="$ARGS --embedding-model ${{ github.event.inputs.embedding_model }}"
-          fi
-
-          if [ -n "${{ github.event.inputs.chunk_size }}" ]; then
-            ARGS="$ARGS --chunk-size ${{ github.event.inputs.chunk_size }}"
-          fi
-
-          uv run cangjie-mcp prebuilt build $ARGS
+          uv run cangjie-mcp prebuilt build \
+            --version ${{ github.event.inputs.docs_version }} \
+            --lang ${{ github.event.inputs.docs_lang }} \
+            --embedding openai \
+            --data-dir ./data
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_EMBEDDING_MODEL: ${{ secrets.OPENAI_EMBEDDING_MODEL_ADVANCED }}
 
       - name: Find archive file
         id: find-archive
@@ -88,8 +71,6 @@ jobs:
             - **Docs Version**: ${{ github.event.inputs.docs_version }}
             - **Language**: ${{ github.event.inputs.docs_lang }}
             - **Embedding Type**: openai
-            - **Embedding Model**: ${{ github.event.inputs.embedding_model || 'default' }}
-            - **Chunk Size**: ${{ github.event.inputs.chunk_size || '6000 (default)' }}
 
             ### Usage
 

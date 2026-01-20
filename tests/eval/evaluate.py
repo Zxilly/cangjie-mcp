@@ -16,7 +16,7 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
-from cangjie_mcp.config import Settings, reset_settings, update_settings
+from cangjie_mcp.config import Settings, reset_settings, set_settings
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.reranker import get_reranker_provider, reset_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
@@ -218,17 +218,23 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Reset and update settings
+    # Reset and create settings
     reset_settings()
     reset_embedding_provider()
     reset_reranker_provider()
 
-    settings = update_settings(
-        docs_version=args.version,
-        docs_lang=args.lang,
-        embedding_type=args.embedding,
-        rerank_type=args.rerank,
-    )
+    # Build settings with optional overrides
+    settings_kwargs: dict[str, Any] = {
+        "docs_version": args.version,
+        "docs_lang": args.lang,
+    }
+    if args.embedding:
+        settings_kwargs["embedding_type"] = args.embedding
+    if args.rerank:
+        settings_kwargs["rerank_type"] = args.rerank
+
+    settings = Settings(**settings_kwargs)
+    set_settings(settings)
 
     # Run evaluation
     metrics = run_evaluation(settings, top_k=args.top_k)

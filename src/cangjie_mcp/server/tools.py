@@ -97,8 +97,7 @@ class GetCodeExamplesInput(BaseModel):
 
     feature: str = Field(
         ...,
-        description="Feature to find examples for "
-        "(e.g., 'pattern matching', 'async/await', 'generics')",
+        description="Feature to find examples for (e.g., 'pattern matching', 'async/await', 'generics')",
         min_length=1,
         max_length=200,
     )

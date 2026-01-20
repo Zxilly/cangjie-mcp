@@ -3,29 +3,20 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from cangjie_mcp.config import (
     Settings,
     get_settings,
-    update_settings,
+    reset_settings,
+    set_settings,
 )
 
 
 class TestSettings:
     """Tests for Settings class."""
 
-    def test_default_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_values(self) -> None:
         """Test default configuration values."""
-        # Clear environment variables to test defaults
-        monkeypatch.delenv("CANGJIE_DATA_DIR", raising=False)
-        monkeypatch.delenv("CANGJIE_DOCS_VERSION", raising=False)
-        monkeypatch.delenv("CANGJIE_DOCS_LANG", raising=False)
-        monkeypatch.delenv("CANGJIE_EMBEDDING_TYPE", raising=False)
-        monkeypatch.delenv("CANGJIE_LOCAL_MODEL", raising=False)
-
-        # Bypass .env file by passing _env_file=None
-        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+        settings = Settings()
         assert settings.docs_version == "latest"
         assert settings.docs_lang == "zh"
         assert settings.embedding_type == "local"
@@ -73,35 +64,48 @@ class TestSettings:
 class TestOpenAISettings:
     """Tests for OpenAI settings in unified Settings class."""
 
-    def test_default_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test default OpenAI configuration without environment variables."""
-        # Clear environment variables to test defaults
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-        monkeypatch.delenv("OPENAI_MODEL", raising=False)
-
-        # Bypass .env file by passing _env_file=None
-        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    def test_default_values(self) -> None:
+        """Test default OpenAI configuration."""
+        settings = Settings()
         assert settings.openai_api_key is None
         assert settings.openai_base_url == "https://api.openai.com/v1"
         assert settings.openai_model == "text-embedding-3-small"
 
-    def test_custom_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_custom_values(self) -> None:
         """Test custom OpenAI configuration."""
-        # Clear environment variables to ensure test values are used
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-        monkeypatch.delenv("OPENAI_MODEL", raising=False)
-
         settings = Settings(
             openai_api_key="test-key",
             openai_base_url="https://custom.api.com/v1",
             openai_model="text-embedding-3-large",
-            _env_file=None,  # type: ignore[call-arg]
         )
         assert settings.openai_api_key == "test-key"
         assert settings.openai_base_url == "https://custom.api.com/v1"
         assert settings.openai_model == "text-embedding-3-large"
+
+
+class TestRerankSettings:
+    """Tests for rerank settings."""
+
+    def test_default_values(self) -> None:
+        """Test default rerank configuration."""
+        settings = Settings()
+        assert settings.rerank_type == "none"
+        assert settings.rerank_model == "BAAI/bge-reranker-v2-m3"
+        assert settings.rerank_top_k == 5
+        assert settings.rerank_initial_k == 20
+
+    def test_custom_values(self) -> None:
+        """Test custom rerank configuration."""
+        settings = Settings(
+            rerank_type="local",
+            rerank_model="custom-model",
+            rerank_top_k=10,
+            rerank_initial_k=50,
+        )
+        assert settings.rerank_type == "local"
+        assert settings.rerank_model == "custom-model"
+        assert settings.rerank_top_k == 10
+        assert settings.rerank_initial_k == 50
 
 
 class TestGetSettings:
@@ -121,39 +125,33 @@ class TestGetSettings:
             assert settings1 is settings2
 
 
-class TestUpdateSettings:
-    """Tests for update_settings function."""
+class TestSetSettings:
+    """Tests for set_settings function."""
 
-    def test_update_settings_changes_values(self) -> None:
-        """Test that update_settings changes setting values."""
-        with patch("cangjie_mcp.config._settings", None):
-            original = get_settings()
-            original_version = original.docs_version
+    def test_set_settings_updates_global(self) -> None:
+        """Test that set_settings updates the global settings."""
+        reset_settings()
 
-            updated = update_settings(docs_version="v1.0.0")
+        custom_settings = Settings(docs_version="v2.0.0", docs_lang="en")
+        set_settings(custom_settings)
 
-            assert updated.docs_version == "v1.0.0"
-            assert updated.docs_version != original_version
+        retrieved = get_settings()
+        assert retrieved.docs_version == "v2.0.0"
+        assert retrieved.docs_lang == "en"
 
-    def test_update_settings_ignores_none(self) -> None:
-        """Test that update_settings ignores None values."""
-        with patch("cangjie_mcp.config._settings", None):
-            original = get_settings()
-            original_version = original.docs_version
+        # Clean up
+        reset_settings()
 
-            updated = update_settings(docs_version=None)
+    def test_reset_settings_clears_global(self) -> None:
+        """Test that reset_settings clears the global settings."""
+        custom_settings = Settings(docs_version="v3.0.0")
+        set_settings(custom_settings)
 
-            assert updated.docs_version == original_version
+        reset_settings()
 
-    def test_update_settings_multiple_values(self, temp_data_dir: Path) -> None:
-        """Test updating multiple settings at once."""
-        with patch("cangjie_mcp.config._settings", None):
-            updated = update_settings(
-                docs_version="v2.0.0",
-                docs_lang="en",
-                data_dir=temp_data_dir,
-            )
+        # After reset, get_settings should return default settings
+        new_settings = get_settings()
+        assert new_settings.docs_version == "latest"
 
-            assert updated.docs_version == "v2.0.0"
-            assert updated.docs_lang == "en"
-            assert updated.data_dir == temp_data_dir
+        # Clean up
+        reset_settings()

@@ -198,11 +198,11 @@ class OpenAICompatibleReranker(RerankerProvider):
         # Reconstruct nodes with new scores
         reranked: list[NodeWithScore] = []
         for item in result.get("results", []):
-            idx = item["index"]
-            rerank_score = item["relevance_score"]
-            node = nodes[idx]
+            idx: int = item["index"]
+            rerank_score: float = item["relevance_score"]
+            node: NodeWithScore = nodes[idx]
             node.node.metadata["original_score"] = str(node.score if node.score else 0.0)
-            node.score = float(rerank_score)
+            node.score = rerank_score
             reranked.append(node)
 
         console.print("[green]Reranking complete.[/green]")

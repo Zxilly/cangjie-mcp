@@ -84,7 +84,7 @@ class MultiIndexHTTPServer:
 
     async def _list_indexes(self, _request: Request) -> Response:
         """List loaded indexes endpoint."""
-        indexes = []
+        indexes: list[dict[str, str]] = []
         for key, loaded in self._loaded_indexes.items():
             indexes.append(
                 {
@@ -185,16 +185,11 @@ class MultiIndexHTTPServer:
 
         console.print()
         console.print("[bold green]Server ready![/bold green]")
-        console.print(
-            f"  Health: http://{self.settings.http_host}:{self.settings.http_port}/health"
-        )
-        console.print(
-            f"  Indexes: http://{self.settings.http_host}:{self.settings.http_port}/indexes"
-        )
+        console.print(f"  Health: http://{self.settings.http_host}:{self.settings.http_port}/health")
+        console.print(f"  Indexes: http://{self.settings.http_host}:{self.settings.http_port}/indexes")
         for key in self._mcp_servers:
             console.print(
-                f"  MCP ({key}): "
-                f"http://{self.settings.http_host}:{self.settings.http_port}/{key.path_segment}/mcp"
+                f"  MCP ({key}): http://{self.settings.http_host}:{self.settings.http_port}/{key.path_segment}/mcp"
             )
         console.print()
 

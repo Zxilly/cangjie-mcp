@@ -18,6 +18,4 @@ CANGJIE_DOCS_VERSION = os.environ.get("CANGJIE_TEST_DOCS_VERSION", "v1.0.7")
 
 # Local embedding model used for testing
 # This model is used for offline testing without external API calls
-CANGJIE_LOCAL_MODEL = os.environ.get(
-    "CANGJIE_TEST_LOCAL_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"
-)
+CANGJIE_LOCAL_MODEL = os.environ.get("CANGJIE_TEST_LOCAL_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")

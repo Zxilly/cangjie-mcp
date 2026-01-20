@@ -270,7 +270,7 @@ class VectorStore:
 
         # Determine how many candidates to retrieve
         should_rerank = use_rerank and self.reranker is not None
-        if should_rerank:
+        if should_rerank:  # noqa: SIM108
             # Retrieve more candidates for reranking
             retrieve_k = initial_k if initial_k is not None else max(top_k * 4, 20)
         else:
@@ -339,9 +339,7 @@ def create_vector_store(
     from cangjie_mcp.indexer.reranker import get_reranker_provider
 
     embedding_provider = get_embedding_provider(settings)
-    reranker = (
-        get_reranker_provider(settings) if with_rerank and settings.rerank_type != "none" else None
-    )
+    reranker = get_reranker_provider(settings) if with_rerank and settings.rerank_type != "none" else None
 
     return VectorStore(
         db_path=settings.chroma_db_dir,

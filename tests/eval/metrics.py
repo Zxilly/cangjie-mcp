@@ -29,10 +29,7 @@ class RetrievalResult:
     @property
     def hit(self) -> bool:
         """Check if any expected file was retrieved."""
-        return any(
-            any(self._is_match(exp, ret) for exp in self.expected_files)
-            for ret in self.retrieved_files
-        )
+        return any(any(self._is_match(exp, ret) for exp in self.expected_files) for ret in self.retrieved_files)
 
     @property
     def hit_at_k(self) -> dict[int, bool]:
@@ -40,9 +37,7 @@ class RetrievalResult:
         result = {}
         for k in [1, 3, 5, 10]:
             top_k = self.retrieved_files[:k]
-            result[k] = any(
-                any(self._is_match(exp, ret) for exp in self.expected_files) for ret in top_k
-            )
+            result[k] = any(any(self._is_match(exp, ret) for exp in self.expected_files) for ret in top_k)
         return result
 
     @property
@@ -62,9 +57,7 @@ class RetrievalResult:
             if not top_k:
                 result[k] = 0.0
                 continue
-            relevant_count = sum(
-                1 for ret in top_k if any(self._is_match(exp, ret) for exp in self.expected_files)
-            )
+            relevant_count = sum(1 for ret in top_k if any(self._is_match(exp, ret) for exp in self.expected_files))
             result[k] = relevant_count / len(top_k)
         return result
 
@@ -77,9 +70,7 @@ class RetrievalResult:
         result = {}
         for k in [1, 3, 5, 10]:
             top_k = self.retrieved_files[:k]
-            found_count = sum(
-                1 for exp in self.expected_files if any(self._is_match(exp, ret) for ret in top_k)
-            )
+            found_count = sum(1 for exp in self.expected_files if any(self._is_match(exp, ret) for ret in top_k))
             result[k] = found_count / len(self.expected_files)
         return result
 

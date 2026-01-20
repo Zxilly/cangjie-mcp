@@ -103,22 +103,14 @@ class TestCreateEmbeddingProvider:
         assert isinstance(provider, LocalEmbedding)
         assert provider.model_name == "test-local-model"
 
-    def test_create_openai_provider(
-        self, temp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_create_openai_provider(self, temp_data_dir: Path) -> None:
         """Test creating OpenAI embedding provider."""
-        # Clear environment variables to ensure test values are used
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-        monkeypatch.delenv("OPENAI_MODEL", raising=False)
-
         settings = Settings(
             embedding_type="openai",
             openai_api_key="test-api-key",
             openai_model="text-embedding-3-small",
             openai_base_url="https://api.openai.com/v1",
             data_dir=temp_data_dir,
-            _env_file=None,  # type: ignore[call-arg]
         )
 
         provider = create_embedding_provider(settings)
@@ -127,18 +119,12 @@ class TestCreateEmbeddingProvider:
         assert provider.api_key == "test-api-key"
         assert provider.model == "text-embedding-3-small"
 
-    def test_create_openai_provider_no_key(
-        self, temp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_create_openai_provider_no_key(self, temp_data_dir: Path) -> None:
         """Test error when OpenAI key is not set."""
-        # Clear environment variables to test no-key scenario
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
         settings = Settings(
             embedding_type="openai",
             openai_api_key=None,
             data_dir=temp_data_dir,
-            _env_file=None,  # type: ignore[call-arg]
         )
 
         with pytest.raises(ValueError, match="OpenAI API key is required"):

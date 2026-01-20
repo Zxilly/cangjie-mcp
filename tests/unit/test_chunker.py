@@ -72,9 +72,7 @@ class TestDocumentChunker:
         assert len(nodes) >= 1
         assert all(node.get_content() for node in nodes)
 
-    def test_chunk_single_document_fallback(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_chunk_single_document_fallback(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test chunking a single document with fallback."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
 
@@ -84,9 +82,7 @@ class TestDocumentChunker:
         assert len(nodes) >= 1
         assert all(node.get_content() for node in nodes)
 
-    def test_fallback_splitter_caching(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_fallback_splitter_caching(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test that fallback splitter is cached."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
 
@@ -95,9 +91,7 @@ class TestDocumentChunker:
 
         assert splitter1 is splitter2
 
-    def test_chunk_documents_preserves_metadata(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_chunk_documents_preserves_metadata(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test that chunking preserves document metadata."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
 
@@ -150,9 +144,7 @@ echo hello
         matches = list(CODE_BLOCK_PATTERN.finditer(text))
         assert len(matches) == 2
 
-    def test_split_text_preserving_code_no_code(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_split_text_preserving_code_no_code(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test splitting text without code blocks."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
         segments = chunker._split_text_preserving_code("Just plain text here.")
@@ -161,9 +153,7 @@ echo hello
         assert not segments[0].has_code
         assert segments[0].code_count == 0
 
-    def test_split_text_preserving_code_with_code(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_split_text_preserving_code_with_code(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test splitting text with code block preserves context."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
         text = """Introduction paragraph.
@@ -184,9 +174,7 @@ Following text."""
         # Code block should be intact
         assert "let x = 42" in code_segments[0].text
 
-    def test_split_text_preserving_code_keeps_context(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_split_text_preserving_code_keeps_context(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test that code blocks are kept with their preceding context."""
         chunker = DocumentChunker(embedding_provider=mock_embedding_provider)
         text = """## Example Section
@@ -201,9 +189,7 @@ func test() {}
         code_segment = next(s for s in segments if s.has_code)
 
         # Should contain both context and code
-        assert "explains the code" in code_segment.text or any(
-            "explains" in s.text for s in segments
-        )
+        assert "explains the code" in code_segment.text or any("explains" in s.text for s in segments)
         assert "func test()" in code_segment.text
 
 
@@ -220,9 +206,7 @@ class TestCreateChunker:
         assert chunker.buffer_size == 1
         assert chunker.breakpoint_percentile_threshold == 95
 
-    def test_create_chunker_with_max_chunk_size(
-        self, mock_embedding_provider: MockEmbeddingProvider
-    ) -> None:
+    def test_create_chunker_with_max_chunk_size(self, mock_embedding_provider: MockEmbeddingProvider) -> None:
         """Test creating a chunker with custom max_chunk_size."""
         chunker = create_chunker(mock_embedding_provider, max_chunk_size=4000)
 

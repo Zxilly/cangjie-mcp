@@ -14,10 +14,10 @@ class TestServeCommand:
     """Tests for serve command."""
 
     @patch("cangjie_mcp.server.app.create_mcp_server")
-    @patch("cangjie_mcp.config.update_settings")
+    @patch("cangjie_mcp.cli._create_settings")
     def test_serve_displays_info(
         self,
-        mock_update_settings: MagicMock,
+        mock_create_settings: MagicMock,
         mock_create_server: MagicMock,
     ) -> None:
         """Test serve command displays server info."""
@@ -29,7 +29,7 @@ class TestServeCommand:
         mock_settings.chroma_db_dir = Path("/test/chroma")
         mock_settings.docs_repo_dir = Path("/test/repo")
         mock_settings.docs_source_dir = Path("/test/source")
-        mock_update_settings.return_value = mock_settings
+        mock_create_settings.return_value = mock_settings
 
         mock_mcp = MagicMock()
         mock_create_server.return_value = mock_mcp
@@ -61,17 +61,11 @@ class TestPrebuiltListCommand:
     """Tests for prebuilt list command."""
 
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    @patch("cangjie_mcp.config.get_settings")
     def test_prebuilt_list_empty(
         self,
-        mock_get_settings: MagicMock,
         mock_manager_class: MagicMock,
     ) -> None:
         """Test prebuilt list when no indexes exist."""
-        mock_settings = MagicMock()
-        mock_settings.data_dir = Path("/test/data")
-        mock_get_settings.return_value = mock_settings
-
         mock_manager = MagicMock()
         mock_manager.list_local.return_value = []
         mock_manager.get_installed_metadata.return_value = None
@@ -83,17 +77,11 @@ class TestPrebuiltListCommand:
         assert "No local prebuilt indexes" in result.output
 
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    @patch("cangjie_mcp.config.get_settings")
     def test_prebuilt_list_with_archives(
         self,
-        mock_get_settings: MagicMock,
         mock_manager_class: MagicMock,
     ) -> None:
         """Test prebuilt list with archives."""
-        mock_settings = MagicMock()
-        mock_settings.data_dir = Path("/test/data")
-        mock_get_settings.return_value = mock_settings
-
         mock_archive = MagicMock()
         mock_archive.version = "v1.0.0"
         mock_archive.lang = "zh"
@@ -111,17 +99,11 @@ class TestPrebuiltListCommand:
         assert "v1.0.0" in result.output
 
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    @patch("cangjie_mcp.config.get_settings")
     def test_prebuilt_list_with_installed(
         self,
-        mock_get_settings: MagicMock,
         mock_manager_class: MagicMock,
     ) -> None:
         """Test prebuilt list with installed metadata."""
-        mock_settings = MagicMock()
-        mock_settings.data_dir = Path("/test/data")
-        mock_get_settings.return_value = mock_settings
-
         mock_installed = MagicMock()
         mock_installed.version = "v1.0.0"
         mock_installed.lang = "zh"
@@ -151,10 +133,10 @@ class TestPrebuiltBuildCommand:
     @patch("cangjie_mcp.indexer.embeddings.create_embedding_provider")
     @patch("cangjie_mcp.indexer.loader.DocumentLoader")
     @patch("cangjie_mcp.repo.git_manager.GitManager")
-    @patch("cangjie_mcp.config.update_settings")
+    @patch("cangjie_mcp.cli._create_settings")
     def test_prebuilt_build_success(
         self,
-        mock_update_settings: MagicMock,
+        mock_create_settings: MagicMock,
         mock_git_manager_class: MagicMock,
         mock_loader_class: MagicMock,
         mock_embedding_provider: MagicMock,
@@ -168,11 +150,13 @@ class TestPrebuiltBuildCommand:
         mock_settings.docs_version = "v1.0.0"
         mock_settings.docs_lang = "zh"
         mock_settings.embedding_type = "local"
+        mock_settings.chunk_max_size = 6000
         mock_settings.data_dir = Path("/test/data")
         mock_settings.docs_repo_dir = Path("/test/repo")
         mock_settings.docs_source_dir = Path("/test/source")
         mock_settings.chroma_db_dir = Path("/test/chroma")
-        mock_update_settings.return_value = mock_settings
+        mock_settings.index_dir = Path("/test/index")
+        mock_create_settings.return_value = mock_settings
 
         # Setup GitManager
         mock_git_mgr = MagicMock()
@@ -211,10 +195,10 @@ class TestPrebuiltBuildCommand:
 
     @patch("cangjie_mcp.indexer.loader.DocumentLoader")
     @patch("cangjie_mcp.repo.git_manager.GitManager")
-    @patch("cangjie_mcp.config.update_settings")
+    @patch("cangjie_mcp.cli._create_settings")
     def test_prebuilt_build_no_documents(
         self,
-        mock_update_settings: MagicMock,
+        mock_create_settings: MagicMock,
         mock_git_manager_class: MagicMock,
         mock_loader_class: MagicMock,
     ) -> None:
@@ -224,10 +208,11 @@ class TestPrebuiltBuildCommand:
         mock_settings.docs_version = "v1.0.0"
         mock_settings.docs_lang = "zh"
         mock_settings.embedding_type = "local"
+        mock_settings.chunk_max_size = 6000
         mock_settings.data_dir = Path("/test/data")
         mock_settings.docs_repo_dir = Path("/test/repo")
         mock_settings.docs_source_dir = Path("/test/source")
-        mock_update_settings.return_value = mock_settings
+        mock_create_settings.return_value = mock_settings
 
         # Setup GitManager
         mock_git_mgr = MagicMock()
@@ -248,35 +233,19 @@ class TestPrebuiltBuildCommand:
 class TestPrebuiltDownloadCommand:
     """Tests for prebuilt download command."""
 
-    @patch("cangjie_mcp.config.get_settings")
-    def test_prebuilt_download_no_url(
-        self,
-        mock_get_settings: MagicMock,
-    ) -> None:
+    def test_prebuilt_download_no_url(self) -> None:
         """Test prebuilt download without URL."""
-        mock_settings = MagicMock()
-        mock_settings.prebuilt_url = None
-        mock_get_settings.return_value = mock_settings
-
         result = runner.invoke(app, ["prebuilt", "download"])
 
         assert result.exit_code == 1
         assert "No URL provided" in result.output
 
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    @patch("cangjie_mcp.config.get_settings")
     def test_prebuilt_download_success(
         self,
-        mock_get_settings: MagicMock,
         mock_manager_class: MagicMock,
     ) -> None:
         """Test prebuilt download with explicit URL."""
-        mock_settings = MagicMock()
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.docs_version = "v1.0.0"
-        mock_settings.docs_lang = "zh"
-        mock_get_settings.return_value = mock_settings
-
         mock_manager = MagicMock()
         mock_manager.download.return_value = Path("/test/archive.tar.gz")
         mock_manager_class.return_value = mock_manager

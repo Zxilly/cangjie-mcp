@@ -1,4 +1,12 @@
-"""CLI for Cangjie MCP server."""
+"""CLI for Cangjie MCP server.
+
+All CLI options can be configured via environment variables.
+Run `cangjie-mcp --help` to see all options and their environment variables.
+
+Environment variable naming:
+- CANGJIE_* prefix for most options
+- OPENAI_* prefix for OpenAI-related options
+"""
 
 from pathlib import Path
 from typing import Annotated
@@ -7,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from cangjie_mcp.config import Settings, get_settings, update_settings
+from cangjie_mcp.config import Settings, set_settings
 
 app = typer.Typer(
     name="cangjie-mcp",
@@ -19,6 +27,26 @@ prebuilt_app = typer.Typer(help="Prebuilt index management commands")
 app.add_typer(prebuilt_app, name="prebuilt")
 
 console = Console()
+
+# Default values (centralized)
+DEFAULT_DOCS_VERSION = "latest"
+DEFAULT_DOCS_LANG = "zh"
+DEFAULT_EMBEDDING_TYPE = "local"
+DEFAULT_LOCAL_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
+DEFAULT_RERANK_TYPE = "none"
+DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+DEFAULT_RERANK_TOP_K = 5
+DEFAULT_RERANK_INITIAL_K = 20
+DEFAULT_CHUNK_MAX_SIZE = 6000
+DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_PORT = 8000
+
+
+def _get_default_data_dir() -> Path:
+    """Get the default data directory (~/.cangjie-mcp)."""
+    return Path.home() / ".cangjie-mcp"
 
 
 def initialize_and_index(settings: Settings) -> None:
@@ -84,56 +112,161 @@ def initialize_and_index(settings: Settings) -> None:
     console.print("[green]Index built successfully![/green]")
 
 
+def _create_settings(
+    *,
+    version: str | None = None,
+    lang: str | None = None,
+    embedding: str | None = None,
+    local_model: str | None = None,
+    openai_api_key: str | None = None,
+    openai_base_url: str | None = None,
+    openai_model: str | None = None,
+    rerank: str | None = None,
+    rerank_model: str | None = None,
+    rerank_top_k: int | None = None,
+    rerank_initial_k: int | None = None,
+    chunk_size: int | None = None,
+    data_dir: Path | None = None,
+    prebuilt_url: str | None = None,
+    http_host: str | None = None,
+    http_port: int | None = None,
+    indexes: str | None = None,
+) -> Settings:
+    """Create Settings instance from CLI arguments."""
+    settings = Settings(
+        docs_version=version or DEFAULT_DOCS_VERSION,
+        docs_lang=lang or DEFAULT_DOCS_LANG,  # type: ignore[arg-type]
+        embedding_type=embedding or DEFAULT_EMBEDDING_TYPE,  # type: ignore[arg-type]
+        local_model=local_model or DEFAULT_LOCAL_MODEL,
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url or DEFAULT_OPENAI_BASE_URL,
+        openai_model=openai_model or DEFAULT_OPENAI_MODEL,
+        rerank_type=rerank or DEFAULT_RERANK_TYPE,  # type: ignore[arg-type]
+        rerank_model=rerank_model or DEFAULT_RERANK_MODEL,
+        rerank_top_k=rerank_top_k or DEFAULT_RERANK_TOP_K,
+        rerank_initial_k=rerank_initial_k or DEFAULT_RERANK_INITIAL_K,
+        chunk_max_size=chunk_size or DEFAULT_CHUNK_MAX_SIZE,
+        data_dir=data_dir or _get_default_data_dir(),
+        prebuilt_url=prebuilt_url,
+        http_host=http_host or DEFAULT_HTTP_HOST,
+        http_port=http_port or DEFAULT_HTTP_PORT,
+        indexes=indexes,
+    )
+    set_settings(settings)
+    return settings
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     version: Annotated[
         str | None,
-        typer.Option("--version", "-v", help="Documentation version (git tag)"),
+        typer.Option(
+            "--version",
+            "-v",
+            help="Documentation version (git tag)",
+            envvar="CANGJIE_DOCS_VERSION",
+        ),
     ] = None,
     lang: Annotated[
         str | None,
-        typer.Option("--lang", "-l", help="Documentation language (zh/en)"),
+        typer.Option(
+            "--lang",
+            "-l",
+            help="Documentation language (zh/en)",
+            envvar="CANGJIE_DOCS_LANG",
+        ),
     ] = None,
     embedding: Annotated[
         str | None,
-        typer.Option("--embedding", "-e", help="Embedding type (local/openai)"),
+        typer.Option(
+            "--embedding",
+            "-e",
+            help="Embedding type (local/openai)",
+            envvar="CANGJIE_EMBEDDING_TYPE",
+        ),
     ] = None,
     local_model: Annotated[
         str | None,
-        typer.Option("--local-model", help="Local HuggingFace embedding model name"),
+        typer.Option(
+            "--local-model",
+            help="Local HuggingFace embedding model name",
+            envvar="CANGJIE_LOCAL_MODEL",
+        ),
     ] = None,
     openai_api_key: Annotated[
         str | None,
-        typer.Option("--openai-api-key", help="OpenAI API key", envvar="OPENAI_API_KEY"),
+        typer.Option(
+            "--openai-api-key",
+            help="OpenAI API key",
+            envvar="OPENAI_API_KEY",
+        ),
     ] = None,
     openai_base_url: Annotated[
         str | None,
-        typer.Option("--openai-base-url", help="OpenAI API base URL"),
+        typer.Option(
+            "--openai-base-url",
+            help="OpenAI API base URL",
+            envvar="OPENAI_BASE_URL",
+        ),
     ] = None,
     openai_model: Annotated[
         str | None,
-        typer.Option("--openai-model", help="OpenAI embedding model"),
+        typer.Option(
+            "--openai-model",
+            help="OpenAI embedding model",
+            envvar="OPENAI_EMBEDDING_MODEL",
+        ),
     ] = None,
     rerank: Annotated[
         str | None,
-        typer.Option("--rerank", "-r", help="Rerank type (none/local/openai)"),
+        typer.Option(
+            "--rerank",
+            "-r",
+            help="Rerank type (none/local/openai)",
+            envvar="CANGJIE_RERANK_TYPE",
+        ),
     ] = None,
     rerank_model: Annotated[
         str | None,
-        typer.Option("--rerank-model", help="Rerank model name"),
+        typer.Option(
+            "--rerank-model",
+            help="Rerank model name",
+            envvar="CANGJIE_RERANK_MODEL",
+        ),
     ] = None,
     rerank_top_k: Annotated[
         int | None,
-        typer.Option("--rerank-top-k", help="Number of results after reranking"),
+        typer.Option(
+            "--rerank-top-k",
+            help="Number of results after reranking",
+            envvar="CANGJIE_RERANK_TOP_K",
+        ),
     ] = None,
     rerank_initial_k: Annotated[
         int | None,
-        typer.Option("--rerank-initial-k", help="Number of candidates before reranking"),
+        typer.Option(
+            "--rerank-initial-k",
+            help="Number of candidates before reranking",
+            envvar="CANGJIE_RERANK_INITIAL_K",
+        ),
+    ] = None,
+    chunk_size: Annotated[
+        int | None,
+        typer.Option(
+            "--chunk-size",
+            help="Max chunk size in characters",
+            envvar="CANGJIE_CHUNK_MAX_SIZE",
+        ),
     ] = None,
     data_dir: Annotated[
         Path | None,
-        typer.Option("--data-dir", "-d", help="Data directory path"),
+        typer.Option(
+            "--data-dir",
+            "-d",
+            help="Data directory path",
+            envvar="CANGJIE_DATA_DIR",
+        ),
     ] = None,
 ) -> None:
     """Start the MCP server in stdio mode (default).
@@ -147,19 +280,19 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
 
-    # Update settings with CLI overrides
-    settings = update_settings(
-        docs_version=version,
-        docs_lang=lang,
-        embedding_type=embedding,
+    settings = _create_settings(
+        version=version,
+        lang=lang,
+        embedding=embedding,
         local_model=local_model,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
-        rerank_type=rerank,
+        rerank=rerank,
         rerank_model=rerank_model,
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
+        chunk_size=chunk_size,
         data_dir=data_dir,
     )
 
@@ -187,47 +320,97 @@ def main(
 def serve(
     indexes: Annotated[
         str | None,
-        typer.Option("--indexes", "-i", help="Comma-separated list of URLs to prebuilt index archives"),
+        typer.Option(
+            "--indexes",
+            "-i",
+            help="Comma-separated list of URLs to prebuilt index archives",
+            envvar="CANGJIE_INDEXES",
+        ),
     ] = None,
     host: Annotated[
         str | None,
-        typer.Option("--host", "-H", help="HTTP server host address"),
+        typer.Option(
+            "--host",
+            "-H",
+            help="HTTP server host address",
+            envvar="CANGJIE_HTTP_HOST",
+        ),
     ] = None,
     port: Annotated[
         int | None,
-        typer.Option("--port", "-p", help="HTTP server port"),
+        typer.Option(
+            "--port",
+            "-p",
+            help="HTTP server port",
+            envvar="CANGJIE_HTTP_PORT",
+        ),
     ] = None,
     embedding: Annotated[
         str | None,
-        typer.Option("--embedding", "-e", help="Embedding type (local/openai)"),
+        typer.Option(
+            "--embedding",
+            "-e",
+            help="Embedding type (local/openai)",
+            envvar="CANGJIE_EMBEDDING_TYPE",
+        ),
     ] = None,
     local_model: Annotated[
         str | None,
-        typer.Option("--local-model", help="Local HuggingFace embedding model name"),
+        typer.Option(
+            "--local-model",
+            help="Local HuggingFace embedding model name",
+            envvar="CANGJIE_LOCAL_MODEL",
+        ),
     ] = None,
     openai_api_key: Annotated[
         str | None,
-        typer.Option("--openai-api-key", help="OpenAI API key", envvar="OPENAI_API_KEY"),
+        typer.Option(
+            "--openai-api-key",
+            help="OpenAI API key",
+            envvar="OPENAI_API_KEY",
+        ),
     ] = None,
     openai_base_url: Annotated[
         str | None,
-        typer.Option("--openai-base-url", help="OpenAI API base URL"),
+        typer.Option(
+            "--openai-base-url",
+            help="OpenAI API base URL",
+            envvar="OPENAI_BASE_URL",
+        ),
     ] = None,
     openai_model: Annotated[
         str | None,
-        typer.Option("--openai-model", help="OpenAI embedding model"),
+        typer.Option(
+            "--openai-model",
+            help="OpenAI embedding model",
+            envvar="OPENAI_EMBEDDING_MODEL",
+        ),
     ] = None,
     rerank: Annotated[
         str | None,
-        typer.Option("--rerank", "-r", help="Rerank type (none/local/openai)"),
+        typer.Option(
+            "--rerank",
+            "-r",
+            help="Rerank type (none/local/openai)",
+            envvar="CANGJIE_RERANK_TYPE",
+        ),
     ] = None,
     rerank_model: Annotated[
         str | None,
-        typer.Option("--rerank-model", help="Rerank model name"),
+        typer.Option(
+            "--rerank-model",
+            help="Rerank model name",
+            envvar="CANGJIE_RERANK_MODEL",
+        ),
     ] = None,
     data_dir: Annotated[
         Path | None,
-        typer.Option("--data-dir", "-d", help="Data directory path"),
+        typer.Option(
+            "--data-dir",
+            "-d",
+            help="Data directory path",
+            envvar="CANGJIE_DATA_DIR",
+        ),
     ] = None,
 ) -> None:
     """Start the HTTP server with multi-index support.
@@ -249,14 +432,13 @@ def serve(
     """
     from cangjie_mcp.indexer.multi_store import parse_index_urls
 
-    # Update settings with CLI overrides
-    settings = update_settings(
-        embedding_type=embedding,
+    settings = _create_settings(
+        embedding=embedding,
         local_model=local_model,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
-        rerank_type=rerank,
+        rerank=rerank,
         rerank_model=rerank_model,
         data_dir=data_dir,
         http_host=host,
@@ -303,34 +485,55 @@ def serve(
 def prebuilt_download(
     url: Annotated[
         str | None,
-        typer.Option("--url", "-u", help="URL to download from"),
+        typer.Option(
+            "--url",
+            "-u",
+            help="URL to download from",
+            envvar="CANGJIE_PREBUILT_URL",
+        ),
     ] = None,
     version: Annotated[
         str | None,
-        typer.Option("--version", "-v", help="Version to download"),
+        typer.Option(
+            "--version",
+            "-v",
+            help="Version to download",
+            envvar="CANGJIE_DOCS_VERSION",
+        ),
     ] = None,
     lang: Annotated[
         str | None,
-        typer.Option("--lang", "-l", help="Language to download"),
+        typer.Option(
+            "--lang",
+            "-l",
+            help="Language to download",
+            envvar="CANGJIE_DOCS_LANG",
+        ),
+    ] = None,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--data-dir",
+            "-d",
+            help="Data directory path",
+            envvar="CANGJIE_DATA_DIR",
+        ),
     ] = None,
 ) -> None:
     """Download a prebuilt index."""
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
-    settings = get_settings()
-
     if not url:
-        url = settings.prebuilt_url
-        if not url:
-            console.print("[red]No URL provided. Set CANGJIE_PREBUILT_URL or use --url[/red]")
-            raise typer.Exit(1)
+        console.print("[red]No URL provided. Set CANGJIE_PREBUILT_URL or use --url[/red]")
+        raise typer.Exit(1)
 
-    version = version or settings.docs_version
-    lang = lang or settings.docs_lang
+    actual_version = version or DEFAULT_DOCS_VERSION
+    actual_lang = lang or DEFAULT_DOCS_LANG
+    actual_data_dir = data_dir or _get_default_data_dir()
 
-    mgr = PrebuiltManager(settings.data_dir)
+    mgr = PrebuiltManager(actual_data_dir)
     try:
-        archive_path = mgr.download(url, version, lang)
+        archive_path = mgr.download(url, actual_version, actual_lang)
         mgr.install(archive_path)
     except Exception as e:
         console.print(f"[red]Failed to download: {e}[/red]")
@@ -341,27 +544,80 @@ def prebuilt_download(
 def prebuilt_build(
     version: Annotated[
         str | None,
-        typer.Option("--version", "-v", help="Documentation version (git tag)"),
+        typer.Option(
+            "--version",
+            "-v",
+            help="Documentation version (git tag)",
+            envvar="CANGJIE_DOCS_VERSION",
+        ),
     ] = None,
     lang: Annotated[
         str | None,
-        typer.Option("--lang", "-l", help="Documentation language (zh/en)"),
+        typer.Option(
+            "--lang",
+            "-l",
+            help="Documentation language (zh/en)",
+            envvar="CANGJIE_DOCS_LANG",
+        ),
     ] = None,
     embedding: Annotated[
         str | None,
-        typer.Option("--embedding", "-e", help="Embedding type (local/openai)"),
+        typer.Option(
+            "--embedding",
+            "-e",
+            help="Embedding type (local/openai)",
+            envvar="CANGJIE_EMBEDDING_TYPE",
+        ),
     ] = None,
-    embedding_model: Annotated[
+    local_model: Annotated[
         str | None,
-        typer.Option("--embedding-model", "-m", help="Embedding model name"),
+        typer.Option(
+            "--local-model",
+            help="Local embedding model name",
+            envvar="CANGJIE_LOCAL_MODEL",
+        ),
+    ] = None,
+    openai_api_key: Annotated[
+        str | None,
+        typer.Option(
+            "--openai-api-key",
+            help="OpenAI API key",
+            envvar="OPENAI_API_KEY",
+        ),
+    ] = None,
+    openai_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--openai-base-url",
+            help="OpenAI API base URL",
+            envvar="OPENAI_BASE_URL",
+        ),
+    ] = None,
+    openai_model: Annotated[
+        str | None,
+        typer.Option(
+            "--openai-model",
+            help="OpenAI embedding model",
+            envvar="OPENAI_EMBEDDING_MODEL",
+        ),
     ] = None,
     chunk_size: Annotated[
         int | None,
-        typer.Option("--chunk-size", "-c", help="Max chunk size in characters"),
+        typer.Option(
+            "--chunk-size",
+            "-c",
+            help="Max chunk size in characters",
+            envvar="CANGJIE_CHUNK_MAX_SIZE",
+        ),
     ] = None,
     data_dir: Annotated[
         Path | None,
-        typer.Option("--data-dir", "-d", help="Data directory"),
+        typer.Option(
+            "--data-dir",
+            "-d",
+            help="Data directory",
+            envvar="CANGJIE_DATA_DIR",
+        ),
     ] = None,
     output: Annotated[
         Path | None,
@@ -380,13 +636,15 @@ def prebuilt_build(
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
     from cangjie_mcp.repo.git_manager import GitManager
 
-    # Update settings with CLI overrides
-    settings = update_settings(
-        docs_version=version,
-        docs_lang=lang,
-        embedding_type=embedding,
-        local_model=embedding_model,
-        chunk_max_size=chunk_size,
+    settings = _create_settings(
+        version=version,
+        lang=lang,
+        embedding=embedding,
+        local_model=local_model,
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url,
+        openai_model=openai_model,
+        chunk_size=chunk_size,
         data_dir=data_dir,
     )
 
@@ -458,12 +716,22 @@ def prebuilt_build(
 
 
 @prebuilt_app.command("list")
-def prebuilt_list() -> None:
+def prebuilt_list(
+    data_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--data-dir",
+            "-d",
+            help="Data directory path",
+            envvar="CANGJIE_DATA_DIR",
+        ),
+    ] = None,
+) -> None:
     """List available prebuilt indexes."""
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
-    settings = get_settings()
-    mgr = PrebuiltManager(settings.data_dir)
+    actual_data_dir = data_dir or _get_default_data_dir()
+    mgr = PrebuiltManager(actual_data_dir)
 
     # List local archives
     local = mgr.list_local()
