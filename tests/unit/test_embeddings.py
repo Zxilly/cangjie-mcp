@@ -1,5 +1,6 @@
 """Tests for indexer/embeddings.py embedding providers."""
 
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -90,9 +91,9 @@ class TestOpenAIEmbeddingProvider:
 class TestCreateEmbeddingProvider:
     """Tests for create_embedding_provider factory function."""
 
-    def test_create_local_provider(self, temp_data_dir: Path) -> None:
+    def test_create_local_provider(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test creating local embedding provider."""
-        settings = Settings(
+        settings = create_test_settings(
             embedding_type="local",
             local_model="test-local-model",
             data_dir=temp_data_dir,
@@ -103,9 +104,9 @@ class TestCreateEmbeddingProvider:
         assert isinstance(provider, LocalEmbedding)
         assert provider.model_name == "test-local-model"
 
-    def test_create_openai_provider(self, temp_data_dir: Path) -> None:
+    def test_create_openai_provider(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test creating OpenAI embedding provider."""
-        settings = Settings(
+        settings = create_test_settings(
             embedding_type="openai",
             openai_api_key="test-api-key",
             openai_model="text-embedding-3-small",
@@ -119,9 +120,11 @@ class TestCreateEmbeddingProvider:
         assert provider.api_key == "test-api-key"
         assert provider.model == "text-embedding-3-small"
 
-    def test_create_openai_provider_no_key(self, temp_data_dir: Path) -> None:
+    def test_create_openai_provider_no_key(
+        self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]
+    ) -> None:
         """Test error when OpenAI key is not set."""
-        settings = Settings(
+        settings = create_test_settings(
             embedding_type="openai",
             openai_api_key=None,
             data_dir=temp_data_dir,
@@ -142,9 +145,9 @@ class TestGetEmbeddingProvider:
         """Reset provider after each test."""
         reset_embedding_provider()
 
-    def test_get_with_settings(self, temp_data_dir: Path) -> None:
+    def test_get_with_settings(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test get_embedding_provider with explicit settings."""
-        settings = Settings(
+        settings = create_test_settings(
             embedding_type="local",
             local_model="test-model",
             data_dir=temp_data_dir,
@@ -155,9 +158,9 @@ class TestGetEmbeddingProvider:
         assert isinstance(provider, LocalEmbedding)
         assert provider.model_name == "test-model"
 
-    def test_get_caching(self, temp_data_dir: Path) -> None:
+    def test_get_caching(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test that provider is cached."""
-        settings = Settings(
+        settings = create_test_settings(
             embedding_type="local",
             data_dir=temp_data_dir,
         )
@@ -171,9 +174,9 @@ class TestGetEmbeddingProvider:
 class TestResetEmbeddingProvider:
     """Tests for reset_embedding_provider function."""
 
-    def test_reset(self, temp_data_dir: Path) -> None:
+    def test_reset(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test resetting the global provider."""
-        settings = Settings(
+        settings = create_test_settings(
             embedding_type="local",
             data_dir=temp_data_dir,
         )

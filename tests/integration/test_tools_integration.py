@@ -7,7 +7,7 @@ real document stores and indexed content.
 from pathlib import Path
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.loader import DocumentLoader
+from cangjie_mcp.indexer.document_source import PrebuiltDocumentSource
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
 from cangjie_mcp.server.tools import (
@@ -29,11 +29,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test search_docs tool function."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         results = tools.search_docs(ctx, SearchDocsInput(query="变量声明", top_k=3))
@@ -49,11 +49,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test get_topic tool function."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.get_topic(ctx, GetTopicInput(topic="hello_world"))
@@ -70,11 +70,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test get_topic returns None for non-existent topic."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.get_topic(ctx, GetTopicInput(topic="nonexistent_topic"))
@@ -87,11 +87,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test list_topics tool function."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.list_topics(ctx, ListTopicsInput())
@@ -109,11 +109,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test list_topics with category filter."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.list_topics(ctx, ListTopicsInput(category="tools"))
@@ -130,11 +130,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test get_code_examples tool function."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="函数", top_k=3))
@@ -150,11 +150,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test get_tool_usage tool function."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.get_tool_usage(ctx, GetToolUsageInput(tool_name="cjpm"))
@@ -171,11 +171,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test search_docs with category filter."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         results = tools.search_docs(ctx, SearchDocsInput(query="编译", category="tools", top_k=3))
@@ -190,11 +190,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test get_topic with explicit category."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.get_topic(ctx, GetTopicInput(topic="cjc", category="tools"))
@@ -210,11 +210,11 @@ class TestToolsIntegration:
         local_settings: Settings,
     ) -> None:
         """Test get_code_examples returns examples with expected languages."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="编译", top_k=5))

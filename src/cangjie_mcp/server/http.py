@@ -1,4 +1,4 @@
-"""HTTP server with multi-index support for Cangjie MCP."""
+"""HTTP server for Cangjie MCP."""
 
 from __future__ import annotations
 
@@ -70,7 +70,12 @@ class MultiIndexHTTPServer:
 
         # Create MCP servers for each loaded index
         for key, loaded in self._loaded_indexes.items():
-            mcp = create_mcp_server_with_store(self.settings, loaded.store, key)
+            mcp = create_mcp_server_with_store(
+                self.settings,
+                loaded.store,
+                key,
+                document_source=loaded.document_source,
+            )
             self._mcp_servers[key] = mcp
 
     async def _health_check(self, _request: Request) -> Response:

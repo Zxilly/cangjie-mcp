@@ -7,6 +7,7 @@ through search and tool usage.
 from pathlib import Path
 
 from cangjie_mcp.config import Settings
+from cangjie_mcp.indexer.document_source import PrebuiltDocumentSource
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
@@ -52,11 +53,11 @@ class TestEndToEndWorkflow:
         local_settings: Settings,
     ) -> None:
         """Test using tools through ToolContext."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.list_topics(ctx, ListTopicsInput())
@@ -79,11 +80,11 @@ class TestEndToEndWorkflow:
         local_settings: Settings,
     ) -> None:
         """Test exploring documentation by category."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         result = tools.list_topics(ctx, ListTopicsInput())
@@ -107,11 +108,11 @@ class TestEndToEndWorkflow:
         local_settings: Settings,
     ) -> None:
         """Test complete document discovery workflow."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         # 1. List all topics
@@ -137,11 +138,11 @@ class TestEndToEndWorkflow:
         local_settings: Settings,
     ) -> None:
         """Test search followed by document retrieval."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         # Search for a topic
@@ -165,11 +166,11 @@ class TestEndToEndWorkflow:
         local_settings: Settings,
     ) -> None:
         """Test finding and using code examples."""
-        loader = DocumentLoader(integration_docs_dir)
+        document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
             settings=local_settings,
             store=local_indexed_store,
-            loader=loader,
+            document_source=document_source,
         )
 
         # Get code examples for a feature

@@ -43,6 +43,7 @@ class InstalledMetadata(BaseModel):
     version: str
     lang: str
     embedding_model: str
+    docs_path: str | None = None  # Path to installed docs directory
 
 
 class PrebuiltManager:
@@ -63,6 +64,7 @@ class PrebuiltManager:
         version: str,
         lang: str,
         embedding_model: str,
+        docs_source_dir: Path,
         output_path: Path | None = None,
     ) -> Path:
         """Build a prebuilt index archive from current ChromaDB.
@@ -71,16 +73,21 @@ class PrebuiltManager:
             version: Documentation version
             lang: Documentation language
             embedding_model: Name of embedding model used
+            docs_source_dir: Path to documentation source directory (required)
             output_path: Optional output path for archive
 
         Returns:
             Path to the created archive
 
         Raises:
-            FileNotFoundError: If ChromaDB directory doesn't exist
+            FileNotFoundError: If ChromaDB or docs directory doesn't exist
         """
         if not self.chroma_dir.exists():
             raise FileNotFoundError(f"ChromaDB directory not found: {self.chroma_dir}")
+
+        # Docs are required for prebuilt archives
+        if not docs_source_dir.exists():
+            raise FileNotFoundError(f"Docs directory not found: {docs_source_dir}")
 
         # Create prebuilt directory if needed
         self.prebuilt_dir.mkdir(parents=True, exist_ok=True)
@@ -102,6 +109,11 @@ class PrebuiltManager:
             temp_chroma = temp_path / "chroma_db"
             shutil.copytree(self.chroma_dir, temp_chroma)
 
+            # Copy docs files (required)
+            temp_docs = temp_path / "docs"
+            shutil.copytree(docs_source_dir, temp_docs)
+            console.print(f"[blue]Including docs from: {docs_source_dir}[/blue]")
+
             # Create metadata file
             metadata = PrebuiltMetadata(
                 version=version,
@@ -114,6 +126,7 @@ class PrebuiltManager:
             # Create tar.gz archive
             with tarfile.open(output_path, "w:gz") as tar:
                 tar.add(temp_chroma, arcname="chroma_db")
+                tar.add(temp_docs, arcname="docs")
                 tar.add(metadata_path, arcname=ARCHIVE_METADATA_FILE)
 
         console.print(f"[green]Prebuilt index created: {output_path}[/green]")
@@ -175,7 +188,7 @@ class PrebuiltManager:
 
         Raises:
             FileNotFoundError: If archive doesn't exist
-            ValueError: If archive is invalid
+            ValueError: If archive is invalid or missing required components
         """
         if not archive_path.exists():
             raise FileNotFoundError(f"Archive not found: {archive_path}")
@@ -201,6 +214,14 @@ class PrebuiltManager:
             if not temp_chroma.exists():
                 raise ValueError("Invalid archive: missing chroma_db directory")
 
+            # Check for docs directory (required in new format)
+            temp_docs = temp_path / "docs"
+            if not temp_docs.exists():
+                raise ValueError(
+                    "Invalid archive: missing docs directory (legacy format not supported). "
+                    "Please rebuild the archive with the latest version."
+                )
+
             # Remove existing chroma_db if present
             if self.chroma_dir.exists():
                 shutil.rmtree(self.chroma_dir)
@@ -209,11 +230,19 @@ class PrebuiltManager:
             self.data_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(temp_chroma), str(self.chroma_dir))
 
+            # Install docs to versioned directory
+            docs_install_path = self.get_docs_dir(metadata.version, metadata.lang)
+            if docs_install_path.exists():
+                shutil.rmtree(docs_install_path)
+            docs_install_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(temp_docs), str(docs_install_path))
+
             # Also copy metadata to chroma_dir for version tracking
             installed = InstalledMetadata(
                 version=metadata.version,
                 lang=metadata.lang,
                 embedding_model=metadata.embedding_model,
+                docs_path=str(docs_install_path),
             )
             index_metadata_path = self.chroma_dir / "index_metadata.json"
             index_metadata_path.write_text(installed.model_dump_json(indent=2), encoding="utf-8")
@@ -222,8 +251,34 @@ class PrebuiltManager:
         console.print(f"  Version: {metadata.version}")
         console.print(f"  Language: {metadata.lang}")
         console.print(f"  Embedding: {metadata.embedding_model}")
+        console.print(f"  Docs: {docs_install_path}")
 
         return metadata
+
+    def get_docs_dir(self, version: str, lang: str) -> Path:
+        """Get the docs directory path for a specific version and language.
+
+        Args:
+            version: Documentation version
+            lang: Documentation language
+
+        Returns:
+            Path to the docs directory
+        """
+        return self.data_dir / "docs" / f"{version}-{lang}"
+
+    def get_installed_docs_dir(self, version: str, lang: str) -> Path | None:
+        """Get the installed docs directory if it exists.
+
+        Args:
+            version: Documentation version
+            lang: Documentation language
+
+        Returns:
+            Path to the docs directory if it exists, None otherwise
+        """
+        path = self.get_docs_dir(version, lang)
+        return path if path.exists() else None
 
     def list_available(self, base_url: str) -> list[PrebuiltMetadata]:
         """List available prebuilt indexes from a URL.

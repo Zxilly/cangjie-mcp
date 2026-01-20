@@ -128,8 +128,10 @@ class TestPrebuiltManager:
     def test_build_no_chroma(self, temp_data_dir: Path) -> None:
         """Test build fails when ChromaDB doesn't exist."""
         mgr = PrebuiltManager(temp_data_dir)
+        docs_dir = temp_data_dir / "docs"
+        docs_dir.mkdir(parents=True)
         with pytest.raises(FileNotFoundError, match="ChromaDB directory not found"):
-            mgr.build(version="v1.0.7", lang="zh", embedding_model="test")
+            mgr.build(version="v1.0.7", lang="zh", embedding_model="test", docs_source_dir=docs_dir)
 
     def test_build_and_list_local(self, temp_data_dir: Path) -> None:
         """Test building and listing local archives."""
@@ -140,11 +142,17 @@ class TestPrebuiltManager:
         chroma_dir.mkdir(parents=True)
         (chroma_dir / "test.db").write_text("mock data", encoding="utf-8")
 
+        # Create mock docs directory
+        docs_dir = temp_data_dir / "docs"
+        docs_dir.mkdir(parents=True)
+        (docs_dir / "test.md").write_text("# Test", encoding="utf-8")
+
         # Build archive
         archive_path = mgr.build(
             version="v1.0.7",
             lang="zh",
             embedding_model="BAAI/bge-small-zh-v1.5",
+            docs_source_dir=docs_dir,
         )
 
         assert archive_path.exists()
@@ -171,6 +179,10 @@ class TestPrebuiltManager:
         (temp_content / "chroma_db").mkdir()
         (temp_content / "chroma_db" / "data.db").write_text("mock", encoding="utf-8")
 
+        # Create docs directory (required in new format)
+        (temp_content / "docs").mkdir()
+        (temp_content / "docs" / "test.md").write_text("# Test", encoding="utf-8")
+
         metadata = {
             "version": "v1.0.7",
             "lang": "zh",
@@ -182,6 +194,7 @@ class TestPrebuiltManager:
         # Create tar.gz
         with tarfile.open(archive_path, "w:gz") as tar:
             tar.add(temp_content / "chroma_db", arcname="chroma_db")
+            tar.add(temp_content / "docs", arcname="docs")
             tar.add(temp_content / "prebuilt_metadata.json", arcname="prebuilt_metadata.json")
 
         # Install
@@ -193,6 +206,7 @@ class TestPrebuiltManager:
         installed = mgr.get_installed_metadata()
         assert installed is not None
         assert installed.version == "v1.0.7"
+        assert installed.docs_path is not None
 
     def test_get_installed_metadata_not_installed(self, temp_data_dir: Path) -> None:
         """Test get_installed_metadata when nothing is installed."""

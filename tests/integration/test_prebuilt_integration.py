@@ -46,6 +46,7 @@ class TestPrebuiltIndexIntegration:
             version=CANGJIE_DOCS_VERSION,
             lang="zh",
             embedding_model=CANGJIE_LOCAL_MODEL,
+            docs_source_dir=integration_docs_dir,
         )
 
         assert archive_path.exists()
@@ -72,6 +73,11 @@ class TestPrebuiltIndexIntegration:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir / "source",
         )
 
@@ -97,6 +103,7 @@ class TestPrebuiltIndexIntegration:
             version=CANGJIE_DOCS_VERSION,
             lang="zh",
             embedding_model=CANGJIE_LOCAL_MODEL,
+            docs_source_dir=integration_docs_dir,
         )
 
         # Install to a different location (target index_dir)
@@ -106,6 +113,11 @@ class TestPrebuiltIndexIntegration:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir / "target",
         )
         manager2 = PrebuiltManager(target_settings.index_dir)
@@ -144,6 +156,11 @@ class TestPrebuiltIndexIntegration:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir / "source",
         )
 
@@ -169,6 +186,7 @@ class TestPrebuiltIndexIntegration:
             version=CANGJIE_DOCS_VERSION,
             lang="zh",
             embedding_model=CANGJIE_LOCAL_MODEL,
+            docs_source_dir=integration_docs_dir,
         )
 
         # Install to new location
@@ -178,6 +196,11 @@ class TestPrebuiltIndexIntegration:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir / "target",
         )
         target_manager = PrebuiltManager(target_settings.index_dir)
@@ -202,6 +225,11 @@ class TestPrebuiltIndexIntegration:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir / "source1",
         )
 
@@ -226,6 +254,7 @@ class TestPrebuiltIndexIntegration:
             version="v1.0.0",
             lang="zh",
             embedding_model=CANGJIE_LOCAL_MODEL,
+            docs_source_dir=integration_docs_dir,
         )
 
         # Create second index
@@ -235,6 +264,11 @@ class TestPrebuiltIndexIntegration:
             docs_lang="en",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir / "source2",
         )
 
@@ -257,6 +291,7 @@ class TestPrebuiltIndexIntegration:
             version="v2.0.0",
             lang="en",
             embedding_model=CANGJIE_LOCAL_MODEL,
+            docs_source_dir=integration_docs_dir,
         )
 
         # Copy archives to common prebuilt dir

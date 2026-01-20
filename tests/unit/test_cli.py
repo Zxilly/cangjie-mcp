@@ -13,48 +13,32 @@ runner = CliRunner()
 class TestServeCommand:
     """Tests for serve command."""
 
-    @patch("cangjie_mcp.server.app.create_mcp_server")
-    @patch("cangjie_mcp.cli._create_settings")
+    @patch("cangjie_mcp.server.http.MultiIndexHTTPServer")
+    @patch("cangjie_mcp.cli.Settings")
     def test_serve_displays_info(
         self,
-        mock_create_settings: MagicMock,
-        mock_create_server: MagicMock,
+        mock_settings_class: MagicMock,
+        mock_http_server_class: MagicMock,
     ) -> None:
         """Test serve command displays server info."""
         mock_settings = MagicMock()
         mock_settings.docs_version = "latest"
         mock_settings.docs_lang = "zh"
         mock_settings.embedding_type = "local"
+        mock_settings.rerank_type = "none"
+        mock_settings.http_host = "127.0.0.1"
+        mock_settings.http_port = 8000
         mock_settings.data_dir = Path("/test/data")
-        mock_settings.chroma_db_dir = Path("/test/chroma")
-        mock_settings.docs_repo_dir = Path("/test/repo")
-        mock_settings.docs_source_dir = Path("/test/source")
-        mock_create_settings.return_value = mock_settings
+        mock_settings.indexes = "https://example.com/test.tar.gz"
+        mock_settings_class.return_value = mock_settings
 
-        mock_mcp = MagicMock()
-        mock_create_server.return_value = mock_mcp
+        mock_server = MagicMock()
+        mock_http_server_class.return_value = mock_server
 
-        # This test verifies the CLI can be invoked
-        # Full serve testing requires integration tests
-        with patch("cangjie_mcp.prebuilt.manager.PrebuiltManager") as mock_pm_class:
-            mock_pm = MagicMock()
-            mock_pm.get_installed_metadata.return_value = None
-            mock_pm_class.return_value = mock_pm
+        result = runner.invoke(app, ["serve", "--indexes", "https://example.com/test.tar.gz"])
 
-            with patch("cangjie_mcp.indexer.embeddings.get_embedding_provider") as mock_ep:
-                mock_provider = MagicMock()
-                mock_ep.return_value = mock_provider
-
-                with patch("cangjie_mcp.indexer.store.VectorStore") as mock_store_class:
-                    mock_store = MagicMock()
-                    mock_store.is_indexed.return_value = True
-                    mock_store.version_matches.return_value = True
-                    mock_store_class.return_value = mock_store
-
-                    result = runner.invoke(app, ["serve"])
-
-                    # Should contain server info in output
-                    assert "Cangjie MCP Server" in result.output or result.exit_code in [0, 1]
+        # Should contain server info in output
+        assert "Cangjie MCP HTTP Server" in result.output or result.exit_code in [0, 1]
 
 
 class TestPrebuiltListCommand:
@@ -133,10 +117,10 @@ class TestPrebuiltBuildCommand:
     @patch("cangjie_mcp.indexer.embeddings.create_embedding_provider")
     @patch("cangjie_mcp.indexer.loader.DocumentLoader")
     @patch("cangjie_mcp.repo.git_manager.GitManager")
-    @patch("cangjie_mcp.cli._create_settings")
+    @patch("cangjie_mcp.cli.Settings")
     def test_prebuilt_build_success(
         self,
-        mock_create_settings: MagicMock,
+        mock_settings_class: MagicMock,
         mock_git_manager_class: MagicMock,
         mock_loader_class: MagicMock,
         mock_embedding_provider: MagicMock,
@@ -156,7 +140,7 @@ class TestPrebuiltBuildCommand:
         mock_settings.docs_source_dir = Path("/test/source")
         mock_settings.chroma_db_dir = Path("/test/chroma")
         mock_settings.index_dir = Path("/test/index")
-        mock_create_settings.return_value = mock_settings
+        mock_settings_class.return_value = mock_settings
 
         # Setup GitManager
         mock_git_mgr = MagicMock()
@@ -195,10 +179,10 @@ class TestPrebuiltBuildCommand:
 
     @patch("cangjie_mcp.indexer.loader.DocumentLoader")
     @patch("cangjie_mcp.repo.git_manager.GitManager")
-    @patch("cangjie_mcp.cli._create_settings")
+    @patch("cangjie_mcp.cli.Settings")
     def test_prebuilt_build_no_documents(
         self,
-        mock_create_settings: MagicMock,
+        mock_settings_class: MagicMock,
         mock_git_manager_class: MagicMock,
         mock_loader_class: MagicMock,
     ) -> None:
@@ -212,7 +196,7 @@ class TestPrebuiltBuildCommand:
         mock_settings.data_dir = Path("/test/data")
         mock_settings.docs_repo_dir = Path("/test/repo")
         mock_settings.docs_source_dir = Path("/test/source")
-        mock_create_settings.return_value = mock_settings
+        mock_settings_class.return_value = mock_settings
 
         # Setup GitManager
         mock_git_mgr = MagicMock()

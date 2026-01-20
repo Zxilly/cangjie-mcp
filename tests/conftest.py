@@ -40,11 +40,41 @@ def pytest_collection_modifyitems(items: list["Item"]) -> None:
             item.add_marker(pytest.mark.unit)
 
 
+def make_test_settings(**kwargs: object) -> Settings:
+    """Create Settings with test defaults.
+
+    Provides all required fields with sensible test defaults.
+    Any field can be overridden via kwargs.
+    """
+    defaults: dict[str, object] = {
+        "docs_version": "latest",
+        "docs_lang": "zh",
+        "embedding_type": "local",
+        "local_model": "paraphrase-multilingual-MiniLM-L12-v2",
+        "rerank_type": "none",
+        "rerank_model": "BAAI/bge-reranker-v2-m3",
+        "rerank_top_k": 5,
+        "rerank_initial_k": 20,
+        "chunk_max_size": 6000,
+        "data_dir": Path.home() / ".cangjie-mcp-test",
+    }
+    defaults.update(kwargs)
+    return Settings(**defaults)  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def create_test_settings() -> type[Settings]:
+    """Fixture that provides the make_test_settings factory function."""
+    return make_test_settings  # type: ignore[return-value]
+
+
 @pytest.fixture(scope="session")
 def has_openai_credentials() -> bool:
     """Check if OpenAI credentials are available."""
-    settings = Settings()
-    return bool(settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here")
+    import os
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    return bool(api_key and api_key != "your-openai-api-key-here")
 
 
 @pytest.fixture
@@ -68,12 +98,7 @@ def temp_data_dir() -> Generator[Path]:
 @pytest.fixture
 def test_settings(temp_data_dir: Path) -> Settings:
     """Create test settings with temporary data directory."""
-    return Settings(
-        docs_version="latest",
-        docs_lang="zh",
-        embedding_type="local",
-        data_dir=temp_data_dir,
-    )
+    return make_test_settings(data_dir=temp_data_dir)
 
 
 @pytest.fixture

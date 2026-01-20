@@ -53,6 +53,11 @@ class TestVectorStoreAdvanced:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir,
         )
         embedding_provider = get_embedding_provider(settings)
@@ -169,6 +174,11 @@ class TestVectorStoreAdvanced:
             docs_lang="zh",
             embedding_type="local",
             local_model=CANGJIE_LOCAL_MODEL,
+            rerank_type="none",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            rerank_top_k=5,
+            rerank_initial_k=20,
+            chunk_max_size=6000,
             data_dir=temp_data_dir,
         )
         embedding_provider = get_embedding_provider(settings)

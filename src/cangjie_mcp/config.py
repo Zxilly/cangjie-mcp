@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
-
 
 @dataclass(frozen=True)
 class IndexKey:
@@ -73,84 +71,51 @@ class IndexKey:
         return f"{self.version}/{self.lang}"
 
 
-def _get_default_data_dir() -> Path:
-    """Get the default data directory (~/.cangjie-mcp)."""
-    return Path.home() / ".cangjie-mcp"
-
-
-class Settings(BaseModel):
+@dataclass
+class Settings:
     """Application settings.
 
     All settings are configured via CLI arguments (with environment variable support).
     Use `cangjie-mcp --help` to see all options and their environment variables.
+
+    This class has no defaults - all values must be provided explicitly.
+    Defaults are defined in CLI (typer.Option) as the single source of truth.
     """
 
     # Documentation settings
-    docs_version: str = Field(default="latest", description="Documentation version (git tag)")
-    docs_lang: Literal["zh", "en"] = Field(default="zh", description="Documentation language")
+    docs_version: str
+    docs_lang: Literal["zh", "en"]
 
     # Embedding settings
-    embedding_type: Literal["local", "openai"] = Field(default="local", description="Embedding model type")
-    local_model: str = Field(
-        default="paraphrase-multilingual-MiniLM-L12-v2",
-        description="Local HuggingFace embedding model name",
-    )
+    embedding_type: Literal["local", "openai"]
+    local_model: str
 
     # Rerank settings
-    rerank_type: Literal["none", "local", "openai"] = Field(
-        default="none", description="Reranker type (none/local/openai)"
-    )
-    rerank_model: str = Field(
-        default="BAAI/bge-reranker-v2-m3",
-        description="Rerank model name (used for both local and OpenAI-compatible reranking)",
-    )
-    rerank_top_k: int = Field(default=5, description="Number of results to return after reranking")
-    rerank_initial_k: int = Field(default=20, description="Number of candidates to retrieve before reranking")
+    rerank_type: Literal["none", "local", "openai"]
+    rerank_model: str
+    rerank_top_k: int
+    rerank_initial_k: int
 
     # Chunking settings
-    chunk_max_size: int = Field(
-        default=6000,
-        description="Max chunk size in chars to prevent exceeding embedding token limits",
-    )
+    chunk_max_size: int
 
-    # Data directory (default: ~/.cangjie-mcp)
-    data_dir: Path = Field(
-        default_factory=_get_default_data_dir,
-        description="Data directory path",
-    )
+    # Data directory
+    data_dir: Path
 
     # Prebuilt index URL
-    prebuilt_url: str | None = Field(default=None, description="Prebuilt index download URL")
+    prebuilt_url: str | None = None
 
     # OpenAI-compatible API settings
-    openai_api_key: str | None = Field(
-        default=None,
-        description="OpenAI-compatible API Key",
-    )
-    openai_base_url: str = Field(
-        default="https://api.openai.com/v1",
-        description="OpenAI-compatible API Base URL",
-    )
-    openai_model: str = Field(
-        default="text-embedding-3-small",
-        description="OpenAI-compatible embedding model",
-    )
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "text-embedding-3-small"
 
     # HTTP server settings (for serve command)
-    http_host: str = Field(
-        default="127.0.0.1",
-        description="HTTP server host address",
-    )
-    http_port: int = Field(
-        default=8000,
-        description="HTTP server port",
-    )
+    http_host: str = "127.0.0.1"
+    http_port: int = 8000
 
     # Multi-index settings (for HTTP mode)
-    indexes: str | None = Field(
-        default=None,
-        description="Comma-separated list of index URLs to load",
-    )
+    indexes: str | None = None
 
     @property
     def docs_repo_dir(self) -> Path:
@@ -185,12 +150,11 @@ _settings: Settings | None = None
 def get_settings() -> Settings:
     """Get settings instance.
 
-    Returns the global settings if set, otherwise returns default settings.
-    CLI commands should call set_settings() to initialize with CLI values.
+    Returns the global settings. Raises RuntimeError if not initialized.
+    CLI commands must call set_settings() before using this function.
     """
-    global _settings
     if _settings is None:
-        _settings = Settings()
+        raise RuntimeError("Settings not initialized. Call set_settings() first.")
     return _settings
 
 

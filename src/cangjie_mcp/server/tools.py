@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.loader import DocumentLoader, extract_code_blocks
+from cangjie_mcp.indexer.document_source import (
+    DocumentSource,
+    GitDocumentSource,
+    NullDocumentSource,
+    PrebuiltDocumentSource,
+)
+from cangjie_mcp.indexer.loader import extract_code_blocks
 from cangjie_mcp.indexer.store import VectorStore, create_vector_store
+from cangjie_mcp.prebuilt.manager import PrebuiltManager
+from cangjie_mcp.repo.git_manager import GitManager
+
+if TYPE_CHECKING:
+    pass
 
 # =============================================================================
 # Input Models (Pydantic)
@@ -207,12 +219,13 @@ class ToolContext:
 
     settings: Settings
     store: VectorStore
-    loader: DocumentLoader
+    document_source: DocumentSource
 
 
 def create_tool_context(
     settings: Settings,
     store: VectorStore | None = None,
+    document_source: DocumentSource | None = None,
 ) -> ToolContext:
     """Create tool context from settings.
 
@@ -220,15 +233,56 @@ def create_tool_context(
         settings: Application settings
         store: Optional pre-loaded VectorStore. If None, creates a new one.
                Used by HTTP server where store is already loaded by MultiIndexStore.
+        document_source: Optional DocumentSource. If None, auto-detects the best source.
+                        Priority: prebuilt docs > git repo > null source
 
     Returns:
         ToolContext with initialized components
     """
+    if document_source is None:
+        document_source = _create_document_source(settings)
+
     return ToolContext(
         settings=settings,
         store=store if store is not None else create_vector_store(settings),
-        loader=DocumentLoader(settings.docs_source_dir),
+        document_source=document_source,
     )
+
+
+def _create_document_source(settings: Settings) -> DocumentSource:
+    """Create the best available document source.
+
+    Auto-detects the best source in order:
+    1. Prebuilt docs (from installed prebuilt archive)
+    2. Git repository (read directly from git without checkout)
+    3. Null source (fallback when no docs available)
+
+    Args:
+        settings: Application settings
+
+    Returns:
+        The best available DocumentSource
+    """
+    # Try prebuilt docs first
+    prebuilt_mgr = PrebuiltManager(settings.data_dir)
+    installed = prebuilt_mgr.get_installed_metadata()
+
+    if installed and installed.docs_path:
+        docs_dir = Path(installed.docs_path)
+        if docs_dir.exists():
+            return PrebuiltDocumentSource(docs_dir)
+
+    # Try git source - read directly from git
+    git_mgr = GitManager(settings.docs_repo_dir)
+    if git_mgr.is_cloned() and git_mgr.repo is not None:
+        return GitDocumentSource(
+            repo=git_mgr.repo,
+            version=settings.docs_version,
+            lang=settings.docs_lang,
+        )
+
+    # Fallback to null source
+    return NullDocumentSource()
 
 
 # =============================================================================
@@ -304,7 +358,7 @@ def get_topic(ctx: ToolContext, params: GetTopicInput) -> TopicResult | None:
     Returns:
         TopicResult with full document content, or None if not found
     """
-    doc = ctx.loader.get_document_by_topic(params.topic, params.category)
+    doc = ctx.document_source.get_document_by_topic(params.topic, params.category)
 
     if doc is None:
         return None
@@ -331,8 +385,8 @@ def list_topics(ctx: ToolContext, params: ListTopicsInput) -> TopicsListResult:
     Returns:
         TopicsListResult with categories mapping and counts
     """
-    cats = [params.category] if params.category else ctx.loader.get_categories()
-    categories = {cat: topics for cat in cats if (topics := ctx.loader.get_topics_in_category(cat))}
+    cats = [params.category] if params.category else ctx.document_source.get_categories()
+    categories = {cat: topics for cat in cats if (topics := ctx.document_source.get_topics_in_category(cat))}
 
     return TopicsListResult(
         categories=categories,

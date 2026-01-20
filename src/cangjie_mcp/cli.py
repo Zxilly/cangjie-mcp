@@ -9,13 +9,23 @@ Environment variable naming:
 """
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from cangjie_mcp import __version__
 from cangjie_mcp.config import Settings, set_settings
+
+
+def _version_callback(value: bool) -> None:
+    """Print version and exit."""
+    if value:
+        console = Console()
+        console.print(f"cangjie-mcp {__version__}")
+        raise typer.Exit()
+
 
 app = typer.Typer(
     name="cangjie-mcp",
@@ -28,25 +38,47 @@ app.add_typer(prebuilt_app, name="prebuilt")
 
 console = Console()
 
-# Default values (centralized)
+
+def _default_data_dir() -> Path:
+    """Get the default data directory (~/.cangjie-mcp)."""
+    return Path.home() / ".cangjie-mcp"
+
+
+# Default values (single source of truth)
 DEFAULT_DOCS_VERSION = "latest"
 DEFAULT_DOCS_LANG = "zh"
 DEFAULT_EMBEDDING_TYPE = "local"
 DEFAULT_LOCAL_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
 DEFAULT_RERANK_TYPE = "none"
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 DEFAULT_RERANK_TOP_K = 5
 DEFAULT_RERANK_INITIAL_K = 20
 DEFAULT_CHUNK_MAX_SIZE = 6000
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8000
 
 
-def _get_default_data_dir() -> Path:
-    """Get the default data directory (~/.cangjie-mcp)."""
-    return Path.home() / ".cangjie-mcp"
+def _validate_lang(value: str) -> Literal["zh", "en"]:
+    """Validate and return docs_lang."""
+    if value not in ("zh", "en"):
+        raise typer.BadParameter(f"Invalid language: {value}. Must be 'zh' or 'en'.")
+    return value  # type: ignore[return-value]
+
+
+def _validate_embedding_type(value: str) -> Literal["local", "openai"]:
+    """Validate and return embedding_type."""
+    if value not in ("local", "openai"):
+        raise typer.BadParameter(f"Invalid embedding type: {value}. Must be 'local' or 'openai'.")
+    return value  # type: ignore[return-value]
+
+
+def _validate_rerank_type(value: str) -> Literal["none", "local", "openai"]:
+    """Validate and return rerank_type."""
+    if value not in ("none", "local", "openai"):
+        raise typer.BadParameter(f"Invalid rerank type: {value}. Must be 'none', 'local', or 'openai'.")
+    return value  # type: ignore[return-value]
 
 
 def initialize_and_index(settings: Settings) -> None:
@@ -112,88 +144,58 @@ def initialize_and_index(settings: Settings) -> None:
     console.print("[green]Index built successfully![/green]")
 
 
-def _create_settings(
-    *,
-    version: str | None = None,
-    lang: str | None = None,
-    embedding: str | None = None,
-    local_model: str | None = None,
-    openai_api_key: str | None = None,
-    openai_base_url: str | None = None,
-    openai_model: str | None = None,
-    rerank: str | None = None,
-    rerank_model: str | None = None,
-    rerank_top_k: int | None = None,
-    rerank_initial_k: int | None = None,
-    chunk_size: int | None = None,
-    data_dir: Path | None = None,
-    prebuilt_url: str | None = None,
-    http_host: str | None = None,
-    http_port: int | None = None,
-    indexes: str | None = None,
-) -> Settings:
-    """Create Settings instance from CLI arguments."""
-    settings = Settings(
-        docs_version=version or DEFAULT_DOCS_VERSION,
-        docs_lang=lang or DEFAULT_DOCS_LANG,  # type: ignore[arg-type]
-        embedding_type=embedding or DEFAULT_EMBEDDING_TYPE,  # type: ignore[arg-type]
-        local_model=local_model or DEFAULT_LOCAL_MODEL,
-        openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url or DEFAULT_OPENAI_BASE_URL,
-        openai_model=openai_model or DEFAULT_OPENAI_MODEL,
-        rerank_type=rerank or DEFAULT_RERANK_TYPE,  # type: ignore[arg-type]
-        rerank_model=rerank_model or DEFAULT_RERANK_MODEL,
-        rerank_top_k=rerank_top_k or DEFAULT_RERANK_TOP_K,
-        rerank_initial_k=rerank_initial_k or DEFAULT_RERANK_INITIAL_K,
-        chunk_max_size=chunk_size or DEFAULT_CHUNK_MAX_SIZE,
-        data_dir=data_dir or _get_default_data_dir(),
-        prebuilt_url=prebuilt_url,
-        http_host=http_host or DEFAULT_HTTP_HOST,
-        http_port=http_port or DEFAULT_HTTP_PORT,
-        indexes=indexes,
-    )
-    set_settings(settings)
-    return settings
-
-
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    version: Annotated[
-        str | None,
+    _version: Annotated[
+        bool,
         typer.Option(
             "--version",
             "-v",
+            help="Show version and exit",
+            callback=_version_callback,
+            is_eager=True,
+        ),
+    ] = False,
+    docs_version: Annotated[
+        str,
+        typer.Option(
+            "--docs-version",
+            "-V",
             help="Documentation version (git tag)",
             envvar="CANGJIE_DOCS_VERSION",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_DOCS_VERSION,
     lang: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--lang",
             "-l",
             help="Documentation language (zh/en)",
             envvar="CANGJIE_DOCS_LANG",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_DOCS_LANG,
     embedding: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--embedding",
             "-e",
             help="Embedding type (local/openai)",
             envvar="CANGJIE_EMBEDDING_TYPE",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_EMBEDDING_TYPE,
     local_model: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--local-model",
             help="Local HuggingFace embedding model name",
             envvar="CANGJIE_LOCAL_MODEL",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_LOCAL_MODEL,
     openai_api_key: Annotated[
         str | None,
         typer.Option(
@@ -203,62 +205,69 @@ def main(
         ),
     ] = None,
     openai_base_url: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--openai-base-url",
             help="OpenAI API base URL",
             envvar="OPENAI_BASE_URL",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_OPENAI_BASE_URL,
     openai_model: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--openai-model",
             help="OpenAI embedding model",
             envvar="OPENAI_EMBEDDING_MODEL",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_OPENAI_MODEL,
     rerank: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--rerank",
             "-r",
             help="Rerank type (none/local/openai)",
             envvar="CANGJIE_RERANK_TYPE",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_RERANK_TYPE,
     rerank_model: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--rerank-model",
             help="Rerank model name",
             envvar="CANGJIE_RERANK_MODEL",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_RERANK_MODEL,
     rerank_top_k: Annotated[
-        int | None,
+        int,
         typer.Option(
             "--rerank-top-k",
             help="Number of results after reranking",
             envvar="CANGJIE_RERANK_TOP_K",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_RERANK_TOP_K,
     rerank_initial_k: Annotated[
-        int | None,
+        int,
         typer.Option(
             "--rerank-initial-k",
             help="Number of candidates before reranking",
             envvar="CANGJIE_RERANK_INITIAL_K",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_RERANK_INITIAL_K,
     chunk_size: Annotated[
-        int | None,
+        int,
         typer.Option(
             "--chunk-size",
             help="Max chunk size in characters",
             envvar="CANGJIE_CHUNK_MAX_SIZE",
+            show_default=True,
         ),
-    ] = None,
+    ] = DEFAULT_CHUNK_MAX_SIZE,
     data_dir: Annotated[
         Path | None,
         typer.Option(
@@ -266,6 +275,7 @@ def main(
             "-d",
             help="Data directory path",
             envvar="CANGJIE_DATA_DIR",
+            show_default="~/.cangjie-mcp",
         ),
     ] = None,
 ) -> None:
@@ -280,21 +290,22 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
 
-    settings = _create_settings(
-        version=version,
-        lang=lang,
-        embedding=embedding,
+    settings = Settings(
+        docs_version=docs_version,
+        docs_lang=_validate_lang(lang),
+        embedding_type=_validate_embedding_type(embedding),
         local_model=local_model,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
-        rerank=rerank,
+        rerank_type=_validate_rerank_type(rerank),
         rerank_model=rerank_model,
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
-        chunk_size=chunk_size,
-        data_dir=data_dir,
+        chunk_max_size=chunk_size,
+        data_dir=data_dir if data_dir else _default_data_dir(),
     )
+    set_settings(settings)
 
     console.print("[bold]Cangjie MCP Server (stdio)[/bold]")
     console.print(f"  Version: {settings.docs_version}")
@@ -413,7 +424,7 @@ def serve(
         ),
     ] = None,
 ) -> None:
-    """Start the HTTP server with multi-index support.
+    """Start the HTTP server.
 
     Downloads prebuilt indexes from URLs and serves them via HTTP.
     The version and language are derived from each archive's metadata.
@@ -432,19 +443,27 @@ def serve(
     """
     from cangjie_mcp.indexer.multi_store import parse_index_urls
 
-    settings = _create_settings(
-        embedding=embedding,
-        local_model=local_model,
+    settings = Settings(
+        # HTTP mode uses these from archive metadata, but Settings requires them
+        docs_version=DEFAULT_DOCS_VERSION,
+        docs_lang=_validate_lang(DEFAULT_DOCS_LANG),
+        chunk_max_size=DEFAULT_CHUNK_MAX_SIZE,
+        rerank_top_k=DEFAULT_RERANK_TOP_K,
+        rerank_initial_k=DEFAULT_RERANK_INITIAL_K,
+        # Actual HTTP mode settings
+        embedding_type=_validate_embedding_type(embedding if embedding else DEFAULT_EMBEDDING_TYPE),
+        local_model=local_model if local_model else DEFAULT_LOCAL_MODEL,
         openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url,
-        openai_model=openai_model,
-        rerank=rerank,
-        rerank_model=rerank_model,
-        data_dir=data_dir,
-        http_host=host,
-        http_port=port,
+        openai_base_url=openai_base_url if openai_base_url else DEFAULT_OPENAI_BASE_URL,
+        openai_model=openai_model if openai_model else DEFAULT_OPENAI_MODEL,
+        rerank_type=_validate_rerank_type(rerank if rerank else DEFAULT_RERANK_TYPE),
+        rerank_model=rerank_model if rerank_model else DEFAULT_RERANK_MODEL,
+        data_dir=data_dir if data_dir else _default_data_dir(),
+        http_host=host if host else DEFAULT_HTTP_HOST,
+        http_port=port if port else DEFAULT_HTTP_PORT,
         indexes=indexes,
     )
+    set_settings(settings)
 
     # Parse index URLs
     indexes_str = settings.indexes
@@ -529,7 +548,7 @@ def prebuilt_download(
 
     actual_version = version or DEFAULT_DOCS_VERSION
     actual_lang = lang or DEFAULT_DOCS_LANG
-    actual_data_dir = data_dir or _get_default_data_dir()
+    actual_data_dir = data_dir or _default_data_dir()
 
     mgr = PrebuiltManager(actual_data_dir)
     try:
@@ -636,17 +655,23 @@ def prebuilt_build(
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
     from cangjie_mcp.repo.git_manager import GitManager
 
-    settings = _create_settings(
-        version=version,
-        lang=lang,
-        embedding=embedding,
-        local_model=local_model,
+    settings = Settings(
+        docs_version=version if version else DEFAULT_DOCS_VERSION,
+        docs_lang=_validate_lang(lang if lang else DEFAULT_DOCS_LANG),
+        embedding_type=_validate_embedding_type(embedding if embedding else DEFAULT_EMBEDDING_TYPE),
+        local_model=local_model if local_model else DEFAULT_LOCAL_MODEL,
         openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url,
-        openai_model=openai_model,
-        chunk_size=chunk_size,
-        data_dir=data_dir,
+        openai_base_url=openai_base_url if openai_base_url else DEFAULT_OPENAI_BASE_URL,
+        openai_model=openai_model if openai_model else DEFAULT_OPENAI_MODEL,
+        chunk_max_size=chunk_size if chunk_size else DEFAULT_CHUNK_MAX_SIZE,
+        data_dir=data_dir if data_dir else _default_data_dir(),
+        # Required by Settings but not used in build
+        rerank_type=_validate_rerank_type(DEFAULT_RERANK_TYPE),
+        rerank_model=DEFAULT_RERANK_MODEL,
+        rerank_top_k=DEFAULT_RERANK_TOP_K,
+        rerank_initial_k=DEFAULT_RERANK_INITIAL_K,
     )
+    set_settings(settings)
 
     console.print("[bold]Building Prebuilt Index Archive[/bold]")
     console.print(f"  Version: {settings.docs_version}")
@@ -707,6 +732,7 @@ def prebuilt_build(
             version=settings.docs_version,
             lang=settings.docs_lang,
             embedding_model=embedding_provider.get_model_name(),
+            docs_source_dir=settings.docs_source_dir,
             output_path=output,
         )
         console.print(f"[green]Archive built: {archive_path}[/green]")
@@ -730,7 +756,7 @@ def prebuilt_list(
     """List available prebuilt indexes."""
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
-    actual_data_dir = data_dir or _get_default_data_dir()
+    actual_data_dir = data_dir or _default_data_dir()
     mgr = PrebuiltManager(actual_data_dir)
 
     # List local archives

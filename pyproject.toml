@@ -136,11 +136,15 @@ disallow_any_unimported = false
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
+reportMissingTypeStubs = "none"
+reportUnusedFunction = "none"
+# Use library source code for type inference when stubs are incomplete
+useLibraryCodeForTypes = true
+# Downgrade unknown type errors to warnings - these come from third-party libs
+# (llama_index, chromadb, gitpython) with incomplete type annotations
 reportUnknownMemberType = "warning"
 reportUnknownArgumentType = "warning"
 reportUnknownVariableType = "warning"
-reportMissingTypeStubs = "warning"
-reportUnusedFunction = "none"
 include = ["src", "tests"]
 extraPaths = ["."]
 

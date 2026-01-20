@@ -13,6 +13,10 @@ import httpx
 from rich.console import Console
 
 from cangjie_mcp.config import IndexKey, Settings
+from cangjie_mcp.indexer.document_source import (
+    DocumentSource,
+    PrebuiltDocumentSource,
+)
 from cangjie_mcp.indexer.embeddings import create_embedding_provider
 from cangjie_mcp.indexer.reranker import get_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
@@ -38,7 +42,7 @@ def _url_to_cache_key(url: str) -> str:
 
 
 class LoadedIndex:
-    """Represents a loaded index with its metadata and store."""
+    """Represents a loaded index with its metadata, store, and document source."""
 
     def __init__(
         self,
@@ -46,11 +50,13 @@ class LoadedIndex:
         metadata: PrebuiltMetadata,
         store: VectorStore,
         key: IndexKey,
+        document_source: DocumentSource,
     ) -> None:
         self.url = url
         self.metadata = metadata
         self.store = store
         self.key = key
+        self.document_source = document_source
 
 
 class MultiIndexStore:
@@ -167,6 +173,14 @@ class MultiIndexStore:
         if not chroma_path.exists():
             raise ValueError(f"Invalid archive from {url}: missing chroma_db directory")
 
+        # Check for docs directory (required for new format)
+        docs_path = temp_dir / "docs"
+        if not docs_path.exists():
+            raise ValueError(
+                f"Invalid archive from {url}: missing docs directory (legacy format not supported). "
+                "Please rebuild the archive with the latest version."
+            )
+
         # Create IndexKey from metadata
         key = IndexKey(version=metadata.version, lang=metadata.lang)
 
@@ -184,11 +198,15 @@ class MultiIndexStore:
         if not store.is_indexed():
             raise ValueError(f"Index from {url} is empty or invalid")
 
+        # Create document source from extracted docs
+        document_source: DocumentSource = PrebuiltDocumentSource(docs_path)
+
         return LoadedIndex(
             url=url,
             metadata=metadata,
             store=store,
             key=key,
+            document_source=document_source,
         )
 
     def load_from_url(self, url: str) -> LoadedIndex:

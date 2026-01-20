@@ -24,6 +24,7 @@ from cangjie_mcp.server.tools import (
 )
 
 if TYPE_CHECKING:
+    from cangjie_mcp.indexer.document_source import DocumentSource
     from cangjie_mcp.indexer.store import VectorStore
 
 
@@ -629,6 +630,7 @@ def create_mcp_server_with_store(
     settings: Settings,
     store: VectorStore,
     key: IndexKey | None = None,
+    document_source: DocumentSource | None = None,
 ) -> FastMCP:
     """Create and configure the MCP server with a pre-loaded VectorStore.
 
@@ -639,6 +641,7 @@ def create_mcp_server_with_store(
         settings: Application settings
         store: Pre-loaded VectorStore instance
         key: Optional IndexKey for naming the server instance
+        document_source: Optional DocumentSource for reading documentation
 
     Returns:
         Configured FastMCP instance
@@ -654,7 +657,7 @@ def create_mcp_server_with_store(
         instructions=instructions,
     )
 
-    ctx = tools.create_tool_context(settings, store=store)
+    ctx = tools.create_tool_context(settings, store=store, document_source=document_source)
     _register_tools(mcp, ctx)
 
     return mcp

@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures for integration tests."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,9 @@ from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 
 
 def has_openai_credentials() -> bool:
-    """Check if OpenAI credentials are available."""
-    settings = Settings()
-    return bool(settings.openai_api_key and settings.openai_api_key != "your-openai-api-key-here")
+    """Check if OpenAI credentials are available via environment variable."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    return bool(api_key and api_key != "your-openai-api-key-here")
 
 
 @pytest.fixture
@@ -224,6 +225,11 @@ def local_settings(temp_data_dir: Path) -> Settings:
         docs_lang="zh",
         embedding_type="local",
         local_model=CANGJIE_LOCAL_MODEL,
+        rerank_type="none",
+        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_top_k=5,
+        rerank_initial_k=20,
+        chunk_max_size=6000,
         data_dir=temp_data_dir,
     )
 
@@ -235,7 +241,16 @@ def openai_settings(temp_data_dir: Path) -> Settings:
         docs_version=CANGJIE_DOCS_VERSION,
         docs_lang="zh",
         embedding_type="openai",
+        local_model=CANGJIE_LOCAL_MODEL,
+        rerank_type="none",
+        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_top_k=5,
+        rerank_initial_k=20,
+        chunk_max_size=6000,
         data_dir=temp_data_dir,
+        openai_api_key=os.environ.get("OPENAI_API_KEY"),
+        openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        openai_model=os.environ.get("OPENAI_MODEL", "text-embedding-3-small"),
     )
 
 
