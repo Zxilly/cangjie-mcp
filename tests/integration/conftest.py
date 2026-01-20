@@ -250,7 +250,7 @@ def openai_settings(temp_data_dir: Path) -> Settings:
         data_dir=temp_data_dir,
         openai_api_key=os.environ.get("OPENAI_API_KEY"),
         openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        openai_model=os.environ.get("OPENAI_MODEL", "text-embedding-3-small"),
+        openai_model=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
     )
 
 
