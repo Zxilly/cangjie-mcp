@@ -153,7 +153,7 @@ def create_embedding_provider(
                 model=model_override or settings.openai_model,
                 base_url=settings.openai_base_url,
             )
-        case _:
+        case _:  # pyright: ignore[reportUnnecessaryComparison]
             raise ValueError(f"Unknown embedding type: {settings.embedding_type}")
 
 
