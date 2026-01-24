@@ -9,11 +9,8 @@ from pathlib import Path
 
 import httpx
 from pydantic import BaseModel
-from rich.console import Console
 
-from cangjie_mcp.utils import create_download_progress
-
-console = Console()
+from cangjie_mcp.utils import console, create_download_progress
 
 # Metadata file inside the archive
 ARCHIVE_METADATA_FILE = "prebuilt_metadata.json"

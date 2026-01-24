@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
-from rich.console import Console
 
 from cangjie_mcp.config import IndexKey, Settings
 from cangjie_mcp.indexer.document_source import (
@@ -21,12 +20,10 @@ from cangjie_mcp.indexer.embeddings import create_embedding_provider
 from cangjie_mcp.indexer.reranker import get_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.prebuilt.manager import ARCHIVE_METADATA_FILE, PrebuiltMetadata
-from cangjie_mcp.utils import create_download_progress
+from cangjie_mcp.utils import console, create_download_progress
 
 if TYPE_CHECKING:
     from cangjie_mcp.indexer.embeddings import EmbeddingProvider
-
-console = Console()
 
 
 def _url_to_cache_key(url: str) -> str:
@@ -306,6 +303,29 @@ class MultiIndexStore:
                 shutil.rmtree(temp_dir, ignore_errors=True)
         self._temp_dirs.clear()
         self._indexes.clear()
+
+    def __enter__(self) -> MultiIndexStore:
+        """Enter context manager.
+
+        Returns:
+            Self for use in with statement
+        """
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        """Exit context manager, cleaning up resources.
+
+        Args:
+            exc_type: Exception type if an exception was raised
+            exc_val: Exception value if an exception was raised
+            exc_tb: Exception traceback if an exception was raised
+        """
+        self.cleanup()
 
     def clear_cache(self) -> None:
         """Clear the download cache."""

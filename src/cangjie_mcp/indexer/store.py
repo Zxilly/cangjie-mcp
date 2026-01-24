@@ -12,18 +12,16 @@ from llama_index.core import Document, StorageContext, VectorStoreIndex
 from llama_index.core.schema import BaseNode
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from pydantic import BaseModel
-from rich.console import Console
 
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
 from cangjie_mcp.indexer.reranker import RerankerProvider
+from cangjie_mcp.utils import console
 
 if TYPE_CHECKING:
     from chromadb.api import ClientAPI
     from chromadb.api.models.Collection import Collection
 
     from cangjie_mcp.config import Settings
-
-console = Console()
 
 # Metadata file for version tracking
 METADATA_FILE = "index_metadata.json"

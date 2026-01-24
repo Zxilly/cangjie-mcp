@@ -9,20 +9,32 @@ Environment variable naming:
 """
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from cangjie_mcp import __version__
 from cangjie_mcp.config import Settings, set_settings
+from cangjie_mcp.defaults import (
+    DEFAULT_CHUNK_MAX_SIZE,
+    DEFAULT_DOCS_LANG,
+    DEFAULT_DOCS_VERSION,
+    DEFAULT_EMBEDDING_TYPE,
+    DEFAULT_LOCAL_MODEL,
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_RERANK_INITIAL_K,
+    DEFAULT_RERANK_MODEL,
+    DEFAULT_RERANK_TOP_K,
+    DEFAULT_RERANK_TYPE,
+)
+from cangjie_mcp.utils import console, create_literal_validator
 
 
 def _version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console = Console()
         console.print(f"cangjie-mcp {__version__}")
         raise typer.Exit()
 
@@ -36,49 +48,16 @@ app = typer.Typer(
 prebuilt_app = typer.Typer(help="Prebuilt index management commands")
 app.add_typer(prebuilt_app, name="prebuilt")
 
-console = Console()
-
 
 def _default_data_dir() -> Path:
     """Get the default data directory (~/.cangjie-mcp)."""
     return Path.home() / ".cangjie-mcp"
 
 
-# Default values (single source of truth)
-DEFAULT_DOCS_VERSION = "latest"
-DEFAULT_DOCS_LANG = "zh"
-DEFAULT_EMBEDDING_TYPE = "local"
-DEFAULT_LOCAL_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-DEFAULT_RERANK_TYPE = "none"
-DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-DEFAULT_RERANK_TOP_K = 5
-DEFAULT_RERANK_INITIAL_K = 20
-DEFAULT_CHUNK_MAX_SIZE = 6000
-DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
-DEFAULT_HTTP_HOST = "127.0.0.1"
-DEFAULT_HTTP_PORT = 8000
-
-
-def _validate_lang(value: str) -> Literal["zh", "en"]:
-    """Validate and return docs_lang."""
-    if value not in ("zh", "en"):
-        raise typer.BadParameter(f"Invalid language: {value}. Must be 'zh' or 'en'.")
-    return value  # type: ignore[return-value]
-
-
-def _validate_embedding_type(value: str) -> Literal["local", "openai"]:
-    """Validate and return embedding_type."""
-    if value not in ("local", "openai"):
-        raise typer.BadParameter(f"Invalid embedding type: {value}. Must be 'local' or 'openai'.")
-    return value  # type: ignore[return-value]
-
-
-def _validate_rerank_type(value: str) -> Literal["none", "local", "openai"]:
-    """Validate and return rerank_type."""
-    if value not in ("none", "local", "openai"):
-        raise typer.BadParameter(f"Invalid rerank type: {value}. Must be 'none', 'local', or 'openai'.")
-    return value  # type: ignore[return-value]
+# Validators created using factory function
+_validate_lang = create_literal_validator("language", ("zh", "en"))
+_validate_embedding_type = create_literal_validator("embedding type", ("local", "openai"))
+_validate_rerank_type = create_literal_validator("rerank type", ("none", "local", "openai"))
 
 
 def initialize_and_index(settings: Settings) -> None:
@@ -290,20 +269,25 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
 
+    # Validate literal types
+    validated_lang = _validate_lang(lang)
+    validated_embedding = _validate_embedding_type(embedding)
+    validated_rerank = _validate_rerank_type(rerank)
+
     settings = Settings(
         docs_version=docs_version,
-        docs_lang=_validate_lang(lang),
-        embedding_type=_validate_embedding_type(embedding),
+        docs_lang=validated_lang,  # type: ignore[arg-type]
+        embedding_type=validated_embedding,  # type: ignore[arg-type]
         local_model=local_model,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
-        rerank_type=_validate_rerank_type(rerank),
+        rerank_type=validated_rerank,  # type: ignore[arg-type]
         rerank_model=rerank_model,
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
         chunk_max_size=chunk_size,
-        data_dir=data_dir if data_dir else _default_data_dir(),
+        data_dir=data_dir if data_dir else Settings().data_dir,
     )
     set_settings(settings)
 
@@ -443,24 +427,19 @@ def serve(
     """
     from cangjie_mcp.indexer.multi_store import parse_index_urls
 
+    # Build settings with optional overrides (use defaults from Settings)
+    defaults = Settings()
     settings = Settings(
-        # HTTP mode uses these from archive metadata, but Settings requires them
-        docs_version=DEFAULT_DOCS_VERSION,
-        docs_lang=_validate_lang(DEFAULT_DOCS_LANG),
-        chunk_max_size=DEFAULT_CHUNK_MAX_SIZE,
-        rerank_top_k=DEFAULT_RERANK_TOP_K,
-        rerank_initial_k=DEFAULT_RERANK_INITIAL_K,
-        # Actual HTTP mode settings
-        embedding_type=_validate_embedding_type(embedding if embedding else DEFAULT_EMBEDDING_TYPE),
-        local_model=local_model if local_model else DEFAULT_LOCAL_MODEL,
+        embedding_type=_validate_embedding_type(embedding) if embedding else defaults.embedding_type,  # type: ignore[arg-type]
+        local_model=local_model if local_model else defaults.local_model,
         openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url if openai_base_url else DEFAULT_OPENAI_BASE_URL,
-        openai_model=openai_model if openai_model else DEFAULT_OPENAI_MODEL,
-        rerank_type=_validate_rerank_type(rerank if rerank else DEFAULT_RERANK_TYPE),
-        rerank_model=rerank_model if rerank_model else DEFAULT_RERANK_MODEL,
-        data_dir=data_dir if data_dir else _default_data_dir(),
-        http_host=host if host else DEFAULT_HTTP_HOST,
-        http_port=port if port else DEFAULT_HTTP_PORT,
+        openai_base_url=openai_base_url if openai_base_url else defaults.openai_base_url,
+        openai_model=openai_model if openai_model else defaults.openai_model,
+        rerank_type=_validate_rerank_type(rerank) if rerank else defaults.rerank_type,  # type: ignore[arg-type]
+        rerank_model=rerank_model if rerank_model else defaults.rerank_model,
+        data_dir=data_dir if data_dir else defaults.data_dir,
+        http_host=host if host else defaults.http_host,
+        http_port=port if port else defaults.http_port,
         indexes=indexes,
     )
     set_settings(settings)
@@ -655,21 +634,18 @@ def prebuilt_build(
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
     from cangjie_mcp.repo.git_manager import GitManager
 
+    # Build settings with optional overrides
+    defaults = Settings()
     settings = Settings(
-        docs_version=version if version else DEFAULT_DOCS_VERSION,
-        docs_lang=_validate_lang(lang if lang else DEFAULT_DOCS_LANG),
-        embedding_type=_validate_embedding_type(embedding if embedding else DEFAULT_EMBEDDING_TYPE),
-        local_model=local_model if local_model else DEFAULT_LOCAL_MODEL,
+        docs_version=version if version else defaults.docs_version,
+        docs_lang=_validate_lang(lang) if lang else defaults.docs_lang,  # type: ignore[arg-type]
+        embedding_type=_validate_embedding_type(embedding) if embedding else defaults.embedding_type,  # type: ignore[arg-type]
+        local_model=local_model if local_model else defaults.local_model,
         openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url if openai_base_url else DEFAULT_OPENAI_BASE_URL,
-        openai_model=openai_model if openai_model else DEFAULT_OPENAI_MODEL,
-        chunk_max_size=chunk_size if chunk_size else DEFAULT_CHUNK_MAX_SIZE,
-        data_dir=data_dir if data_dir else _default_data_dir(),
-        # Required by Settings but not used in build
-        rerank_type=_validate_rerank_type(DEFAULT_RERANK_TYPE),
-        rerank_model=DEFAULT_RERANK_MODEL,
-        rerank_top_k=DEFAULT_RERANK_TOP_K,
-        rerank_initial_k=DEFAULT_RERANK_INITIAL_K,
+        openai_base_url=openai_base_url if openai_base_url else defaults.openai_base_url,
+        openai_model=openai_model if openai_model else defaults.openai_model,
+        chunk_max_size=chunk_size if chunk_size else defaults.chunk_max_size,
+        data_dir=data_dir if data_dir else defaults.data_dir,
     )
     set_settings(settings)
 

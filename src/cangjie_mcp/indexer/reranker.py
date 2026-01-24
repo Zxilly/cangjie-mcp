@@ -10,16 +10,13 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 from llama_index.core.postprocessor import SentenceTransformerRerank
-from rich.console import Console
 
-from cangjie_mcp.utils import SingletonProvider
+from cangjie_mcp.utils import SingletonProvider, console
 
 if TYPE_CHECKING:
     from llama_index.core.schema import NodeWithScore
 
     from cangjie_mcp.config import Settings
-
-console = Console()
 
 
 class RerankerProvider(ABC):

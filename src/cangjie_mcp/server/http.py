@@ -7,7 +7,6 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from rich.console import Console
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -20,8 +19,7 @@ from cangjie_mcp.indexer.multi_store import (
     create_multi_index_store,
 )
 from cangjie_mcp.server.app import create_mcp_server_with_store
-
-console = Console()
+from cangjie_mcp.utils import console
 
 # Type alias for exception handler
 ExceptionHandler = Callable[[Request, Exception], Coroutine[Any, Any, Response]]

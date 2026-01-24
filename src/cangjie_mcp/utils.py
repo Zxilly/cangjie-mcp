@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
@@ -13,7 +13,44 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 if TYPE_CHECKING:
     from cangjie_mcp.config import Settings
 
+# Global console instance - use this instead of creating new Console() instances
 console = Console()
+
+# Type variable for validator return type
+T = TypeVar("T", bound=str)
+
+
+def create_literal_validator(
+    name: str,
+    valid_values: tuple[str, ...],
+) -> Callable[[str], str]:
+    """Create a validator for Literal types.
+
+    This factory function generates validator functions that check if a value
+    is one of the allowed values and raise a typer.BadParameter if not.
+
+    Args:
+        name: Human-readable name for the parameter (used in error messages)
+        valid_values: Tuple of valid string values
+
+    Returns:
+        A validator function that takes a string and returns it if valid
+
+    Example:
+        >>> _validate_lang = create_literal_validator("language", ("zh", "en"))
+        >>> _validate_lang("zh")  # Returns "zh"
+        >>> _validate_lang("fr")  # Raises typer.BadParameter
+    """
+
+    def validator(value: str) -> str:
+        if value not in valid_values:
+            import typer
+
+            raise typer.BadParameter(f"Invalid {name}: {value}. Must be one of: {', '.join(valid_values)}.")
+        return value
+
+    return validator
+
 
 # Default encoding for file operations
 ENCODING = "utf-8"

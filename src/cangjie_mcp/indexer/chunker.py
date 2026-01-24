@@ -11,11 +11,10 @@ from llama_index.core.node_parser import (
     SentenceSplitter,
 )
 from llama_index.core.schema import BaseNode, TextNode
-from rich.console import Console
 
+from cangjie_mcp.defaults import DEFAULT_CHUNK_MAX_SIZE
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
-
-console = Console()
+from cangjie_mcp.utils import console
 
 # Regex pattern to match fenced code blocks (```language\ncode\n```)
 CODE_BLOCK_PATTERN = re.compile(r"```[\w]*\n.*?```", re.DOTALL)
@@ -28,11 +27,6 @@ class CodeAwareSegment:
     text: str
     has_code: bool  # Whether this segment contains code blocks
     code_count: int  # Number of code blocks in this segment
-
-
-# Default max chunk size in characters (approximately 6000 tokens for most models)
-# This prevents exceeding embedding model token limits (e.g., 8192 for BAAI/bge-m3)
-DEFAULT_MAX_CHUNK_SIZE = 6000
 
 
 class DocumentChunker:
@@ -49,7 +43,7 @@ class DocumentChunker:
         embedding_provider: EmbeddingProvider,
         buffer_size: int = 1,
         breakpoint_percentile_threshold: int = 95,
-        max_chunk_size: int = DEFAULT_MAX_CHUNK_SIZE,
+        max_chunk_size: int = DEFAULT_CHUNK_MAX_SIZE,
     ) -> None:
         """Initialize the document chunker.
 
@@ -359,7 +353,7 @@ class DocumentChunker:
 
 def create_chunker(
     embedding_provider: EmbeddingProvider,
-    max_chunk_size: int = DEFAULT_MAX_CHUNK_SIZE,
+    max_chunk_size: int = DEFAULT_CHUNK_MAX_SIZE,
 ) -> DocumentChunker:
     """Factory function to create a document chunker.
 

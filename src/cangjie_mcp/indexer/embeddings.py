@@ -6,13 +6,9 @@ from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
-from rich.console import Console
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.utils import SingletonProvider
-
-console = Console()
-
+from cangjie_mcp.utils import SingletonProvider, console
 
 # Known OpenAI models that work with the standard OpenAIEmbedding class
 _OPENAI_NATIVE_MODELS = {

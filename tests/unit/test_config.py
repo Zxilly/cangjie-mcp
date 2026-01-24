@@ -16,11 +16,15 @@ from cangjie_mcp.config import (
 class TestSettings:
     """Tests for Settings class."""
 
-    def test_required_fields(self) -> None:
-        """Test that Settings requires all fields."""
-        # Settings should raise TypeError if required fields are missing
-        with pytest.raises(TypeError):
-            Settings()  # type: ignore[call-arg]
+    def test_default_values(self) -> None:
+        """Test that Settings has sensible defaults."""
+        # Settings should be creatable with all defaults
+        settings = Settings()
+        assert settings.docs_version == "latest"
+        assert settings.docs_lang == "zh"
+        assert settings.embedding_type == "local"
+        assert settings.rerank_type == "none"
+        assert settings.data_dir.name == ".cangjie-mcp"
 
     def test_all_fields_provided(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test Settings with all required fields."""

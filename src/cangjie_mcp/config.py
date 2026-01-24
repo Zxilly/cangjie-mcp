@@ -6,9 +6,27 @@ environment variables using Typer's envvar feature.
 Run `cangjie-mcp --help` to see all available options and their environment variables.
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+
+from cangjie_mcp.defaults import (
+    DEFAULT_CHUNK_MAX_SIZE,
+    DEFAULT_DOCS_LANG,
+    DEFAULT_DOCS_VERSION,
+    DEFAULT_EMBEDDING_TYPE,
+    DEFAULT_HTTP_HOST,
+    DEFAULT_HTTP_PORT,
+    DEFAULT_LOCAL_MODEL,
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_RERANK_INITIAL_K,
+    DEFAULT_RERANK_MODEL,
+    DEFAULT_RERANK_TOP_K,
+    DEFAULT_RERANK_TYPE,
+)
 
 
 @dataclass(frozen=True)
@@ -31,7 +49,7 @@ class IndexKey:
         return f"IndexKey(version={self.version!r}, lang={self.lang!r})"
 
     @classmethod
-    def from_string(cls, s: str) -> "IndexKey":
+    def from_string(cls, s: str) -> IndexKey:
         """Parse IndexKey from 'version:lang' string format.
 
         Args:
@@ -52,7 +70,7 @@ class IndexKey:
         return cls(version=version.strip(), lang=lang.strip())
 
     @classmethod
-    def parse_list(cls, indexes_str: str) -> list["IndexKey"]:
+    def parse_list(cls, indexes_str: str) -> list[IndexKey]:
         """Parse comma-separated list of index keys.
 
         Args:
@@ -71,6 +89,11 @@ class IndexKey:
         return f"{self.version}/{self.lang}"
 
 
+def _default_data_dir() -> Path:
+    """Get the default data directory (~/.cangjie-mcp)."""
+    return Path.home() / ".cangjie-mcp"
+
+
 @dataclass
 class Settings:
     """Application settings.
@@ -78,41 +101,40 @@ class Settings:
     All settings are configured via CLI arguments (with environment variable support).
     Use `cangjie-mcp --help` to see all options and their environment variables.
 
-    This class has no defaults - all values must be provided explicitly.
-    Defaults are defined in CLI (typer.Option) as the single source of truth.
+    Default values are imported from cangjie_mcp.defaults module.
     """
 
     # Documentation settings
-    docs_version: str
-    docs_lang: Literal["zh", "en"]
+    docs_version: str = DEFAULT_DOCS_VERSION
+    docs_lang: Literal["zh", "en"] = DEFAULT_DOCS_LANG
 
     # Embedding settings
-    embedding_type: Literal["local", "openai"]
-    local_model: str
+    embedding_type: Literal["local", "openai"] = DEFAULT_EMBEDDING_TYPE
+    local_model: str = DEFAULT_LOCAL_MODEL
 
     # Rerank settings
-    rerank_type: Literal["none", "local", "openai"]
-    rerank_model: str
-    rerank_top_k: int
-    rerank_initial_k: int
+    rerank_type: Literal["none", "local", "openai"] = DEFAULT_RERANK_TYPE
+    rerank_model: str = DEFAULT_RERANK_MODEL
+    rerank_top_k: int = DEFAULT_RERANK_TOP_K
+    rerank_initial_k: int = DEFAULT_RERANK_INITIAL_K
 
     # Chunking settings
-    chunk_max_size: int
+    chunk_max_size: int = DEFAULT_CHUNK_MAX_SIZE
 
-    # Data directory
-    data_dir: Path
+    # Data directory (use field with default_factory for mutable default)
+    data_dir: Path = field(default_factory=_default_data_dir)
 
     # Prebuilt index URL
     prebuilt_url: str | None = None
 
     # OpenAI-compatible API settings
     openai_api_key: str | None = None
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "text-embedding-3-small"
+    openai_base_url: str = DEFAULT_OPENAI_BASE_URL
+    openai_model: str = DEFAULT_OPENAI_MODEL
 
     # HTTP server settings (for serve command)
-    http_host: str = "127.0.0.1"
-    http_port: int = 8000
+    http_host: str = DEFAULT_HTTP_HOST
+    http_port: int = DEFAULT_HTTP_PORT
 
     # Multi-index settings (for HTTP mode)
     indexes: str | None = None
