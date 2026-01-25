@@ -46,7 +46,6 @@ dependencies = [
     "gitpython>=3.1.46",
     "httpx>=0.28.0",
     "llama-index-embeddings-openai-like>=0.2.2",
-    "uvicorn>=0.34.0",
 ]
 
 [project.urls]

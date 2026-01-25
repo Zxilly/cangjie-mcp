@@ -30,3 +30,6 @@ coverage.xml
 
 # Docs repo (cloned documentation)
 docs_repo/
+
+ref/
+temp/

@@ -32,7 +32,7 @@ def load_test_queries() -> list[dict[str, Any]]:
     """Load test queries from JSON file."""
     with QUERIES_FILE.open(encoding="utf-8") as f:
         data = json.load(f)
-    return data["queries"]
+    return list(data["queries"])
 
 
 def run_evaluation(

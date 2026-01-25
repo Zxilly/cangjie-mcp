@@ -27,7 +27,3 @@ DEFAULT_CHUNK_MAX_SIZE: int = 6000
 # OpenAI-compatible API settings
 DEFAULT_OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL: str = "text-embedding-3-small"
-
-# HTTP server settings
-DEFAULT_HTTP_HOST: str = "127.0.0.1"
-DEFAULT_HTTP_PORT: int = 8000

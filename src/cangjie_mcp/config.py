@@ -17,8 +17,6 @@ from cangjie_mcp.defaults import (
     DEFAULT_DOCS_LANG,
     DEFAULT_DOCS_VERSION,
     DEFAULT_EMBEDDING_TYPE,
-    DEFAULT_HTTP_HOST,
-    DEFAULT_HTTP_PORT,
     DEFAULT_LOCAL_MODEL,
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
@@ -27,66 +25,6 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
 )
-
-
-@dataclass(frozen=True)
-class IndexKey:
-    """Index identifier for multi-index support.
-
-    An IndexKey uniquely identifies a documentation index by version and language.
-    It is hashable and can be used as a dictionary key.
-    """
-
-    version: str
-    lang: str
-
-    def __str__(self) -> str:
-        """Return string representation as 'version:lang'."""
-        return f"{self.version}:{self.lang}"
-
-    def __repr__(self) -> str:
-        """Return repr string."""
-        return f"IndexKey(version={self.version!r}, lang={self.lang!r})"
-
-    @classmethod
-    def from_string(cls, s: str) -> IndexKey:
-        """Parse IndexKey from 'version:lang' string format.
-
-        Args:
-            s: String in 'version:lang' format (e.g., 'v1:zh', 'latest:en')
-
-        Returns:
-            IndexKey instance
-
-        Raises:
-            ValueError: If string format is invalid
-        """
-        parts = s.split(":")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid IndexKey format: '{s}'. Expected 'version:lang' (e.g., 'v1:zh')")
-        version, lang = parts
-        if not version or not lang:
-            raise ValueError(f"Invalid IndexKey format: '{s}'. Version and lang cannot be empty")
-        return cls(version=version.strip(), lang=lang.strip())
-
-    @classmethod
-    def parse_list(cls, indexes_str: str) -> list[IndexKey]:
-        """Parse comma-separated list of index keys.
-
-        Args:
-            indexes_str: Comma-separated string (e.g., 'v1:zh,latest:en')
-
-        Returns:
-            List of IndexKey instances
-        """
-        if not indexes_str or not indexes_str.strip():
-            return []
-        return [cls.from_string(s.strip()) for s in indexes_str.split(",") if s.strip()]
-
-    @property
-    def path_segment(self) -> str:
-        """Return path segment for URL routing (e.g., 'v1/zh')."""
-        return f"{self.version}/{self.lang}"
 
 
 def _default_data_dir() -> Path:
@@ -131,13 +69,6 @@ class Settings:
     openai_api_key: str | None = None
     openai_base_url: str = DEFAULT_OPENAI_BASE_URL
     openai_model: str = DEFAULT_OPENAI_MODEL
-
-    # HTTP server settings (for serve command)
-    http_host: str = DEFAULT_HTTP_HOST
-    http_port: int = DEFAULT_HTTP_PORT
-
-    # Multi-index settings (for HTTP mode)
-    indexes: str | None = None
 
     @property
     def docs_repo_dir(self) -> Path:

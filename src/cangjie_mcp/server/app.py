@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from cangjie_mcp.config import IndexKey, Settings
+from cangjie_mcp.config import Settings
 from cangjie_mcp.server import tools
 from cangjie_mcp.server.tools import (
     CodeExample,
@@ -24,8 +24,7 @@ from cangjie_mcp.server.tools import (
 )
 
 if TYPE_CHECKING:
-    from cangjie_mcp.indexer.document_source import DocumentSource
-    from cangjie_mcp.indexer.store import VectorStore
+    pass
 
 
 # =============================================================================
@@ -407,7 +406,7 @@ class CalculatorTest {
 # =============================================================================
 
 
-def _register_tools(mcp: FastMCP, ctx: ToolContext) -> None:
+def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
     """Register all MCP tools with the server.
 
     This function is shared between create_mcp_server and create_mcp_server_with_store
@@ -621,43 +620,6 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     )
 
     ctx = tools.create_tool_context(settings)
-    _register_tools(mcp, ctx)
-
-    return mcp
-
-
-def create_mcp_server_with_store(
-    settings: Settings,
-    store: VectorStore,
-    key: IndexKey | None = None,
-    document_source: DocumentSource | None = None,
-) -> FastMCP:
-    """Create and configure the MCP server with a pre-loaded VectorStore.
-
-    This is used by the HTTP server to create MCP instances for each index,
-    where the VectorStore is already loaded by MultiIndexStore.
-
-    Args:
-        settings: Application settings
-        store: Pre-loaded VectorStore instance
-        key: Optional IndexKey for naming the server instance
-        document_source: Optional DocumentSource for reading documentation
-
-    Returns:
-        Configured FastMCP instance
-    """
-    server_name = f"cangjie_mcp_{key.version}_{key.lang}" if key else "cangjie_mcp"
-
-    instructions = SERVER_INSTRUCTIONS
-    if key:
-        instructions = f"Index: {key.version} ({key.lang})\n\n{instructions}"
-
-    mcp = FastMCP(
-        name=server_name,
-        instructions=instructions,
-    )
-
-    ctx = tools.create_tool_context(settings, store=store, document_source=document_source)
-    _register_tools(mcp, ctx)
+    register_docs_tools(mcp, ctx)
 
     return mcp

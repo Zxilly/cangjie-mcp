@@ -142,7 +142,7 @@ class TestOpenAICompatibleReranker:
             node.node.metadata = {}
             mock_nodes.append(node)
 
-        result = reranker.rerank(query="test query", nodes=mock_nodes, top_k=2)
+        result = reranker.rerank(query="test query", nodes=mock_nodes, top_k=2)  # type: ignore[arg-type]
 
         # Verify API call
         mock_post.assert_called_once()

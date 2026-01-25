@@ -10,37 +10,6 @@ from cangjie_mcp.cli import app
 runner = CliRunner()
 
 
-class TestServeCommand:
-    """Tests for serve command."""
-
-    @patch("cangjie_mcp.server.http.MultiIndexHTTPServer")
-    @patch("cangjie_mcp.cli.Settings")
-    def test_serve_displays_info(
-        self,
-        mock_settings_class: MagicMock,
-        mock_http_server_class: MagicMock,
-    ) -> None:
-        """Test serve command displays server info."""
-        mock_settings = MagicMock()
-        mock_settings.docs_version = "latest"
-        mock_settings.docs_lang = "zh"
-        mock_settings.embedding_type = "local"
-        mock_settings.rerank_type = "none"
-        mock_settings.http_host = "127.0.0.1"
-        mock_settings.http_port = 8000
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.indexes = "https://example.com/test.tar.gz"
-        mock_settings_class.return_value = mock_settings
-
-        mock_server = MagicMock()
-        mock_http_server_class.return_value = mock_server
-
-        result = runner.invoke(app, ["serve", "--indexes", "https://example.com/test.tar.gz"])
-
-        # Should contain server info in output
-        assert "Cangjie MCP HTTP Server" in result.output or result.exit_code in [0, 1]
-
-
 class TestPrebuiltListCommand:
     """Tests for prebuilt list command."""
 
@@ -55,7 +24,7 @@ class TestPrebuiltListCommand:
         mock_manager.get_installed_metadata.return_value = None
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["prebuilt", "list"])
+        result = runner.invoke(app, ["docs", "prebuilt", "list"])
 
         assert result.exit_code == 0
         assert "No local prebuilt indexes" in result.output
@@ -77,7 +46,7 @@ class TestPrebuiltListCommand:
         mock_manager.get_installed_metadata.return_value = None
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["prebuilt", "list"])
+        result = runner.invoke(app, ["docs", "prebuilt", "list"])
 
         assert result.exit_code == 0
         assert "v1.0.0" in result.output
@@ -98,7 +67,7 @@ class TestPrebuiltListCommand:
         mock_manager.get_installed_metadata.return_value = mock_installed
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["prebuilt", "list"])
+        result = runner.invoke(app, ["docs", "prebuilt", "list"])
 
         assert result.exit_code == 0
         assert "Currently Installed" in result.output
@@ -171,7 +140,7 @@ class TestPrebuiltBuildCommand:
         mock_manager.build.return_value = Path("/test/archive.tar.gz")
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["prebuilt", "build"])
+        result = runner.invoke(app, ["docs", "prebuilt", "build"])
 
         assert result.exit_code == 0
         assert "Archive built" in result.output
@@ -208,7 +177,7 @@ class TestPrebuiltBuildCommand:
         mock_loader.load_all_documents.return_value = []
         mock_loader_class.return_value = mock_loader
 
-        result = runner.invoke(app, ["prebuilt", "build"])
+        result = runner.invoke(app, ["docs", "prebuilt", "build"])
 
         assert result.exit_code == 1
         assert "No documents found" in result.output
@@ -219,7 +188,7 @@ class TestPrebuiltDownloadCommand:
 
     def test_prebuilt_download_no_url(self) -> None:
         """Test prebuilt download without URL."""
-        result = runner.invoke(app, ["prebuilt", "download"])
+        result = runner.invoke(app, ["docs", "prebuilt", "download"])
 
         assert result.exit_code == 1
         assert "No URL provided" in result.output
@@ -235,7 +204,7 @@ class TestPrebuiltDownloadCommand:
         mock_manager_class.return_value = mock_manager
 
         # Use explicit --url flag to bypass prebuilt_url check
-        result = runner.invoke(app, ["prebuilt", "download", "--url", "https://example.com/index"])
+        result = runner.invoke(app, ["docs", "prebuilt", "download", "--url", "https://example.com/index"])
 
         # Should attempt download with the explicit URL
         if result.exit_code == 0:

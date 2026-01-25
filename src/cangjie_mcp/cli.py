@@ -3,6 +3,11 @@
 All CLI options can be configured via environment variables.
 Run `cangjie-mcp --help` to see all options and their environment variables.
 
+Commands:
+- cangjie-mcp: Combined MCP server with docs + LSP tools (default)
+- cangjie-mcp docs: Documentation search only
+- cangjie-mcp lsp: LSP code intelligence only
+
 Environment variable naming:
 - CANGJIE_* prefix for most options
 - OPENAI_* prefix for OpenAI-related options
@@ -29,6 +34,7 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
 )
+from cangjie_mcp.lsp.cli import lsp_app
 from cangjie_mcp.utils import console, create_literal_validator
 
 
@@ -39,14 +45,202 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+# Root app - starts combined server by default
 app = typer.Typer(
     name="cangjie-mcp",
-    help="MCP server for Cangjie programming language documentation",
+    help="MCP server for Cangjie programming language (docs + LSP)",
     invoke_without_command=True,
 )
 
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    _version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            "-v",
+            help="Show version and exit",
+            callback=_version_callback,
+            is_eager=True,
+        ),
+    ] = False,
+    # Docs options
+    docs_version: Annotated[
+        str,
+        typer.Option(
+            "--docs-version",
+            "-V",
+            help="Documentation version (git tag)",
+            envvar="CANGJIE_DOCS_VERSION",
+        ),
+    ] = DEFAULT_DOCS_VERSION,
+    lang: Annotated[
+        str,
+        typer.Option(
+            "--lang",
+            "-l",
+            help="Documentation language (zh/en)",
+            envvar="CANGJIE_DOCS_LANG",
+        ),
+    ] = DEFAULT_DOCS_LANG,
+    embedding: Annotated[
+        str,
+        typer.Option(
+            "--embedding",
+            "-e",
+            help="Embedding type (local/openai)",
+            envvar="CANGJIE_EMBEDDING_TYPE",
+        ),
+    ] = DEFAULT_EMBEDDING_TYPE,
+    local_model: Annotated[
+        str,
+        typer.Option(
+            "--local-model",
+            help="Local HuggingFace embedding model name",
+            envvar="CANGJIE_LOCAL_MODEL",
+        ),
+    ] = DEFAULT_LOCAL_MODEL,
+    openai_api_key: Annotated[
+        str | None,
+        typer.Option(
+            "--openai-api-key",
+            help="OpenAI API key",
+            envvar="OPENAI_API_KEY",
+        ),
+    ] = None,
+    openai_base_url: Annotated[
+        str,
+        typer.Option(
+            "--openai-base-url",
+            help="OpenAI API base URL",
+            envvar="OPENAI_BASE_URL",
+        ),
+    ] = DEFAULT_OPENAI_BASE_URL,
+    openai_model: Annotated[
+        str,
+        typer.Option(
+            "--openai-model",
+            help="OpenAI embedding model",
+            envvar="OPENAI_EMBEDDING_MODEL",
+        ),
+    ] = DEFAULT_OPENAI_MODEL,
+    rerank: Annotated[
+        str,
+        typer.Option(
+            "--rerank",
+            "-r",
+            help="Rerank type (none/local/openai)",
+            envvar="CANGJIE_RERANK_TYPE",
+        ),
+    ] = DEFAULT_RERANK_TYPE,
+    rerank_model: Annotated[
+        str,
+        typer.Option(
+            "--rerank-model",
+            help="Rerank model name",
+            envvar="CANGJIE_RERANK_MODEL",
+        ),
+    ] = DEFAULT_RERANK_MODEL,
+    rerank_top_k: Annotated[
+        int,
+        typer.Option(
+            "--rerank-top-k",
+            help="Number of results after reranking",
+            envvar="CANGJIE_RERANK_TOP_K",
+        ),
+    ] = DEFAULT_RERANK_TOP_K,
+    rerank_initial_k: Annotated[
+        int,
+        typer.Option(
+            "--rerank-initial-k",
+            help="Number of candidates before reranking",
+            envvar="CANGJIE_RERANK_INITIAL_K",
+        ),
+    ] = DEFAULT_RERANK_INITIAL_K,
+    chunk_max_size: Annotated[
+        int,
+        typer.Option(
+            "--chunk-size",
+            help="Max chunk size in characters",
+            envvar="CANGJIE_CHUNK_MAX_SIZE",
+        ),
+    ] = DEFAULT_CHUNK_MAX_SIZE,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--data-dir",
+            "-d",
+            help="Data directory path",
+            envvar="CANGJIE_DATA_DIR",
+            show_default="~/.cangjie-mcp",
+        ),
+    ] = None,
+) -> None:
+    """Start the combined MCP server with docs and LSP tools.
+
+    This is the default command that provides both documentation search
+    and LSP code intelligence features in a single MCP server.
+    """
+    # If a subcommand is invoked, let it handle execution
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Check if LSP is available
+    import os
+
+    if not os.environ.get("CANGJIE_HOME"):
+        console.print("[yellow]Warning: LSP server not available (CANGJIE_HOME not set)[/yellow]")
+        console.print("[yellow]LSP tools will return errors. Set CANGJIE_HOME to enable.[/yellow]")
+
+    # Validate and build settings
+    validated_lang = _validate_lang(lang)
+    validated_embedding = _validate_embedding_type(embedding)
+    validated_rerank = _validate_rerank_type(rerank)
+
+    settings = Settings(
+        docs_version=docs_version,
+        docs_lang=validated_lang,  # type: ignore[arg-type]
+        embedding_type=validated_embedding,  # type: ignore[arg-type]
+        local_model=local_model,
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url,
+        openai_model=openai_model,
+        rerank_type=validated_rerank,  # type: ignore[arg-type]
+        rerank_model=rerank_model,
+        rerank_top_k=rerank_top_k,
+        rerank_initial_k=rerank_initial_k,
+        chunk_max_size=chunk_max_size,
+        data_dir=data_dir if data_dir else _default_data_dir(),
+    )
+    set_settings(settings)
+
+    # Initialize docs index
+    initialize_and_index(settings)
+
+    # Create and run combined server
+    from cangjie_mcp.server.combined_app import create_combined_mcp_server
+
+    mcp = create_combined_mcp_server(settings)
+    console.print("[blue]Starting combined MCP server (docs + LSP)...[/blue]")
+    mcp.run(transport="stdio")
+
+
+# Docs subcommand
+docs_app = typer.Typer(
+    name="docs",
+    help="Documentation search MCP server",
+    invoke_without_command=True,
+)
+app.add_typer(docs_app, name="docs")
+
+# Prebuilt index management (under docs)
 prebuilt_app = typer.Typer(help="Prebuilt index management commands")
-app.add_typer(prebuilt_app, name="prebuilt")
+docs_app.add_typer(prebuilt_app, name="prebuilt")
+
+# LSP subcommand (imported from lsp/cli.py)
+app.add_typer(lsp_app, name="lsp")
 
 
 def _default_data_dir() -> Path:
@@ -123,19 +317,9 @@ def initialize_and_index(settings: Settings) -> None:
     console.print("[green]Index built successfully![/green]")
 
 
-@app.callback(invoke_without_command=True)
-def main(
+@docs_app.callback(invoke_without_command=True)
+def docs_main(
     ctx: typer.Context,
-    _version: Annotated[
-        bool,
-        typer.Option(
-            "--version",
-            "-v",
-            help="Show version and exit",
-            callback=_version_callback,
-            is_eager=True,
-        ),
-    ] = False,
     docs_version: Annotated[
         str,
         typer.Option(
@@ -258,12 +442,9 @@ def main(
         ),
     ] = None,
 ) -> None:
-    """Start the MCP server in stdio mode (default).
+    """Start the documentation MCP server in stdio mode.
 
-    When invoked without a subcommand, starts the MCP server using stdio transport.
-    This is the default behavior for MCP client integration.
-
-    For HTTP server mode, use: cangjie-mcp serve
+    Starts the MCP server using stdio transport for MCP client integration.
     """
     # If a subcommand is invoked, let it handle execution
     if ctx.invoked_subcommand is not None:
@@ -309,174 +490,6 @@ def main(
     mcp = create_mcp_server(settings)
     console.print("[blue]Starting MCP server (stdio)...[/blue]")
     mcp.run(transport="stdio")
-
-
-@app.command()
-def serve(
-    indexes: Annotated[
-        str | None,
-        typer.Option(
-            "--indexes",
-            "-i",
-            help="Comma-separated list of URLs to prebuilt index archives",
-            envvar="CANGJIE_INDEXES",
-        ),
-    ] = None,
-    host: Annotated[
-        str | None,
-        typer.Option(
-            "--host",
-            "-H",
-            help="HTTP server host address",
-            envvar="CANGJIE_HTTP_HOST",
-        ),
-    ] = None,
-    port: Annotated[
-        int | None,
-        typer.Option(
-            "--port",
-            "-p",
-            help="HTTP server port",
-            envvar="CANGJIE_HTTP_PORT",
-        ),
-    ] = None,
-    embedding: Annotated[
-        str | None,
-        typer.Option(
-            "--embedding",
-            "-e",
-            help="Embedding type (local/openai)",
-            envvar="CANGJIE_EMBEDDING_TYPE",
-        ),
-    ] = None,
-    local_model: Annotated[
-        str | None,
-        typer.Option(
-            "--local-model",
-            help="Local HuggingFace embedding model name",
-            envvar="CANGJIE_LOCAL_MODEL",
-        ),
-    ] = None,
-    openai_api_key: Annotated[
-        str | None,
-        typer.Option(
-            "--openai-api-key",
-            help="OpenAI API key",
-            envvar="OPENAI_API_KEY",
-        ),
-    ] = None,
-    openai_base_url: Annotated[
-        str | None,
-        typer.Option(
-            "--openai-base-url",
-            help="OpenAI API base URL",
-            envvar="OPENAI_BASE_URL",
-        ),
-    ] = None,
-    openai_model: Annotated[
-        str | None,
-        typer.Option(
-            "--openai-model",
-            help="OpenAI embedding model",
-            envvar="OPENAI_EMBEDDING_MODEL",
-        ),
-    ] = None,
-    rerank: Annotated[
-        str | None,
-        typer.Option(
-            "--rerank",
-            "-r",
-            help="Rerank type (none/local/openai)",
-            envvar="CANGJIE_RERANK_TYPE",
-        ),
-    ] = None,
-    rerank_model: Annotated[
-        str | None,
-        typer.Option(
-            "--rerank-model",
-            help="Rerank model name",
-            envvar="CANGJIE_RERANK_MODEL",
-        ),
-    ] = None,
-    data_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--data-dir",
-            "-d",
-            help="Data directory path",
-            envvar="CANGJIE_DATA_DIR",
-        ),
-    ] = None,
-) -> None:
-    """Start the HTTP server.
-
-    Downloads prebuilt indexes from URLs and serves them via HTTP.
-    The version and language are derived from each archive's metadata.
-    Archives are cached locally using the URL's MD5 hash.
-
-    Examples:
-        # Load single index from URL
-        cangjie-mcp serve --indexes "https://example.com/cangjie-index-v1-zh.tar.gz"
-
-        # Load multiple indexes
-        cangjie-mcp serve --indexes "https://example.com/v1-zh.tar.gz,https://example.com/v2-en.tar.gz"
-
-        # Access via HTTP (routes derived from archive metadata):
-        # POST http://localhost:8000/v1/zh/mcp    -> v1 Chinese docs
-        # POST http://localhost:8000/v2/en/mcp   -> v2 English docs
-    """
-    from cangjie_mcp.indexer.multi_store import parse_index_urls
-
-    # Build settings with optional overrides (use defaults from Settings)
-    defaults = Settings()
-    settings = Settings(
-        embedding_type=_validate_embedding_type(embedding) if embedding else defaults.embedding_type,  # type: ignore[arg-type]
-        local_model=local_model if local_model else defaults.local_model,
-        openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url if openai_base_url else defaults.openai_base_url,
-        openai_model=openai_model if openai_model else defaults.openai_model,
-        rerank_type=_validate_rerank_type(rerank) if rerank else defaults.rerank_type,  # type: ignore[arg-type]
-        rerank_model=rerank_model if rerank_model else defaults.rerank_model,
-        data_dir=data_dir if data_dir else defaults.data_dir,
-        http_host=host if host else defaults.http_host,
-        http_port=port if port else defaults.http_port,
-        indexes=indexes,
-    )
-    set_settings(settings)
-
-    # Parse index URLs
-    indexes_str = settings.indexes
-    if not indexes_str:
-        console.print("[red]No indexes specified. Use --indexes or CANGJIE_INDEXES.[/red]")
-        console.print(
-            "[yellow]Example: cangjie-mcp serve --indexes 'https://example.com/cangjie-index-v1-zh.tar.gz'[/yellow]"
-        )
-        raise typer.Exit(1)
-
-    index_urls = parse_index_urls(indexes_str)
-    if not index_urls:
-        console.print(f"[red]No valid URLs in: {indexes_str}[/red]")
-        raise typer.Exit(1)
-
-    console.print("[bold]Cangjie MCP HTTP Server[/bold]")
-    console.print(f"  Host: {settings.http_host}")
-    console.print(f"  Port: {settings.http_port}")
-    console.print(f"  Embedding: {settings.embedding_type}")
-    console.print(f"  Rerank: {settings.rerank_type}")
-    console.print(f"  Index URLs: {len(index_urls)}")
-    for url in index_urls:
-        console.print(f"    - {url}")
-    console.print()
-
-    # Start HTTP server
-    from cangjie_mcp.server.http import MultiIndexHTTPServer
-
-    server = MultiIndexHTTPServer(settings=settings, index_urls=index_urls)
-
-    try:
-        server.run()
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Server stopped.[/yellow]")
 
 
 @prebuilt_app.command("download")
