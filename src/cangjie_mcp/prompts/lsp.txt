@@ -1,0 +1,23 @@
+You have access to Cangjie LSP tools for code intelligence on .cj source files.
+
+## Available Tools
+
+- `cangjie_lsp_definition`: Jump to symbol definition
+- `cangjie_lsp_references`: Find all references to a symbol
+- `cangjie_lsp_hover`: Get type info and documentation
+- `cangjie_lsp_symbols`: List all symbols in a document
+- `cangjie_lsp_diagnostics`: Get errors and warnings
+- `cangjie_lsp_completion`: Get code completion suggestions
+
+## Usage
+
+- All positions are 1-based (line and character)
+- File paths must be absolute paths to .cj files
+
+## Workflow
+
+1. `cangjie_lsp_symbols` - explore file structure
+2. `cangjie_lsp_hover` - understand symbol types
+3. `cangjie_lsp_definition` - navigate to definitions
+4. `cangjie_lsp_references` - find all usages
+5. `cangjie_lsp_diagnostics` - check for errors

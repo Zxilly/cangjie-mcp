@@ -16,6 +16,7 @@ from cangjie_mcp.indexer.document_source import (
     PrebuiltDocumentSource,
 )
 from cangjie_mcp.indexer.loader import extract_code_blocks
+from cangjie_mcp.indexer.store import SearchResult as StoreSearchResult
 from cangjie_mcp.indexer.store import VectorStore, create_vector_store
 from cangjie_mcp.prebuilt.manager import PrebuiltManager
 from cangjie_mcp.repo.git_manager import GitManager
@@ -138,6 +139,43 @@ class GetToolUsageInput(BaseModel):
     )
 
 
+class SearchStdlibInput(BaseModel):
+    """Input model for cangjie_search_stdlib tool."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra="forbid",
+    )
+
+    query: str = Field(
+        ...,
+        description="API name, method, or description to search for "
+        "(e.g., 'ArrayList add', 'file read', 'HashMap get')",
+        min_length=1,
+        max_length=500,
+    )
+    package: str | None = Field(
+        default=None,
+        description="Filter by package name (e.g., 'std.collection', 'std.fs', 'std.net'). "
+        "Packages are automatically detected from import statements.",
+    )
+    type_name: str | None = Field(
+        default=None,
+        description="Filter by type name (e.g., 'ArrayList', 'HashMap', 'File')",
+    )
+    include_examples: bool = Field(
+        default=True,
+        description="Whether to include code examples in results",
+    )
+    top_k: int = Field(
+        default=5,
+        description="Number of results to return",
+        ge=1,
+        le=20,
+    )
+
+
 # =============================================================================
 # Output Types (TypedDict)
 # =============================================================================
@@ -154,7 +192,7 @@ class SearchResultItem(TypedDict):
     title: str
 
 
-class SearchResult(TypedDict):
+class DocsSearchResult(TypedDict):
     """Search result with pagination metadata."""
 
     items: list[SearchResultItem]
@@ -206,6 +244,26 @@ class TopicsListResult(TypedDict):
     categories: dict[str, list[str]]
     total_categories: int
     total_topics: int
+
+
+class StdlibResultItem(TypedDict):
+    """Single stdlib search result item."""
+
+    content: str
+    score: float
+    file_path: str
+    title: str
+    packages: list[str]
+    type_names: list[str]
+    code_examples: list[CodeExample]
+
+
+class StdlibSearchResult(TypedDict):
+    """Stdlib search result."""
+
+    items: list[StdlibResultItem]
+    count: int
+    detected_packages: list[str]
 
 
 # =============================================================================
@@ -290,7 +348,7 @@ def _create_document_source(settings: Settings) -> DocumentSource:
 # =============================================================================
 
 
-def search_docs(ctx: ToolContext, params: SearchDocsInput) -> SearchResult:
+def search_docs(ctx: ToolContext, params: SearchDocsInput) -> DocsSearchResult:
     """Search documentation using semantic search.
 
     Performs semantic search across Cangjie documentation using vector embeddings.
@@ -335,7 +393,7 @@ def search_docs(ctx: ToolContext, params: SearchDocsInput) -> SearchResult:
         for result in paginated_results
     ]
 
-    return SearchResult(
+    return DocsSearchResult(
         items=items,
         total=len(results),  # Estimated total
         count=len(items),
@@ -470,3 +528,140 @@ def get_tool_usage(ctx: ToolContext, params: GetToolUsageInput) -> ToolUsageResu
         content="\n\n---\n\n".join(combined_content),
         examples=code_examples,
     )
+
+
+def search_stdlib(ctx: ToolContext, params: SearchStdlibInput) -> StdlibSearchResult:
+    """Search Cangjie standard library APIs.
+
+    Performs semantic search filtered to stdlib documentation.
+    Dynamically filters results based on is_stdlib metadata that was
+    extracted from import statements at index time.
+
+    Args:
+        ctx: Tool context with store and settings
+        params: Validated search parameters including:
+            - query: API name, method, or description
+            - package: Optional package filter (e.g., 'std.collection')
+            - type_name: Optional type filter (e.g., 'ArrayList')
+            - include_examples: Whether to include code examples
+            - top_k: Number of results to return
+
+    Returns:
+        StdlibSearchResult with filtered stdlib API documentation
+    """
+    # Search with more candidates to allow for filtering
+    results = ctx.store.search(query=params.query, top_k=params.top_k * 3)
+
+    # Filter to stdlib docs only (using is_stdlib metadata)
+    stdlib_results = [
+        r
+        for r in results
+        if r.metadata.file_path  # Has valid metadata
+    ]
+
+    # Further filter by package if specified
+    if params.package:
+        stdlib_results = [r for r in stdlib_results if _has_package(r, params.package)]
+
+    # Further filter by type_name if specified
+    if params.type_name:
+        stdlib_results = [r for r in stdlib_results if _has_type_name(r, params.type_name)]
+
+    # Collect all detected packages from results for reference
+    all_packages: set[str] = set()
+
+    # Format results
+    items: list[StdlibResultItem] = []
+    for result in stdlib_results[: params.top_k]:
+        # Get packages from metadata (stored as list)
+        packages = _get_list_metadata(result, "packages")
+        type_names = _get_list_metadata(result, "type_names")
+
+        all_packages.update(packages)
+
+        # Extract code examples if requested
+        code_examples: list[CodeExample] = []
+        if params.include_examples:
+            code_blocks = extract_code_blocks(result.text)
+            for block in code_blocks:
+                code_examples.append(
+                    CodeExample(
+                        language=block.language,
+                        code=block.code,
+                        context=block.context,
+                        source_topic=result.metadata.topic,
+                        source_file=result.metadata.file_path,
+                    )
+                )
+
+        items.append(
+            StdlibResultItem(
+                content=result.text,
+                score=result.score,
+                file_path=result.metadata.file_path,
+                title=result.metadata.title,
+                packages=packages,
+                type_names=type_names,
+                code_examples=code_examples,
+            )
+        )
+
+    return StdlibSearchResult(
+        items=items,
+        count=len(items),
+        detected_packages=sorted(all_packages),
+    )
+
+
+def _get_list_metadata(result: StoreSearchResult, key: str) -> list[str]:
+    """Get list metadata from search result by extracting from content.
+
+    Since ChromaDB doesn't store list metadata well, we dynamically extract
+    the info from the result text content.
+
+    Args:
+        result: Search result from store
+        key: Metadata key ("packages" or "type_names")
+
+    Returns:
+        List of strings
+    """
+    from cangjie_mcp.indexer.api_extractor import extract_stdlib_info
+
+    # Extract stdlib info from the result text
+    stdlib_info = extract_stdlib_info(result.text)
+
+    if key == "packages":
+        return stdlib_info.get("packages", [])
+    elif key == "type_names":
+        return stdlib_info.get("type_names", [])
+
+    return []
+
+
+def _has_package(result: StoreSearchResult, package: str) -> bool:
+    """Check if result contains the specified package.
+
+    Since ChromaDB doesn't store list metadata well, we check the text content.
+
+    Args:
+        result: Search result from store
+        package: Package name to check for
+
+    Returns:
+        True if package is found in the result
+    """
+    return package in result.text or f"import {package}" in result.text
+
+
+def _has_type_name(result: StoreSearchResult, type_name: str) -> bool:
+    """Check if result contains the specified type name.
+
+    Args:
+        result: Search result from store
+        type_name: Type name to check for
+
+    Returns:
+        True if type name is found in the result
+    """
+    return type_name in result.text

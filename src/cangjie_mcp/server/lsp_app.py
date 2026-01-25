@@ -28,50 +28,7 @@ from cangjie_mcp.lsp.types import (
     ReferencesResult,
     SymbolsResult,
 )
-
-# =============================================================================
-# Server Instructions
-# =============================================================================
-
-LSP_SERVER_INSTRUCTIONS = """
-Cangjie LSP Server - Language Server Protocol support for Cangjie programming language.
-
-## About
-
-This server provides code intelligence features for Cangjie source files (.cj) through
-the Language Server Protocol. It connects to the Cangjie LSP server bundled with the
-Cangjie SDK.
-
-## Requirements
-
-- Cangjie SDK installed with CANGJIE_HOME environment variable set
-- LSP server available at ${CANGJIE_HOME}/tools/bin/LSPServer
-
-## Available Tools
-
-- `cangjie_lsp_definition`: Jump to symbol definition
-- `cangjie_lsp_references`: Find all references to a symbol
-- `cangjie_lsp_hover`: Get type information and documentation for a symbol
-- `cangjie_lsp_symbols`: List all symbols in a document
-- `cangjie_lsp_diagnostics`: Get errors and warnings for a file
-- `cangjie_lsp_completion`: Get code completion suggestions
-
-## Usage Notes
-
-1. All line and character positions are 1-based (human-readable)
-2. File paths must be absolute paths to .cj files
-3. The LSP server is initialized automatically when the MCP server starts
-4. Diagnostics may take a moment to appear after opening a file
-
-## Example Workflow
-
-1. Use `cangjie_lsp_symbols` to explore a file's structure
-2. Use `cangjie_lsp_hover` to understand a symbol's type
-3. Use `cangjie_lsp_definition` to navigate to definitions
-4. Use `cangjie_lsp_references` to find all usages
-5. Use `cangjie_lsp_diagnostics` to check for errors
-""".strip()
-
+from cangjie_mcp.prompts import get_lsp_prompt
 
 # =============================================================================
 # Server Creation
@@ -86,7 +43,7 @@ def create_lsp_mcp_server() -> FastMCP:
     """
     mcp = FastMCP(
         name="cangjie_lsp_mcp",
-        instructions=LSP_SERVER_INSTRUCTIONS,
+        instructions=get_lsp_prompt(),
     )
 
     register_lsp_tools(mcp)

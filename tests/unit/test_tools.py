@@ -2,7 +2,7 @@
 
 from cangjie_mcp.server.tools import (
     CodeExample,
-    SearchResult,
+    DocsSearchResult,
     SearchResultItem,
     ToolExample,
     ToolUsageResult,
@@ -44,11 +44,11 @@ class TestSearchResultItem:
         assert result["file_path"] == ""
 
 
-class TestSearchResult:
-    """Tests for SearchResult with pagination TypedDict."""
+class TestDocsSearchResult:
+    """Tests for DocsSearchResult with pagination TypedDict."""
 
     def test_create_result_with_pagination(self) -> None:
-        """Test creating SearchResult with pagination metadata."""
+        """Test creating DocsSearchResult with pagination metadata."""
         items: list[SearchResultItem] = [
             {
                 "content": "Functions are defined using func keyword.",
@@ -59,7 +59,7 @@ class TestSearchResult:
                 "title": "Functions",
             }
         ]
-        result: SearchResult = {
+        result: DocsSearchResult = {
             "items": items,
             "total": 10,
             "count": 1,

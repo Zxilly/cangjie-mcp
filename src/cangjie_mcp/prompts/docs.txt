@@ -1,0 +1,533 @@
+Cangjie Documentation Server - Semantic search and retrieval for Cangjie programming language.
+
+## About Cangjie
+
+Cangjie is a modern programming language developed by Huawei for building native applications on HarmonyOS. File extension: `.cj`.
+
+**Core Features:**
+- Strong static typing with powerful type inference
+- Multi-paradigm: functional, imperative, and object-oriented
+- Pattern matching with algebraic data types
+- First-class functions and closures
+- Lightweight user-mode threads (native coroutines)
+- Seamless C/C++ interop via FFI
+- Compile-time metaprogramming (macros)
+
+---
+
+## Key Differences from Other Languages
+
+### vs Rust
+| Feature | Rust | Cangjie |
+|---------|------|---------|
+| Variable shadowing | Allowed anywhere | **NOT allowed in same scope** |
+| Mutability | `let` vs `let mut` | `let` vs `var` |
+| Ownership | Borrow checker | Simple value/reference types |
+| Null handling | `Option<T>` | `Option<T>` with auto-wrap |
+
+### vs Swift/Kotlin
+- Conditions **require parentheses**: `if (x)` not `if x`
+- Interface implementation uses `<:` not `:`
+- No `guard` statement
+- `spawn { => ... }` for concurrency, not coroutines
+
+### vs Java
+- No `null` keyword - use `Option` type
+- Functions are first-class citizens
+- No checked exceptions
+- Default visibility is `internal`, not `private`
+
+---
+
+## Syntax Reference
+
+### 1. Variables and Mutability
+
+**Declaration:** `modifier name: Type = value`
+
+**Mutability:**
+- `let` - immutable (cannot reassign)
+- `var` - mutable (can reassign)
+
+**CRITICAL: `let` does NOT support variable shadowing in the same scope!**
+```cangjie
+let x = 10
+let x = 20  // ERROR! Cannot redeclare in same scope
+
+// But scope shadowing IS allowed:
+let x = 10
+if (true) {
+    let x = 20  // OK - different scope
+}
+```
+
+**Visibility modifiers:**
+- `private` - within class only
+- `internal` - current package and subpackages (**DEFAULT**)
+- `protected` - current module and subclasses
+- `public` - everywhere
+
+**Compile-time constants:**
+```cangjie
+const PI: Float64 = 3.14159  // Evaluated at compile time
+let radius = 5.0             // Evaluated at runtime
+```
+
+### 2. Value Types vs Reference Types
+
+**IMPORTANT: This is a fundamental distinction in Cangjie.**
+
+- `struct` = **value type** (copy semantics)
+- `class` = **reference type** (shared semantics)
+
+```cangjie
+// Struct: copying creates independent values
+struct Point {
+    var x: Int64
+    var y: Int64
+}
+let p1 = Point(1, 2)
+var p2 = p1       // p2 is a COPY
+p2.x = 100        // p1.x is still 1
+
+// Class: assignment shares the same object
+class Node {
+    var value: Int64
+}
+let n1 = Node(1)
+let n2 = n1       // n2 references SAME object
+n2.value = 100    // n1.value is now also 100
+```
+
+**Note:** `let` on a reference type prevents reassigning the reference, but the object's members can still be modified.
+
+### 3. Basic Types
+
+**Integers:** `Int8`, `Int16`, `Int32`, `Int64`, `IntNative`
+**Unsigned:** `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UIntNative`
+**Floating:** `Float16`, `Float32`, `Float64`
+**Boolean:** `true`, `false`
+
+**Rune (Character):**
+```cangjie
+let ch: Rune = r'a'
+let unicode: Rune = r'\u{4f60}'  // Chinese character
+let newline: Rune = r'\n'
+// Convert: UInt32(rune), Rune(intValue)
+```
+
+**String:**
+```cangjie
+let s = "Hello"
+let interpolated = "Value: ${expr * 2}"  // Use ${} NOT {}
+let raw = #"No \n escape"#               // Raw string
+let multiHash = ##"Contains # char"##    // Multi-hash raw
+```
+
+**Tuple:** (minimum 2 elements, immutable)
+```cangjie
+let t: (Int64, String) = (42, "hello")
+let first = t[0]   // Access by index
+// Cannot modify individual elements!
+```
+
+**Range:**
+```cangjie
+let inclusive = 1..=10   // 1 to 10 (includes 10)
+let exclusive = 1..10    // 1 to 9 (excludes 10)
+```
+
+**Unit:** `()` - single value, only supports assignment and equality
+
+### 4. Control Flow
+
+**IMPORTANT: Parentheses around conditions are REQUIRED!**
+
+```cangjie
+// if-else (expression - returns value)
+let result = if (condition) {
+    value1
+} else {
+    value2
+}
+
+// Pattern matching in if
+if (let Some(value) <- optionalValue) {
+    println("Got ${value}")
+}
+
+// while / do-while
+while (condition) { body }
+do { body } while (condition)
+
+// for-in with where clause
+for (i in 1..=100) { sum += i }
+for (i in 0..10 where i % 2 == 0) { println(i) }  // Filter
+for ((x, y) in tupleArray) { ... }                 // Destructuring
+```
+
+**Jump control:**
+- `break` and `continue` supported
+- **NO labeled jumps** (cannot break/continue outer loops)
+- **NO `goto`**
+
+### 5. Functions
+
+Functions are first-class citizens.
+
+```cangjie
+// Basic function
+func add(a: Int64, b: Int64): Int64 {
+    a + b  // Implicit return (last expression)
+}
+
+// Named parameters with defaults (use ! suffix)
+func greet(name!: String = "World", times!: Int64 = 1) {
+    for (_ in 0..times) { println("Hello ${name}") }
+}
+greet()                          // Uses defaults
+greet(name: "Alice", times: 3)   // Named arguments
+
+// IMPORTANT: Parameters are immutable by default!
+```
+
+**Lambda expressions:**
+```cangjie
+// Syntax: { params => body }
+let add = { a: Int64, b: Int64 => a + b }
+let noParams = { => println("Hello") }
+let inferred: (Int64) -> Int64 = { x => x * 2 }
+
+// Immediate invocation
+let result = { => 42 }()
+```
+
+**Function types:** `(ParamTypes) -> ReturnType`
+
+### 6. Enum Types
+
+```cangjie
+// Simple enum
+enum Color {
+    | Red | Green | Blue
+}
+
+// Enum with associated values
+enum Result<T> {
+    | Ok(T)
+    | Err(String)
+}
+
+// Usage
+let c = Color.Red
+let r: Result<Int64> = Ok(42)
+```
+
+### 7. Pattern Matching
+
+```cangjie
+match (value) {
+    case pattern1 => result1
+    case pattern2 where guard => result2  // With guard
+    case _ => defaultResult               // Wildcard
+}
+```
+
+**IMPORTANT: `case` does NOT need braces - just `=>` followed by expression.**
+
+**Pattern types:**
+```cangjie
+case 42 => ...                    // Constant
+case _ => ...                     // Wildcard
+case x => ...                     // Binding (captures value)
+case (a, b) => ...                // Tuple destructuring
+case Some(x) => ...               // Enum destructuring
+case x: SomeType => ...           // Type pattern
+case 1 | 2 | 3 => ...             // OR pattern
+case x where x > 0 => ...         // Guard condition
+```
+
+**Match is exhaustive** - must cover all cases or use `_` wildcard.
+
+### 8. Option Type
+
+```cangjie
+enum Option<T> {
+    | Some(T)
+    | None
+}
+
+// Auto-wrapping (Cangjie convenience)
+let a: Option<Int64> = 100        // Automatically Some(100)
+let b: Option<String> = None
+
+// Operators
+let value = opt ?? defaultValue   // Coalescing
+let value = opt ?? return error   // Early return
+let value = opt ?? throw Ex()     // Throw on None
+
+// Optional chaining
+obj?.property      // Returns Option
+obj?[index]        // Optional subscript
+
+// Pattern matching
+if (let Some(v) <- opt) { use(v) }
+```
+
+### 9. Classes and Structs
+
+```cangjie
+class Rectangle {
+    // Member variables
+    let width: Int64
+    let height: Int64
+
+    // Primary constructor
+    public init(width: Int64, height: Int64) {
+        this.width = width
+        this.height = height
+    }
+
+    // Member function
+    public func area(): Int64 {
+        width * height
+    }
+}
+
+// Inheritance
+open class Animal {
+    public open func speak() { }
+}
+
+class Dog <: Animal {  // Use <: for inheritance
+    public override func speak() { println("Woof") }
+}
+```
+
+**IMPORTANT: Member default visibility is `internal`, NOT `private`!**
+
+### 10. Interfaces
+
+```cangjie
+interface Drawable {
+    func draw(): Unit
+}
+
+class Circle <: Drawable {  // Use <: to implement
+    public func draw() { ... }
+}
+
+// Multiple interfaces
+class Shape <: Drawable & Serializable { ... }
+```
+
+### 11. Generics
+
+```cangjie
+// Generic function
+func identity<T>(x: T): T { x }
+
+// Generic class with constraint
+class Container<T> where T <: Comparable {
+    var items: ArrayList<T>
+}
+
+// Multiple constraints
+func process<T, U>(a: T, b: U) where T <: Show, U <: Clone { ... }
+```
+
+### 12. Extensions
+
+```cangjie
+// Direct extension
+extend String {
+    func reversed(): String { ... }
+}
+
+// Interface extension (add interface to existing type)
+extend Int64 <: Printable {
+    public func print() { println(this) }
+}
+
+// Generic extension with constraint
+extend<T> Array<T> where T <: Comparable {
+    func sorted(): Array<T> { ... }
+}
+```
+
+### 13. Properties
+
+```cangjie
+class Temperature {
+    private var _celsius: Float64 = 0.0
+
+    // Property with getter and setter
+    public prop celsius: Float64 {
+        get() { _celsius }
+        set(value) { _celsius = value }
+    }
+
+    // Computed property
+    public prop fahrenheit: Float64 {
+        get() { _celsius * 9.0 / 5.0 + 32.0 }
+    }
+}
+```
+
+### 14. Collections
+
+```cangjie
+// Array (fixed size)
+let arr: Array<Int64> = [1, 2, 3]
+arr[0] = 10  // Modify element
+
+// ArrayList (dynamic)
+let list = ArrayList<String>()
+list.add("item")
+list.remove(at: 0)
+
+// HashMap
+let map = HashMap<String, Int64>()
+map["key"] = 42
+
+// HashSet
+let set = HashSet<Int64>()
+set.add(1)
+```
+
+### 15. Packages and Imports
+
+```cangjie
+// Package declaration (matches directory)
+package myapp.utils
+
+// Imports
+import std.collection.*              // All from package
+import std.math.{sin, cos}           // Specific items
+import pkg.MyClass as Alias          // With alias
+```
+
+### 16. Concurrency
+
+```cangjie
+// Spawn a thread (lightweight user-mode thread)
+spawn { =>
+    println("Running in new thread")
+}
+
+// Sleep (Duration is in std.core, no import needed)
+import std.time.Duration
+sleep(Duration.second)
+
+// Synchronization
+let mutex = Mutex()
+synchronized(mutex) {
+    // Critical section
+}
+```
+
+### 17. Error Handling
+
+```cangjie
+// Try-catch-finally
+try {
+    riskyOperation()
+} catch (e: IOException) {
+    handleError(e)
+} finally {
+    cleanup()
+}
+
+// Try-with-resources
+try (resource = openFile()) {
+    useResource(resource)
+}  // Automatically closed
+
+// Throwing exceptions
+throw IllegalArgumentException("Invalid value")
+```
+
+### 18. Macros (Compile-time Metaprogramming)
+
+```cangjie
+// Using built-in macros
+@Test
+class MyTest {
+    @TestCase
+    func testSomething() {
+        @Assert(1 + 1, 2)
+    }
+}
+
+// Custom macro (advanced)
+@MyMacro
+func decorated() { ... }
+```
+
+### 19. Operators
+
+**Pipeline and Composition:**
+```cangjie
+x |> f |> g      // Pipeline: g(f(x))
+f ~> g           // Composition: creates new function
+```
+
+**Coalescing:** `??`
+**Optional chaining:** `?.` and `?[]`
+**Type check/cast:** `is` and `as`
+
+---
+
+## Critical Pitfalls (Common LLM Errors)
+
+### Must Avoid:
+1. **Variable shadowing in same scope** - `let x = 1; let x = 2` is ERROR
+2. **Missing parentheses in conditions** - `if x` is ERROR, use `if (x)`
+3. **Wrong string interpolation** - use `${}` not `{}`
+4. **Assuming private default** - members default to `internal`
+5. **Braces in match cases** - `case 1 => expr` not `case 1 => { expr }`
+6. **Modifying function parameters** - parameters are immutable
+7. **Using labeled breaks** - not supported, no `break@label`
+8. **Confusing struct/class semantics** - struct copies, class shares
+
+### Syntax Gotchas:
+```cangjie
+// WRONG                          // CORRECT
+if x > 0 { }                      if (x > 0) { }
+"Value: {x}"                      "Value: ${x}"
+case 1 if x > 0 => ...            case 1 where x > 0 => ...
+spawn { x => ... }                spawn { => ... }  // No params!
+class A : B { }                   class A <: B { }  // Use <:
+```
+
+### Pattern Matching Rules:
+- Guard uses `where`, not `if`
+- Cannot use OR (`||`) after `let` binding in if
+- Match must be exhaustive
+
+---
+
+## Available Tools
+
+- `cangjie_search_docs`: Semantic search across documentation
+- `cangjie_get_topic`: Get complete documentation for a topic
+- `cangjie_list_topics`: List available topics by category
+- `cangjie_get_code_examples`: Get code examples for a feature
+- `cangjie_get_tool_usage`: Get CLI tool documentation (cjc, cjpm, cjfmt)
+- `cangjie_search_stdlib`: Search standard library APIs with package/type filtering
+
+## Recommended Workflow
+
+1. `cangjie_list_topics` - discover available categories
+2. `cangjie_search_docs` - search for general concepts
+3. `cangjie_search_stdlib` - search standard library APIs (ArrayList, HashMap, File, etc.)
+4. `cangjie_get_topic` - retrieve full documentation
+5. `cangjie_get_code_examples` - find practical examples
+6. `cangjie_get_tool_usage` - CLI tool help
+
+## Standard Library Search
+
+Use `cangjie_search_stdlib` for standard library API queries:
+- Filter by package: `package="std.collection"`, `package="std.fs"`, `package="std.net"`
+- Filter by type: `type_name="ArrayList"`, `type_name="HashMap"`, `type_name="File"`
+- Packages are automatically detected from `import std.*` statements in documentation

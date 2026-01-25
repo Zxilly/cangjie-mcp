@@ -7,6 +7,8 @@ from pathlib import Path
 from llama_index.core import Document
 from rich.console import Console
 
+from cangjie_mcp.indexer.api_extractor import extract_stdlib_info
+
 console = Console()
 
 
@@ -154,6 +156,9 @@ class DocumentLoader:
         metadata.title = extract_title_from_content(content)
         metadata.code_blocks = extract_code_blocks(content)
 
+        # Extract stdlib-specific metadata dynamically
+        stdlib_info = extract_stdlib_info(content)
+
         # Create LlamaIndex document
         return Document(
             text=content,
@@ -164,6 +169,10 @@ class DocumentLoader:
                 "title": metadata.title,
                 "code_block_count": len(metadata.code_blocks),
                 "source": "cangjie_docs",
+                # Stdlib metadata
+                "is_stdlib": stdlib_info["is_stdlib"],
+                "packages": stdlib_info["packages"],
+                "type_names": stdlib_info["type_names"],
             },
             doc_id=metadata.file_path,
         )
