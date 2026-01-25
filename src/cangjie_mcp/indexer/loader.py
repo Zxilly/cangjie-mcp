@@ -1,5 +1,6 @@
 """Markdown document loader for Cangjie documentation."""
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -160,6 +161,8 @@ class DocumentLoader:
         stdlib_info = extract_stdlib_info(content)
 
         # Create LlamaIndex document
+        # Note: ChromaDB metadata only supports scalar types (str, int, float, None)
+        # so we serialize lists to JSON strings
         return Document(
             text=content,
             metadata={
@@ -169,10 +172,10 @@ class DocumentLoader:
                 "title": metadata.title,
                 "code_block_count": len(metadata.code_blocks),
                 "source": "cangjie_docs",
-                # Stdlib metadata
+                # Stdlib metadata (lists serialized as JSON for ChromaDB compatibility)
                 "is_stdlib": stdlib_info["is_stdlib"],
-                "packages": stdlib_info["packages"],
-                "type_names": stdlib_info["type_names"],
+                "packages": json.dumps(stdlib_info["packages"]),
+                "type_names": json.dumps(stdlib_info["type_names"]),
             },
             doc_id=metadata.file_path,
         )
