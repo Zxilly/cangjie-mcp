@@ -23,10 +23,12 @@ from cangjie_mcp import __version__
 from cangjie_mcp.cli_args import (
     ChunkSizeOption,
     DataDirOption,
+    DebugOption,
     DocsVersionOption,
     EmbeddingOption,
     LangOption,
     LocalModelOption,
+    LogFileOption,
     OpenAIApiKeyOption,
     OpenAIBaseUrlOption,
     OpenAIModelOption,
@@ -55,7 +57,7 @@ from cangjie_mcp.defaults import (
 from cangjie_mcp.factory import create_settings_from_args
 from cangjie_mcp.indexer.initializer import initialize_and_index, print_settings_summary
 from cangjie_mcp.lsp.cli import lsp_app
-from cangjie_mcp.utils import console
+from cangjie_mcp.utils import console, setup_logging
 
 
 def _version_callback(value: bool) -> None:
@@ -105,6 +107,8 @@ def main(
     rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
     chunk_max_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
     data_dir: DataDirOption = None,
+    log_file: LogFileOption = None,
+    debug: DebugOption = False,
 ) -> None:
     """Start the combined MCP server with docs and LSP tools.
 
@@ -114,6 +118,9 @@ def main(
     # If a subcommand is invoked, let it handle execution
     if ctx.invoked_subcommand is not None:
         return
+
+    # Set up logging early
+    setup_logging(log_file, debug)
 
     # Check if LSP is available
     import os
@@ -183,6 +190,8 @@ def docs_main(
     rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
     chunk_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
     data_dir: DataDirOption = None,
+    log_file: LogFileOption = None,
+    debug: DebugOption = False,
 ) -> None:
     """Start the documentation MCP server in stdio mode.
 
@@ -191,6 +200,9 @@ def docs_main(
     # If a subcommand is invoked, let it handle execution
     if ctx.invoked_subcommand is not None:
         return
+
+    # Set up logging early
+    setup_logging(log_file, debug)
 
     # Validate and build settings
     settings = create_settings_from_args(

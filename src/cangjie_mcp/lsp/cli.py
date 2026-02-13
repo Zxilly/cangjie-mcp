@@ -15,6 +15,8 @@ import typer
 from rich.console import Console
 
 from cangjie_mcp import __version__
+from cangjie_mcp.cli_args import DebugOption, LogFileOption
+from cangjie_mcp.utils import setup_logging
 
 # Use stderr for logging (stdout is reserved for MCP communication)
 console = Console(stderr=True)
@@ -89,6 +91,8 @@ def lsp_main(
             envvar="CANGJIE_LSP_TIMEOUT",
         ),
     ] = 45000,
+    log_file: LogFileOption = None,
+    debug: DebugOption = False,
 ) -> None:
     """Start the Cangjie LSP MCP server in stdio mode.
 
@@ -111,6 +115,9 @@ def lsp_main(
     """
     if ctx.invoked_subcommand is not None:
         return
+
+    # Set up logging early
+    setup_logging(log_file, debug)
 
     import asyncio
 

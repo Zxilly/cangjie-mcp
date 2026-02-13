@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, TextIO, TypeVar
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
@@ -15,6 +17,92 @@ if TYPE_CHECKING:
 
 # Global console instance - use this instead of creating new Console() instances
 console = Console()
+
+# Application logger
+logger = logging.getLogger("cangjie_mcp")
+_stdio_logger = logging.getLogger("cangjie_mcp.stdio")
+
+
+class _BufferTee:
+    """Wraps a binary I/O buffer to also log data via Python logging."""
+
+    def __init__(self, original: BinaryIO, label: str) -> None:
+        self._original = original
+        self._label = label
+
+    def write(self, data: bytes) -> int:
+        result = self._original.write(data)
+        self._log_data(data)
+        return result
+
+    def read(self, n: int = -1) -> bytes:
+        data = self._original.read(n)
+        self._log_data(data)
+        return data
+
+    def readline(self, limit: int = -1) -> bytes:
+        data = self._original.readline(limit)
+        self._log_data(data)
+        return data
+
+    def _log_data(self, data: bytes) -> None:
+        if data:
+            try:
+                text = data.decode("utf-8", errors="replace")
+                _stdio_logger.debug("[%s] %s", self._label, text.rstrip("\n"))
+            except Exception:
+                pass
+
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+        return getattr(self._original, name)
+
+
+class _StreamWrapper:
+    """Wraps a standard stream to intercept buffer access for stdio tee."""
+
+    def __init__(self, original: TextIO, buffer_tee: _BufferTee) -> None:
+        self._original = original
+        self._buffer = buffer_tee
+
+    @property
+    def buffer(self) -> _BufferTee:
+        return self._buffer
+
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+        return getattr(self._original, name)
+
+
+def setup_logging(log_file: Path | None = None, debug: bool = False) -> None:
+    """Configure application logging.
+
+    Args:
+        log_file: Path to log file. If None, no file logging is configured.
+        debug: If True and log_file is set, also log stdio (MCP protocol) traffic.
+    """
+    if log_file is None:
+        return
+
+    # Ensure parent directory exists
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Configure Python logging to write to the file
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
+
+    logger.info("Logging initialized - log_file=%s, debug=%s", log_file, debug)
+
+    if debug:
+        # Wrap stdin/stdout buffers to log MCP protocol traffic
+        stdin_tee = _BufferTee(sys.stdin.buffer, "STDIN")
+        stdout_tee = _BufferTee(sys.stdout.buffer, "STDOUT")
+        sys.stdin = _StreamWrapper(sys.stdin, stdin_tee)
+        sys.stdout = _StreamWrapper(sys.stdout, stdout_tee)
+        logger.debug("Debug mode: stdio tee enabled")
+
 
 # Type variable for validator return type
 T = TypeVar("T", bound=str)

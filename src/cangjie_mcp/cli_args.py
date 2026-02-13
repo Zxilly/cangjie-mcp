@@ -186,6 +186,24 @@ DataDirOption = Annotated[
     ),
 ]
 
+LogFileOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--log-file",
+        help="Log file path for application logging",
+        envvar="CANGJIE_LOG_FILE",
+    ),
+]
+
+DebugOption = Annotated[
+    bool,
+    typer.Option(
+        "--debug/--no-debug",
+        help="Enable debug mode (log stdio traffic to log file)",
+        envvar="CANGJIE_DEBUG",
+    ),
+]
+
 
 def create_literal_validator(
     name: str,
