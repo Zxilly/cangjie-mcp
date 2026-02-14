@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -177,11 +177,11 @@ class SearchStdlibInput(BaseModel):
 
 
 # =============================================================================
-# Output Types (TypedDict)
+# Output Models (Pydantic)
 # =============================================================================
 
 
-class SearchResultItem(TypedDict):
+class SearchResultItem(BaseModel):
     """Single search result item."""
 
     content: str
@@ -192,7 +192,7 @@ class SearchResultItem(TypedDict):
     title: str
 
 
-class DocsSearchResult(TypedDict):
+class DocsSearchResult(BaseModel):
     """Search result with pagination metadata."""
 
     items: list[SearchResultItem]
@@ -203,7 +203,7 @@ class DocsSearchResult(TypedDict):
     next_offset: int | None
 
 
-class TopicResult(TypedDict):
+class TopicResult(BaseModel):
     """Topic document result type."""
 
     content: str
@@ -213,7 +213,7 @@ class TopicResult(TypedDict):
     title: str
 
 
-class CodeExample(TypedDict):
+class CodeExample(BaseModel):
     """Code example type."""
 
     language: str
@@ -223,14 +223,14 @@ class CodeExample(TypedDict):
     source_file: str
 
 
-class ToolExample(TypedDict):
+class ToolExample(BaseModel):
     """Tool usage example type."""
 
     code: str
     context: str
 
 
-class ToolUsageResult(TypedDict):
+class ToolUsageResult(BaseModel):
     """Tool usage result type."""
 
     tool_name: str
@@ -238,7 +238,7 @@ class ToolUsageResult(TypedDict):
     examples: list[ToolExample]
 
 
-class TopicsListResult(TypedDict):
+class TopicsListResult(BaseModel):
     """Topics list result with metadata."""
 
     categories: dict[str, list[str]]
@@ -246,7 +246,7 @@ class TopicsListResult(TypedDict):
     total_topics: int
 
 
-class StdlibResultItem(TypedDict):
+class StdlibResultItem(BaseModel):
     """Single stdlib search result item."""
 
     content: str
@@ -258,7 +258,7 @@ class StdlibResultItem(TypedDict):
     code_examples: list[CodeExample]
 
 
-class StdlibSearchResult(TypedDict):
+class StdlibSearchResult(BaseModel):
     """Stdlib search result."""
 
     items: list[StdlibResultItem]
@@ -632,9 +632,9 @@ def _get_list_metadata(result: StoreSearchResult, key: str) -> list[str]:
     stdlib_info = extract_stdlib_info(result.text)
 
     if key == "packages":
-        return stdlib_info.get("packages", [])
+        return stdlib_info.packages
     elif key == "type_names":
-        return stdlib_info.get("type_names", [])
+        return stdlib_info.type_names
 
     return []
 

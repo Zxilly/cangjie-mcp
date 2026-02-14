@@ -7,17 +7,20 @@ for code intelligence features.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from cangjie_mcp.lsp import get_client, is_available
 from cangjie_mcp.lsp.types import (
+    CompletionItem,
     CompletionOutput,
     CompletionResult,
     DefinitionResult,
     DiagnosticOutput,
     DiagnosticsResult,
+    DocumentSymbol,
     FileInput,
     HoverOutput,
+    HoverResult,
+    Location,
     LocationResult,
     PositionInput,
     ReferencesResult,
@@ -30,26 +33,21 @@ from cangjie_mcp.lsp.types import (
 from cangjie_mcp.lsp.utils import uri_to_path
 
 
-def _normalize_location(loc: dict[str, Any]) -> LocationResult:
-    """Convert LSP location to MCP format.
+def _normalize_location(loc: Location) -> LocationResult:
+    """Convert LSP Location to MCP format.
 
     Args:
-        loc: LSP location dictionary
+        loc: LSP Location model
 
     Returns:
         LocationResult in 1-based format
     """
-    uri = loc.get("uri", "")
-    range_data = loc.get("range", {})
-    start = range_data.get("start", {})
-    end = range_data.get("end", {})
-
     return LocationResult(
-        file_path=str(uri_to_path(uri)),
-        line=start.get("line", 0) + 1,
-        character=start.get("character", 0) + 1,
-        end_line=end.get("line", 0) + 1 if end else None,
-        end_character=end.get("character", 0) + 1 if end else None,
+        file_path=str(uri_to_path(loc.uri)),
+        line=loc.range.start.line + 1,
+        character=loc.range.start.character + 1,
+        end_line=loc.range.end.line + 1,
+        end_character=loc.range.end.character + 1,
     )
 
 
@@ -137,10 +135,34 @@ async def lsp_hover(params: PositionInput) -> HoverOutput | None:
     if not result:
         return None
 
-    # Extract content
-    contents = result.get("contents", "")
+    content = _extract_hover_content(result)
+
+    # Extract range if available
+    range_result = None
+    if result.range:
+        range_result = LocationResult(
+            file_path=params.file_path,
+            line=result.range.start.line + 1,
+            character=result.range.start.character + 1,
+            end_line=result.range.end.line + 1,
+            end_character=result.range.end.character + 1,
+        )
+
+    return HoverOutput(content=content, range=range_result)
+
+
+def _extract_hover_content(result: HoverResult) -> str:
+    """Extract display content from a HoverResult.
+
+    Args:
+        result: HoverResult model
+
+    Returns:
+        Extracted content string
+    """
+    contents = result.contents
     if isinstance(contents, dict):
-        content = contents.get("value", str(contents))
+        return str(contents.get("value", contents))
     elif isinstance(contents, list):
         parts = []
         for item in contents:
@@ -148,52 +170,32 @@ async def lsp_hover(params: PositionInput) -> HoverOutput | None:
                 parts.append(item)
             elif isinstance(item, dict):
                 parts.append(item.get("value", str(item)))
-        content = "\n\n".join(parts)
+        return "\n\n".join(parts)
     else:
-        content = str(contents)
-
-    # Extract range if available
-    range_data = result.get("range")
-    range_result = None
-    if range_data:
-        start = range_data.get("start", {})
-        end = range_data.get("end", {})
-        range_result = LocationResult(
-            file_path=params.file_path,
-            line=start.get("line", 0) + 1,
-            character=start.get("character", 0) + 1,
-            end_line=end.get("line", 0) + 1,
-            end_character=end.get("character", 0) + 1,
-        )
-
-    return HoverOutput(content=content, range=range_result)
+        return str(contents)
 
 
-def _convert_symbol(sym: dict[str, Any], file_path: str) -> SymbolOutput:
-    """Convert LSP symbol to MCP format.
+def _convert_symbol(sym: DocumentSymbol, file_path: str) -> SymbolOutput:
+    """Convert LSP DocumentSymbol to MCP format.
 
     Args:
-        sym: LSP symbol dictionary
+        sym: DocumentSymbol model
         file_path: Source file path
 
     Returns:
         SymbolOutput in 1-based format
     """
-    range_data = sym.get("range", sym.get("location", {}).get("range", {}))
-    start = range_data.get("start", {})
-    end = range_data.get("end", {})
-
     children = None
-    if sym.get("children"):
-        children = [_convert_symbol(child, file_path) for child in sym["children"]]
+    if sym.children:
+        children = [_convert_symbol(child, file_path) for child in sym.children]
 
     return SymbolOutput(
-        name=sym.get("name", ""),
-        kind=symbol_kind_name(sym.get("kind", 0)),
-        line=start.get("line", 0) + 1,
-        character=start.get("character", 0) + 1,
-        end_line=end.get("line", 0) + 1,
-        end_character=end.get("character", 0) + 1,
+        name=sym.name,
+        kind=symbol_kind_name(sym.kind),
+        line=sym.range.start.line + 1,
+        character=sym.range.start.character + 1,
+        end_line=sym.range.end.line + 1,
+        end_character=sym.range.end.character + 1,
         children=children,
     )
 
@@ -241,35 +243,30 @@ async def lsp_diagnostics(params: FileInput) -> DiagnosticsResult:
     hint_count = 0
 
     for diag in diagnostics:
-        range_data = diag.get("range", {})
-        start = range_data.get("start", {})
-        end = range_data.get("end", {})
-        severity = diag.get("severity")
-        severity_str = severity_name(severity)
+        severity_str = severity_name(diag.severity)
 
         # Count by severity
-        if severity == 1:
+        if diag.severity == 1:
             error_count += 1
-        elif severity == 2:
+        elif diag.severity == 2:
             warning_count += 1
-        elif severity == 3:
+        elif diag.severity == 3:
             info_count += 1
-        elif severity == 4:
+        elif diag.severity == 4:
             hint_count += 1
 
-        code = diag.get("code")
-        code_str = str(code) if code is not None else None
+        code_str = str(diag.code) if diag.code is not None else None
 
         result_diagnostics.append(
             DiagnosticOutput(
-                message=diag.get("message", ""),
+                message=diag.message,
                 severity=severity_str,
-                line=start.get("line", 0) + 1,
-                character=start.get("character", 0) + 1,
-                end_line=end.get("line", 0) + 1,
-                end_character=end.get("character", 0) + 1,
+                line=diag.range.start.line + 1,
+                character=diag.range.start.character + 1,
+                end_line=diag.range.end.line + 1,
+                end_character=diag.range.end.character + 1,
                 code=code_str,
-                source=diag.get("source"),
+                source=diag.source,
             )
         )
 
@@ -303,21 +300,15 @@ async def lsp_completion(params: PositionInput) -> CompletionResult:
     result_items: list[CompletionOutput] = []
 
     for item in items:
-        # Extract documentation
-        doc = item.get("documentation")
-        doc_str = None
-        if isinstance(doc, str):
-            doc_str = doc
-        elif isinstance(doc, dict):
-            doc_str = doc.get("value", str(doc))
+        doc_str = _extract_documentation(item)
 
         result_items.append(
             CompletionOutput(
-                label=item.get("label", ""),
-                kind=completion_kind_name(item.get("kind")),
-                detail=item.get("detail"),
+                label=item.label,
+                kind=completion_kind_name(item.kind),
+                detail=item.detail,
                 documentation=doc_str,
-                insert_text=item.get("insertText"),
+                insert_text=item.insert_text,
             )
         )
 
@@ -325,6 +316,23 @@ async def lsp_completion(params: PositionInput) -> CompletionResult:
         items=result_items,
         count=len(result_items),
     )
+
+
+def _extract_documentation(item: CompletionItem) -> str | None:
+    """Extract documentation string from a CompletionItem.
+
+    Args:
+        item: CompletionItem model
+
+    Returns:
+        Documentation string or None
+    """
+    doc = item.documentation
+    if isinstance(doc, str):
+        return doc
+    elif isinstance(doc, dict):
+        return str(doc.get("value", doc))
+    return None
 
 
 # =============================================================================

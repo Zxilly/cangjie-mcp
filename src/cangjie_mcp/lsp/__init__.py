@@ -11,11 +11,18 @@ with the Cangjie SDK via JSON-RPC over stdio.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cangjie_mcp.lsp.client import CangjieClient
     from cangjie_mcp.lsp.config import LSPSettings
+    from cangjie_mcp.lsp.types import (
+        CompletionItem,
+        Diagnostic,
+        DocumentSymbol,
+        HoverResult,
+        Location,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +129,7 @@ def get_settings() -> LSPSettings:
 
 
 # LSP operation wrappers for convenience
-async def definition(file_path: str, line: int, character: int) -> list[dict[str, Any]]:
+async def definition(file_path: str, line: int, character: int) -> list[Location]:
     """Get definition locations for a symbol.
 
     Args:
@@ -131,12 +138,12 @@ async def definition(file_path: str, line: int, character: int) -> list[dict[str
         character: Character position (0-based)
 
     Returns:
-        List of location dictionaries with uri and range
+        List of Location models
     """
     return await get_client().definition(file_path, line, character)
 
 
-async def references(file_path: str, line: int, character: int) -> list[dict[str, Any]]:
+async def references(file_path: str, line: int, character: int) -> list[Location]:
     """Find all references to a symbol.
 
     Args:
@@ -145,12 +152,12 @@ async def references(file_path: str, line: int, character: int) -> list[dict[str
         character: Character position (0-based)
 
     Returns:
-        List of location dictionaries
+        List of Location models
     """
     return await get_client().references(file_path, line, character)
 
 
-async def hover(file_path: str, line: int, character: int) -> dict[str, Any] | None:
+async def hover(file_path: str, line: int, character: int) -> HoverResult | None:
     """Get hover information for a symbol.
 
     Args:
@@ -159,36 +166,36 @@ async def hover(file_path: str, line: int, character: int) -> dict[str, Any] | N
         character: Character position (0-based)
 
     Returns:
-        Hover information dictionary or None
+        HoverResult or None
     """
     return await get_client().hover(file_path, line, character)
 
 
-async def document_symbols(file_path: str) -> list[dict[str, Any]]:
+async def document_symbols(file_path: str) -> list[DocumentSymbol]:
     """Get document symbols.
 
     Args:
         file_path: Absolute path to the source file
 
     Returns:
-        List of document symbol dictionaries
+        List of DocumentSymbol models
     """
     return await get_client().document_symbol(file_path)
 
 
-async def diagnostics(file_path: str) -> list[dict[str, Any]]:
+async def diagnostics(file_path: str) -> list[Diagnostic]:
     """Get diagnostics for a file.
 
     Args:
         file_path: Absolute path to the source file
 
     Returns:
-        List of diagnostic dictionaries
+        List of Diagnostic models
     """
     return await get_client().get_diagnostics(file_path)
 
 
-async def completion(file_path: str, line: int, character: int) -> list[dict[str, Any]]:
+async def completion(file_path: str, line: int, character: int) -> list[CompletionItem]:
     """Get code completion items.
 
     Args:
@@ -197,7 +204,7 @@ async def completion(file_path: str, line: int, character: int) -> list[dict[str
         character: Character position (0-based)
 
     Returns:
-        List of completion item dictionaries
+        List of CompletionItem models
     """
     return await get_client().completion(file_path, line, character)
 

@@ -24,7 +24,7 @@ class TestPrebuiltListCommand:
         mock_manager.get_installed_metadata.return_value = None
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["docs", "prebuilt", "list"])
+        result = runner.invoke(app, ["prebuilt", "list"])
 
         assert result.exit_code == 0
         assert "No local prebuilt indexes" in result.output
@@ -46,7 +46,7 @@ class TestPrebuiltListCommand:
         mock_manager.get_installed_metadata.return_value = None
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["docs", "prebuilt", "list"])
+        result = runner.invoke(app, ["prebuilt", "list"])
 
         assert result.exit_code == 0
         assert "v1.0.0" in result.output
@@ -67,18 +67,14 @@ class TestPrebuiltListCommand:
         mock_manager.get_installed_metadata.return_value = mock_installed
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["docs", "prebuilt", "list"])
+        result = runner.invoke(app, ["prebuilt", "list"])
 
         assert result.exit_code == 0
         assert "Currently Installed" in result.output
 
 
 class TestPrebuiltBuildCommand:
-    """Tests for prebuilt build command.
-
-    Note: The prebuilt build command now builds the index itself before creating
-    the archive, so complex mocking is required. These tests verify basic behavior.
-    """
+    """Tests for prebuilt build command."""
 
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
     @patch("cangjie_mcp.indexer.store.VectorStore")
@@ -140,7 +136,7 @@ class TestPrebuiltBuildCommand:
         mock_manager.build.return_value = Path("/test/archive.tar.gz")
         mock_manager_class.return_value = mock_manager
 
-        result = runner.invoke(app, ["docs", "prebuilt", "build"])
+        result = runner.invoke(app, ["prebuilt", "build"])
 
         assert result.exit_code == 0
         assert "Archive built" in result.output
@@ -177,7 +173,7 @@ class TestPrebuiltBuildCommand:
         mock_loader.load_all_documents.return_value = []
         mock_loader_class.return_value = mock_loader
 
-        result = runner.invoke(app, ["docs", "prebuilt", "build"])
+        result = runner.invoke(app, ["prebuilt", "build"])
 
         assert result.exit_code == 1
         assert "No documents found" in result.output
@@ -188,7 +184,7 @@ class TestPrebuiltDownloadCommand:
 
     def test_prebuilt_download_no_url(self) -> None:
         """Test prebuilt download without URL."""
-        result = runner.invoke(app, ["docs", "prebuilt", "download"])
+        result = runner.invoke(app, ["prebuilt", "download"])
 
         assert result.exit_code == 1
         assert "No URL provided" in result.output
@@ -203,15 +199,12 @@ class TestPrebuiltDownloadCommand:
         mock_manager.download.return_value = Path("/test/archive.tar.gz")
         mock_manager_class.return_value = mock_manager
 
-        # Use explicit --url flag to bypass prebuilt_url check
-        result = runner.invoke(app, ["docs", "prebuilt", "download", "--url", "https://example.com/index"])
+        result = runner.invoke(app, ["prebuilt", "download", "--url", "https://example.com/index"])
 
-        # Should attempt download with the explicit URL
         if result.exit_code == 0:
             mock_manager.download.assert_called_once()
             mock_manager.install.assert_called_once()
         else:
-            # May fail if mocking doesn't work properly, but should show download attempt
             assert "Failed to download" in result.output or result.exit_code in [0, 1]
 
 
@@ -224,12 +217,13 @@ class TestInitializeAndIndex:
         mock_manager_class: MagicMock,
     ) -> None:
         """Test that prebuilt index is used when available."""
-        from cangjie_mcp.cli import initialize_and_index
+        from cangjie_mcp.indexer.initializer import initialize_and_index
 
         mock_settings = MagicMock()
         mock_settings.docs_version = "v1.0.0"
         mock_settings.docs_lang = "zh"
         mock_settings.data_dir = Path("/test/data")
+        mock_settings.prebuilt_url = None
 
         mock_installed = MagicMock()
         mock_installed.version = "v1.0.0"
@@ -254,13 +248,13 @@ class TestInitializeAndIndex:
         mock_store_class: MagicMock,
     ) -> None:
         """Test that existing index is used when version matches."""
-        from cangjie_mcp.cli import initialize_and_index
+        from cangjie_mcp.indexer.initializer import initialize_and_index
 
         mock_settings = MagicMock()
         mock_settings.docs_version = "v1.0.0"
         mock_settings.docs_lang = "zh"
         mock_settings.data_dir = Path("/test/data")
-        mock_settings.chroma_db_dir = Path("/test/chroma")
+        mock_settings.prebuilt_url = None
 
         mock_manager = MagicMock()
         mock_manager.get_installed_metadata.return_value = None
@@ -279,3 +273,58 @@ class TestInitializeAndIndex:
         # Should check existing index
         mock_store.is_indexed.assert_called_once()
         mock_store.version_matches.assert_called_once_with("v1.0.0", "zh")
+
+    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
+    def test_auto_downloads_prebuilt_when_url_set(
+        self,
+        mock_manager_class: MagicMock,
+    ) -> None:
+        """Test that prebuilt index is auto-downloaded when prebuilt_url is set."""
+        from cangjie_mcp.indexer.initializer import initialize_and_index
+
+        mock_settings = MagicMock()
+        mock_settings.docs_version = "v1.0.0"
+        mock_settings.docs_lang = "zh"
+        mock_settings.data_dir = Path("/test/data")
+        mock_settings.prebuilt_url = "https://example.com/prebuilt"
+
+        # No prebuilt installed locally
+        mock_manager = MagicMock()
+        mock_manager.get_installed_metadata.return_value = None
+        mock_manager.download.return_value = Path("/test/archive.tar.gz")
+        mock_manager_class.return_value = mock_manager
+
+        initialize_and_index(mock_settings)
+
+        # Should download and install
+        mock_manager.download.assert_called_once_with("https://example.com/prebuilt", "v1.0.0", "zh")
+        mock_manager.install.assert_called_once_with(Path("/test/archive.tar.gz"))
+
+    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
+    def test_skips_download_when_prebuilt_already_installed(
+        self,
+        mock_manager_class: MagicMock,
+    ) -> None:
+        """Test that download is skipped when matching prebuilt is already installed."""
+        from cangjie_mcp.indexer.initializer import initialize_and_index
+
+        mock_settings = MagicMock()
+        mock_settings.docs_version = "v1.0.0"
+        mock_settings.docs_lang = "zh"
+        mock_settings.data_dir = Path("/test/data")
+        mock_settings.prebuilt_url = "https://example.com/prebuilt"
+
+        # Prebuilt already installed
+        mock_installed = MagicMock()
+        mock_installed.version = "v1.0.0"
+        mock_installed.lang = "zh"
+
+        mock_manager = MagicMock()
+        mock_manager.get_installed_metadata.return_value = mock_installed
+        mock_manager_class.return_value = mock_manager
+
+        initialize_and_index(mock_settings)
+
+        # Should NOT download since matching prebuilt is installed
+        mock_manager.download.assert_not_called()
+        mock_manager.install.assert_not_called()

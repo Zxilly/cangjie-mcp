@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TypedDict
+from dataclasses import dataclass, field
 
 # Pattern to extract package from import statements
 IMPORT_PATTERN = re.compile(r"import\s+(std(?:\.\w+)+)")
@@ -22,7 +22,8 @@ METHOD_PATTERN = re.compile(
 )
 
 
-class MethodSignature(TypedDict):
+@dataclass
+class MethodSignature:
     """Method signature extracted from code."""
 
     name: str
@@ -31,13 +32,14 @@ class MethodSignature(TypedDict):
     return_type: str | None
 
 
-class StdlibInfo(TypedDict):
+@dataclass
+class StdlibInfo:
     """Stdlib information extracted from document."""
 
-    is_stdlib: bool
-    packages: list[str]
-    type_names: list[str]
-    method_names: list[MethodSignature]
+    is_stdlib: bool = False
+    packages: list[str] = field(default_factory=list)
+    type_names: list[str] = field(default_factory=list)
+    method_names: list[MethodSignature] = field(default_factory=list)
 
 
 def extract_stdlib_info(content: str) -> StdlibInfo:
@@ -50,11 +52,7 @@ def extract_stdlib_info(content: str) -> StdlibInfo:
         content: Markdown document content
 
     Returns:
-        StdlibInfo with keys:
-            - is_stdlib: Whether this document is stdlib-related
-            - packages: List of package names (e.g., ["std.collection", "std.fs"])
-            - type_names: List of type names defined in the document
-            - method_names: List of method signature dicts
+        StdlibInfo with extracted metadata
     """
     # Find all std.* imports
     packages: set[str] = set()
@@ -95,11 +93,7 @@ def extract_method_signatures(content: str) -> list[MethodSignature]:
         content: Markdown document content
 
     Returns:
-        List of MethodSignature dicts with keys:
-            - name: Method name
-            - signature: Full signature string
-            - params: Parameter string
-            - return_type: Return type or None
+        List of MethodSignature with name, signature, params, and return_type
     """
     methods: list[MethodSignature] = []
     seen_names: set[str] = set()

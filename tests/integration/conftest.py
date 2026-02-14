@@ -1,13 +1,16 @@
 """Pytest configuration and fixtures for integration tests."""
 
 import os
+import tempfile
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
+from cangjie_mcp.indexer.embeddings import get_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
+from cangjie_mcp.indexer.reranker import LocalReranker
 from cangjie_mcp.indexer.store import VectorStore
 from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
 
@@ -18,10 +21,23 @@ def has_openai_credentials() -> bool:
     return bool(api_key and api_key != "your-openai-api-key-here")
 
 
-@pytest.fixture
-def integration_docs_dir(temp_data_dir: Path) -> Path:
-    """Create a comprehensive documentation directory for integration tests."""
-    docs_dir = temp_data_dir / "docs_repo" / "docs" / "dev-guide" / "source_zh_cn"
+# ── Session-scoped fixtures (shared by read-only integration tests) ──
+
+
+@pytest.fixture(scope="session")
+def shared_temp_dir() -> Generator[Path]:
+    """Session-scoped temporary directory for shared fixtures."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        yield Path(d)
+
+
+@pytest.fixture(scope="session")
+def integration_docs_dir(shared_temp_dir: Path) -> Path:
+    """Create a comprehensive documentation directory for integration tests.
+
+    Session-scoped: documents are created once and shared across all tests.
+    """
+    docs_dir = shared_temp_dir / "docs_repo" / "docs" / "dev-guide" / "source_zh_cn"
     docs_dir.mkdir(parents=True)
 
     # Create basics category
@@ -217,9 +233,156 @@ cjpm add <package_name>
     return docs_dir
 
 
+@pytest.fixture(scope="session")
+def shared_local_settings(shared_temp_dir: Path) -> Settings:
+    """Session-scoped settings for local embedding integration tests."""
+    return Settings(
+        docs_version=CANGJIE_DOCS_VERSION,
+        docs_lang="zh",
+        embedding_type="local",
+        local_model=CANGJIE_LOCAL_MODEL,
+        rerank_type="none",
+        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_top_k=5,
+        rerank_initial_k=20,
+        chunk_max_size=6000,
+        data_dir=shared_temp_dir,
+    )
+
+
+@pytest.fixture(scope="session")
+def shared_embedding_provider(shared_local_settings: Settings):
+    """Session-scoped embedding provider (loaded once for the entire session)."""
+    return get_embedding_provider(shared_local_settings)
+
+
+@pytest.fixture(scope="session")
+def local_indexed_store(
+    integration_docs_dir: Path,
+    shared_local_settings: Settings,
+    shared_embedding_provider,
+) -> VectorStore:
+    """Session-scoped indexed VectorStore (created and indexed once).
+
+    Shared by all read-only integration tests. Tests that modify the
+    store should create their own function-scoped fixtures instead.
+    """
+    store = VectorStore(
+        db_path=shared_local_settings.chroma_db_dir,
+        embedding_provider=shared_embedding_provider,
+    )
+
+    loader = DocumentLoader(integration_docs_dir)
+    documents = loader.load_all_documents()
+
+    store.index_documents(documents)
+    store.save_metadata(
+        version=shared_local_settings.docs_version,
+        lang=shared_local_settings.docs_lang,
+        embedding_model=CANGJIE_LOCAL_MODEL,
+    )
+
+    return store
+
+
+@pytest.fixture(scope="session")
+def shared_local_reranker() -> LocalReranker:
+    """Session-scoped local reranker (loaded once for the entire session)."""
+    return LocalReranker(model_name="BAAI/bge-reranker-v2-m3")
+
+
+@pytest.fixture(scope="session")
+def shared_reranker_settings(shared_temp_dir: Path) -> Settings:
+    """Session-scoped settings with local reranker enabled."""
+    return Settings(
+        docs_version=CANGJIE_DOCS_VERSION,
+        docs_lang="zh",
+        embedding_type="local",
+        local_model=CANGJIE_LOCAL_MODEL,
+        rerank_type="local",
+        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_top_k=5,
+        rerank_initial_k=20,
+        chunk_max_size=6000,
+        data_dir=shared_temp_dir / "reranker",
+    )
+
+
+@pytest.fixture(scope="session")
+def shared_indexed_store_with_reranker(
+    integration_docs_dir: Path,
+    shared_reranker_settings: Settings,
+    shared_embedding_provider,
+    shared_local_reranker: LocalReranker,
+) -> VectorStore:
+    """Session-scoped indexed VectorStore with reranker (created once)."""
+    store = VectorStore(
+        db_path=shared_reranker_settings.chroma_db_dir,
+        embedding_provider=shared_embedding_provider,
+        reranker=shared_local_reranker,
+    )
+
+    loader = DocumentLoader(integration_docs_dir)
+    documents = loader.load_all_documents()
+
+    store.index_documents(documents)
+    store.save_metadata(
+        version=shared_reranker_settings.docs_version,
+        lang=shared_reranker_settings.docs_lang,
+        embedding_model=CANGJIE_LOCAL_MODEL,
+    )
+
+    return store
+
+
+@pytest.fixture(scope="session")
+def shared_small_chunk_settings(shared_temp_dir: Path) -> Settings:
+    """Session-scoped settings with small chunk size."""
+    return Settings(
+        docs_version=CANGJIE_DOCS_VERSION,
+        docs_lang="zh",
+        embedding_type="local",
+        local_model=CANGJIE_LOCAL_MODEL,
+        rerank_type="none",
+        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_top_k=5,
+        rerank_initial_k=20,
+        chunk_max_size=200,
+        data_dir=shared_temp_dir / "small_chunk",
+    )
+
+
+@pytest.fixture(scope="session")
+def shared_small_chunk_store(
+    integration_docs_dir: Path,
+    shared_small_chunk_settings: Settings,
+    shared_embedding_provider,
+) -> VectorStore:
+    """Session-scoped VectorStore indexed with small chunks (created once)."""
+    store = VectorStore(
+        db_path=shared_small_chunk_settings.chroma_db_dir,
+        embedding_provider=shared_embedding_provider,
+    )
+
+    loader = DocumentLoader(integration_docs_dir)
+    documents = loader.load_all_documents()
+
+    store.index_documents(documents)
+    store.save_metadata(
+        version=shared_small_chunk_settings.docs_version,
+        lang=shared_small_chunk_settings.docs_lang,
+        embedding_model=CANGJIE_LOCAL_MODEL,
+    )
+
+    return store
+
+
+# ── Function-scoped fixtures (for tests that need write isolation) ──
+
+
 @pytest.fixture
 def local_settings(temp_data_dir: Path) -> Settings:
-    """Create settings for local embedding integration tests."""
+    """Function-scoped settings for tests that need write isolation."""
     return Settings(
         docs_version=CANGJIE_DOCS_VERSION,
         docs_lang="zh",
@@ -252,29 +415,3 @@ def openai_settings(temp_data_dir: Path) -> Settings:
         openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         openai_model=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
     )
-
-
-@pytest.fixture
-def local_indexed_store(
-    integration_docs_dir: Path,
-    local_settings: Settings,
-) -> VectorStore:
-    """Create and populate a VectorStore with local embeddings for testing."""
-    reset_embedding_provider()
-    embedding_provider = get_embedding_provider(local_settings)
-    store = VectorStore(
-        db_path=local_settings.chroma_db_dir,
-        embedding_provider=embedding_provider,
-    )
-
-    loader = DocumentLoader(integration_docs_dir)
-    documents = loader.load_all_documents()
-
-    store.index_documents(documents)
-    store.save_metadata(
-        version=local_settings.docs_version,
-        lang=local_settings.docs_lang,
-        embedding_model=CANGJIE_LOCAL_MODEL,
-    )
-
-    return store

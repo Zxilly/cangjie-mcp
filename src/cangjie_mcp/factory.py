@@ -31,6 +31,7 @@ def create_settings_from_args(
     rerank_initial_k: int,
     chunk_max_size: int,
     data_dir: Path | None,
+    prebuilt_url: str | None = None,
 ) -> Settings:
     """Create a Settings object from validated CLI arguments.
 
@@ -51,6 +52,7 @@ def create_settings_from_args(
         rerank_initial_k: Number of candidates before reranking
         chunk_max_size: Maximum chunk size in characters
         data_dir: Data directory path
+        prebuilt_url: URL to download prebuilt index from
 
     Returns:
         Configured Settings instance
@@ -69,4 +71,5 @@ def create_settings_from_args(
         rerank_initial_k=rerank_initial_k,
         chunk_max_size=chunk_max_size,
         data_dir=data_dir if data_dir else _get_default_data_dir(),
+        prebuilt_url=prebuilt_url,
     )

@@ -8,7 +8,6 @@ from pathlib import Path
 
 from cangjie_mcp.config import Settings
 from cangjie_mcp.indexer.chunker import create_chunker
-from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from tests.constants import CANGJIE_LOCAL_MODEL
@@ -21,13 +20,12 @@ class TestVectorStoreAdvanced:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test get_index returns existing index after indexing."""
-        reset_embedding_provider()
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -45,9 +43,9 @@ class TestVectorStoreAdvanced:
     def test_get_index_returns_none_when_empty(
         self,
         temp_data_dir: Path,
+        shared_embedding_provider,
     ) -> None:
         """Test get_index returns None when store is empty."""
-        reset_embedding_provider()
         settings = Settings(
             docs_version="test",
             docs_lang="zh",
@@ -60,10 +58,9 @@ class TestVectorStoreAdvanced:
             chunk_max_size=6000,
             data_dir=temp_data_dir,
         )
-        embedding_provider = get_embedding_provider(settings)
         store = VectorStore(
             db_path=settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         # Should return None when not indexed
@@ -74,13 +71,12 @@ class TestVectorStoreAdvanced:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test clearing the index."""
-        reset_embedding_provider()
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -108,20 +104,19 @@ class TestVectorStoreAdvanced:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test indexing nodes using chunker."""
-        reset_embedding_provider()
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
         documents = loader.load_all_documents()
 
         # Use chunker to create nodes
-        chunker = create_chunker(embedding_provider)
+        chunker = create_chunker(shared_embedding_provider)
         nodes = chunker.chunk_documents(documents, use_semantic=False)
 
         # Index nodes
@@ -135,13 +130,12 @@ class TestVectorStoreAdvanced:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test getting metadata after saving."""
-        reset_embedding_provider()
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -166,9 +160,9 @@ class TestVectorStoreAdvanced:
     def test_search_returns_empty_when_not_indexed(
         self,
         temp_data_dir: Path,
+        shared_embedding_provider,
     ) -> None:
         """Test search returns empty list when not indexed."""
-        reset_embedding_provider()
         settings = Settings(
             docs_version="test",
             docs_lang="zh",
@@ -181,10 +175,9 @@ class TestVectorStoreAdvanced:
             chunk_max_size=6000,
             data_dir=temp_data_dir,
         )
-        embedding_provider = get_embedding_provider(settings)
         store = VectorStore(
             db_path=settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         # Should return empty list
@@ -195,13 +188,12 @@ class TestVectorStoreAdvanced:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test reindexing replaces existing index."""
-        reset_embedding_provider()
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -222,13 +214,12 @@ class TestVectorStoreAdvanced:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test version_matches with different version."""
-        reset_embedding_provider()
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)

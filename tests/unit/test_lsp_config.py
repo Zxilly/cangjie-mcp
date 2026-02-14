@@ -100,18 +100,18 @@ my_dep = { path = "./dep" }
         settings = LSPSettings(sdk_path=sdk, workspace_path=workspace)
         options = build_init_options(settings)
 
-        assert "multiModuleOption" in options
-        assert "modulesHomeOption" in options
-        assert "stdLibPathOption" in options
-        assert "targetLib" in options
-        assert "telemetryOption" in options
-        assert "conditionCompileOption" in options
+        assert hasattr(options, "multi_module_option")
+        assert hasattr(options, "modules_home_option")
+        assert hasattr(options, "std_lib_path_option")
+        assert hasattr(options, "target_lib")
+        assert hasattr(options, "telemetry_option")
+        assert hasattr(options, "condition_compile_option")
 
     def test_multi_module_option_populated(self, workspace: Path, sdk: Path) -> None:
         settings = LSPSettings(sdk_path=sdk, workspace_path=workspace)
         options = build_init_options(settings)
 
-        multi_module = options["multiModuleOption"]
+        multi_module = options.multi_module_option
         assert len(multi_module) > 0
 
         # Find main module
@@ -132,7 +132,7 @@ my_dep = { path = "./dep" }
         options = build_init_options(settings)
 
         # Should return empty multiModuleOption
-        assert options["multiModuleOption"] == {}
+        assert options.multi_module_option == {}
 
 
 class TestGetTargetLib:

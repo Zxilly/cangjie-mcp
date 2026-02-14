@@ -6,7 +6,6 @@ These tests verify building, installing, and using prebuilt indexes.
 from pathlib import Path
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.prebuilt.manager import PrebuiltManager
@@ -20,15 +19,13 @@ class TestPrebuiltIndexIntegration:
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test building and installing a prebuilt index with local embeddings."""
-        reset_embedding_provider()
-
-        # First, create an indexed store
-        embedding_provider = get_embedding_provider(local_settings)
+        # Create an indexed store
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -63,10 +60,9 @@ class TestPrebuiltIndexIntegration:
         self,
         integration_docs_dir: Path,
         temp_data_dir: Path,
+        shared_embedding_provider,
     ) -> None:
         """Test installing and loading a prebuilt index."""
-        reset_embedding_provider()
-
         # Create settings for the first index
         settings1 = Settings(
             docs_version=CANGJIE_DOCS_VERSION,
@@ -82,10 +78,9 @@ class TestPrebuiltIndexIntegration:
         )
 
         # Create and index documents
-        embedding_provider1 = get_embedding_provider(settings1)
         store1 = VectorStore(
             db_path=settings1.chroma_db_dir,
-            embedding_provider=embedding_provider1,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -107,7 +102,6 @@ class TestPrebuiltIndexIntegration:
         )
 
         # Install to a different location (target index_dir)
-        reset_embedding_provider()
         target_settings = Settings(
             docs_version=CANGJIE_DOCS_VERSION,
             docs_lang="zh",
@@ -133,10 +127,9 @@ class TestPrebuiltIndexIntegration:
         assert installed.version == CANGJIE_DOCS_VERSION
 
         # Load and search the installed index
-        embedding_provider2 = get_embedding_provider(target_settings)
         store2 = VectorStore(
             db_path=target_settings.chroma_db_dir,
-            embedding_provider=embedding_provider2,
+            embedding_provider=shared_embedding_provider,
         )
 
         # Verify we can search the installed index
@@ -147,10 +140,9 @@ class TestPrebuiltIndexIntegration:
         self,
         integration_docs_dir: Path,
         temp_data_dir: Path,
+        shared_embedding_provider,
     ) -> None:
         """Test that prebuilt archive metadata survives install/export cycle."""
-        reset_embedding_provider()
-
         settings = Settings(
             docs_version=CANGJIE_DOCS_VERSION,
             docs_lang="zh",
@@ -165,10 +157,9 @@ class TestPrebuiltIndexIntegration:
         )
 
         # Create and index
-        embedding_provider = get_embedding_provider(settings)
         store = VectorStore(
             db_path=settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -190,7 +181,6 @@ class TestPrebuiltIndexIntegration:
         )
 
         # Install to new location
-        reset_embedding_provider()
         target_settings = Settings(
             docs_version=CANGJIE_DOCS_VERSION,
             docs_lang="zh",
@@ -215,10 +205,9 @@ class TestPrebuiltIndexIntegration:
         self,
         integration_docs_dir: Path,
         temp_data_dir: Path,
+        shared_embedding_provider,
     ) -> None:
         """Test listing multiple prebuilt archives."""
-        reset_embedding_provider()
-
         # Create first index
         settings1 = Settings(
             docs_version="v1.0.0",
@@ -233,10 +222,9 @@ class TestPrebuiltIndexIntegration:
             data_dir=temp_data_dir / "source1",
         )
 
-        embedding_provider1 = get_embedding_provider(settings1)
         store1 = VectorStore(
             db_path=settings1.chroma_db_dir,
-            embedding_provider=embedding_provider1,
+            embedding_provider=shared_embedding_provider,
         )
 
         loader = DocumentLoader(integration_docs_dir)
@@ -258,7 +246,6 @@ class TestPrebuiltIndexIntegration:
         )
 
         # Create second index
-        reset_embedding_provider()
         settings2 = Settings(
             docs_version="v2.0.0",
             docs_lang="en",
@@ -272,10 +259,9 @@ class TestPrebuiltIndexIntegration:
             data_dir=temp_data_dir / "source2",
         )
 
-        embedding_provider2 = get_embedding_provider(settings2)
         store2 = VectorStore(
             db_path=settings2.chroma_db_dir,
-            embedding_provider=embedding_provider2,
+            embedding_provider=shared_embedding_provider,
         )
 
         store2.index_documents(documents)

@@ -13,7 +13,9 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from cangjie_mcp.lsp.utils import load_toml_safe
 
@@ -21,20 +23,24 @@ if TYPE_CHECKING:
     from cangjie_mcp.lsp.dependency import DependencyResolver
 
 
-class LSPInitOptions(TypedDict):
-    """Type definition for LSP initialization options."""
+class LSPInitOptions(BaseModel):
+    """LSP initialization options sent to the Cangjie language server."""
 
-    multiModuleOption: dict[str, Any]
-    conditionCompileOption: dict[str, Any]
-    singleConditionCompileOption: dict[str, Any]
-    conditionCompilePaths: list[str]
-    targetLib: str
-    modulesHomeOption: str
-    stdLibPathOption: str
-    telemetryOption: bool
-    extensionPath: str
-    clangdFileStatus: bool
-    fallbackFlags: list[str]
+    model_config = ConfigDict(populate_by_name=True)
+
+    multi_module_option: dict[str, Any] = Field(default_factory=dict, serialization_alias="multiModuleOption")
+    condition_compile_option: dict[str, Any] = Field(default_factory=dict, serialization_alias="conditionCompileOption")
+    single_condition_compile_option: dict[str, Any] = Field(
+        default_factory=dict, serialization_alias="singleConditionCompileOption"
+    )
+    condition_compile_paths: list[str] = Field(default_factory=list, serialization_alias="conditionCompilePaths")
+    target_lib: str = Field(default="", serialization_alias="targetLib")
+    modules_home_option: str = Field(default="", serialization_alias="modulesHomeOption")
+    std_lib_path_option: str = Field(default="", serialization_alias="stdLibPathOption")
+    telemetry_option: bool = Field(default=False, serialization_alias="telemetryOption")
+    extension_path: str = Field(default="", serialization_alias="extensionPath")
+    clangd_file_status: bool = Field(default=True, serialization_alias="clangdFileStatus")
+    fallback_flags: list[str] = Field(default_factory=list, serialization_alias="fallbackFlags")
 
 
 # Default timeout for LSP initialization (ms)
@@ -179,7 +185,7 @@ logger = logging.getLogger(__name__)
 _last_resolver: DependencyResolver | None = None
 
 
-def build_init_options(settings: LSPSettings) -> dict[str, Any]:
+def build_init_options(settings: LSPSettings) -> LSPInitOptions:
     """Build LSP initialization options.
 
     Uses DependencyResolver for complete dependency resolution including
@@ -189,7 +195,7 @@ def build_init_options(settings: LSPSettings) -> dict[str, Any]:
         settings: LSP settings
 
     Returns:
-        Initialization options dictionary for LSP server
+        LSPInitOptions for the language server
     """
     global _last_resolver
 
@@ -211,25 +217,12 @@ def build_init_options(settings: LSPSettings) -> dict[str, Any]:
             logger.warning(f"Failed to resolve dependencies: {e}")
             multi_module_option = {}
 
-    # Build initialization options (see LSPInitOptions TypedDict for structure)
-    options: dict[str, Any] = {
-        # Project options (from DependencyResolver)
-        "multiModuleOption": multi_module_option,
-        "conditionCompileOption": {},
-        "singleConditionCompileOption": {},
-        "conditionCompilePaths": [],
-        "targetLib": _get_target_lib(settings.workspace_path),
-        # Environment info (from setEnvInfo equivalent)
-        "modulesHomeOption": sdk_str,
-        "stdLibPathOption": _get_std_lib_path(settings.sdk_path, ""),
-        "telemetryOption": False,
-        "extensionPath": "",
-        # Default options
-        "clangdFileStatus": True,
-        "fallbackFlags": [],
-    }
-
-    return options
+    return LSPInitOptions(
+        multi_module_option=multi_module_option,
+        target_lib=_get_target_lib(settings.workspace_path),
+        modules_home_option=sdk_str,
+        std_lib_path_option=_get_std_lib_path(settings.sdk_path, ""),
+    )
 
 
 def get_resolver_require_path() -> str:

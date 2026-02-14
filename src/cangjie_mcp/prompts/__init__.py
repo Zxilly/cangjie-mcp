@@ -18,8 +18,8 @@ def get_lsp_prompt() -> str:
     return _load("lsp")
 
 
-def get_combined_prompt() -> str:
-    """Get combined server prompt."""
+def get_prompt() -> str:
+    """Get server prompt."""
     return f"""{get_docs_prompt()}
 
 ---

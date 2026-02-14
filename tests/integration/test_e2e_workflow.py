@@ -50,20 +50,20 @@ class TestEndToEndWorkflow:
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
-        local_settings: Settings,
+        shared_local_settings: Settings,
     ) -> None:
         """Test using tools through ToolContext."""
         document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
-            settings=local_settings,
+            settings=shared_local_settings,
             store=local_indexed_store,
             document_source=document_source,
         )
 
         result = tools.list_topics(ctx, ListTopicsInput())
-        assert result["total_topics"] > 0
+        assert result.total_topics > 0
 
-        for category, topic_list in result["categories"].items():
+        for category, topic_list in result.categories.items():
             if topic_list:
                 topic = topic_list[0]
                 doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
@@ -71,104 +71,104 @@ class TestEndToEndWorkflow:
                 break
 
         search_results = tools.search_docs(ctx, SearchDocsInput(query="仓颉语言", top_k=5))
-        assert search_results["count"] > 0
+        assert search_results.count > 0
 
     def test_category_based_exploration(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
-        local_settings: Settings,
+        shared_local_settings: Settings,
     ) -> None:
         """Test exploring documentation by category."""
         document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
-            settings=local_settings,
+            settings=shared_local_settings,
             store=local_indexed_store,
             document_source=document_source,
         )
 
         result = tools.list_topics(ctx, ListTopicsInput())
 
-        for category in result["categories"]:
+        for category in result.categories:
             filtered = tools.list_topics(ctx, ListTopicsInput(category=category))
-            assert category in filtered["categories"]
-            assert len(filtered["categories"][category]) > 0
+            assert category in filtered.categories
+            assert len(filtered.categories[category]) > 0
 
             search_results = tools.search_docs(
                 ctx,
                 SearchDocsInput(query="使用方法", category=category, top_k=2),
             )
-            if search_results["count"] > 0:
-                assert all(r["category"] == category for r in search_results["items"])
+            if search_results.count > 0:
+                assert all(r.category == category for r in search_results.items)
 
     def test_full_document_discovery_workflow(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
-        local_settings: Settings,
+        shared_local_settings: Settings,
     ) -> None:
         """Test complete document discovery workflow."""
         document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
-            settings=local_settings,
+            settings=shared_local_settings,
             store=local_indexed_store,
             document_source=document_source,
         )
 
         # 1. List all topics
         result = tools.list_topics(ctx, ListTopicsInput())
-        assert result["total_categories"] > 0
+        assert result.total_categories > 0
 
         # 2. Get topics count
-        assert result["total_topics"] == 6  # We have 6 test documents
+        assert result.total_topics == 6  # We have 6 test documents
 
         # 3. Read each topic
-        for category, topic_list in result["categories"].items():
+        for category, topic_list in result.categories.items():
             for topic in topic_list:
                 doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
                 assert doc is not None
-                assert doc["category"] == category
-                assert doc["topic"] == topic
-                assert len(doc["content"]) > 0
+                assert doc.category == category
+                assert doc.topic == topic
+                assert len(doc.content) > 0
 
     def test_search_and_retrieve_workflow(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
-        local_settings: Settings,
+        shared_local_settings: Settings,
     ) -> None:
         """Test search followed by document retrieval."""
         document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
-            settings=local_settings,
+            settings=shared_local_settings,
             store=local_indexed_store,
             document_source=document_source,
         )
 
         # Search for a topic
         results = tools.search_docs(ctx, SearchDocsInput(query="函数定义", top_k=3))
-        assert results["count"] > 0
+        assert results.count > 0
 
         # Get the top result's topic
-        top_result = results["items"][0]
-        topic = top_result["topic"]
-        category = top_result["category"]
+        top_result = results.items[0]
+        topic = top_result.topic
+        category = top_result.category
 
         # Retrieve full document
         doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
         assert doc is not None
-        assert len(doc["content"]) >= len(top_result["content"])
+        assert len(doc.content) >= len(top_result.content)
 
     def test_code_examples_workflow(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
-        local_settings: Settings,
+        shared_local_settings: Settings,
     ) -> None:
         """Test finding and using code examples."""
         document_source = PrebuiltDocumentSource(integration_docs_dir)
         ctx = tools.ToolContext(
-            settings=local_settings,
+            settings=shared_local_settings,
             store=local_indexed_store,
             document_source=document_source,
         )
@@ -179,22 +179,22 @@ class TestEndToEndWorkflow:
 
         # Verify examples have required fields
         for example in examples:
-            assert "language" in example
-            assert "code" in example
-            assert len(example["code"]) > 0
+            assert isinstance(example.language, str)
+            assert isinstance(example.code, str)
+            assert len(example.code) > 0
 
         # Get tool usage
         tool_result = tools.get_tool_usage(ctx, GetToolUsageInput(tool_name="cjc"))
         assert tool_result is not None
-        assert "examples" in tool_result
+        assert isinstance(tool_result.examples, list)
 
     def test_indexing_preserves_document_structure(
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
+        shared_embedding_provider,
     ) -> None:
         """Test that indexing preserves document metadata correctly."""
-        reset_embedding_provider()
         loader = DocumentLoader(integration_docs_dir)
         documents = loader.load_all_documents()
 
@@ -205,10 +205,9 @@ class TestEndToEndWorkflow:
         assert "tools" in categories
 
         # Index and search
-        embedding_provider = get_embedding_provider(local_settings)
         store = VectorStore(
             db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
+            embedding_provider=shared_embedding_provider,
         )
         store.index_documents(documents)
 

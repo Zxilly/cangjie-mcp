@@ -17,6 +17,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from cangjie_mcp.lsp.config import LSPInitOptions
+from cangjie_mcp.lsp.types import (
+    CompletionItem,
+    Diagnostic,
+    DocumentSymbol,
+    HoverResult,
+    Location,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +38,7 @@ class CangjieClient:
 
     sdk_path: Path
     root_path: Path
-    init_options: dict[str, Any]
+    init_options: LSPInitOptions
     env: dict[str, str]
     args: list[str]
 
@@ -38,7 +47,7 @@ class CangjieClient:
     _writer: asyncio.StreamWriter | None = field(default=None, init=False)
     _request_id: int = field(default=0, init=False)
     _pending_requests: dict[int, asyncio.Future[Any]] = field(default_factory=dict, init=False)
-    _diagnostics: dict[str, list[dict[str, Any]]] = field(default_factory=dict, init=False)
+    _diagnostics: dict[str, list[Diagnostic]] = field(default_factory=dict, init=False)
     _files: dict[str, int] = field(default_factory=dict, init=False)  # path -> version
     _initialized: bool = field(default=False, init=False)
     _message_task: asyncio.Task[None] | None = field(default=None, init=False)
@@ -109,7 +118,7 @@ class CangjieClient:
                     "rootUri": root_uri,
                     "rootPath": str(self.root_path),
                     "workspaceFolders": [{"name": "workspace", "uri": root_uri}],
-                    "initializationOptions": self.init_options,
+                    "initializationOptions": self.init_options.model_dump(by_alias=True),
                     "capabilities": {
                         "textDocument": {
                             "synchronization": {
@@ -291,8 +300,9 @@ class CangjieClient:
         if sys.platform == "win32" and path.startswith("/") and len(path) > 2 and path[2] == ":":
             path = path[1:]
 
-        self._diagnostics[path] = params.get("diagnostics", [])
-        logger.debug(f"Received {len(params.get('diagnostics', []))} diagnostics for {path}")
+        raw_diagnostics = params.get("diagnostics", [])
+        self._diagnostics[path] = [Diagnostic.model_validate(d) for d in raw_diagnostics]
+        logger.debug(f"Received {len(raw_diagnostics)} diagnostics for {path}")
 
     # =========================================================================
     # File Synchronization
@@ -339,7 +349,7 @@ class CangjieClient:
                 },
             )
 
-    async def wait_for_diagnostics(self, file_path: str, timeout: float = 3.0) -> list[dict[str, Any]]:
+    async def wait_for_diagnostics(self, file_path: str, timeout: float = 3.0) -> list[Diagnostic]:
         """Wait for diagnostics for a file.
 
         Args:
@@ -360,7 +370,7 @@ class CangjieClient:
     # LSP Operations
     # =========================================================================
 
-    async def definition(self, file_path: str, line: int, character: int) -> list[dict[str, Any]]:
+    async def definition(self, file_path: str, line: int, character: int) -> list[Location]:
         """Get definition locations.
 
         Args:
@@ -369,7 +379,7 @@ class CangjieClient:
             character: Character position (0-based)
 
         Returns:
-            List of location dictionaries
+            List of Location models
         """
         await self.open_file(file_path)
         uri = Path(file_path).as_uri()
@@ -382,9 +392,9 @@ class CangjieClient:
             },
         )
 
-        return self._normalize_locations(result)
+        return self._parse_locations(result)
 
-    async def references(self, file_path: str, line: int, character: int) -> list[dict[str, Any]]:
+    async def references(self, file_path: str, line: int, character: int) -> list[Location]:
         """Find all references.
 
         Args:
@@ -393,7 +403,7 @@ class CangjieClient:
             character: Character position (0-based)
 
         Returns:
-            List of location dictionaries
+            List of Location models
         """
         await self.open_file(file_path)
         uri = Path(file_path).as_uri()
@@ -407,9 +417,9 @@ class CangjieClient:
             },
         )
 
-        return self._normalize_locations(result or [])
+        return self._parse_locations(result or [])
 
-    async def hover(self, file_path: str, line: int, character: int) -> dict[str, Any] | None:
+    async def hover(self, file_path: str, line: int, character: int) -> HoverResult | None:
         """Get hover information.
 
         Args:
@@ -418,7 +428,7 @@ class CangjieClient:
             character: Character position (0-based)
 
         Returns:
-            Hover information dictionary or None
+            HoverResult or None
         """
         await self.open_file(file_path)
         uri = Path(file_path).as_uri()
@@ -431,16 +441,18 @@ class CangjieClient:
             },
         )
 
-        return result  # type: ignore[no-any-return]
+        if result is None:
+            return None
+        return HoverResult.model_validate(result)
 
-    async def document_symbol(self, file_path: str) -> list[dict[str, Any]]:
+    async def document_symbol(self, file_path: str) -> list[DocumentSymbol]:
         """Get document symbols.
 
         Args:
             file_path: Absolute path to the file
 
         Returns:
-            List of symbol dictionaries
+            List of DocumentSymbol models
         """
         await self.open_file(file_path)
         uri = Path(file_path).as_uri()
@@ -450,9 +462,11 @@ class CangjieClient:
             {"textDocument": {"uri": uri}},
         )
 
-        return result or []
+        if not result:
+            return []
+        return [DocumentSymbol.model_validate(sym) for sym in result]
 
-    async def completion(self, file_path: str, line: int, character: int) -> list[dict[str, Any]]:
+    async def completion(self, file_path: str, line: int, character: int) -> list[CompletionItem]:
         """Get code completion.
 
         Args:
@@ -461,7 +475,7 @@ class CangjieClient:
             character: Character position (0-based)
 
         Returns:
-            List of completion items
+            List of CompletionItem models
         """
         await self.open_file(file_path)
         uri = Path(file_path).as_uri()
@@ -476,37 +490,36 @@ class CangjieClient:
 
         if result is None:
             return []
-        if isinstance(result, dict) and "items" in result:
-            return result["items"]  # type: ignore[no-any-return]
-        return result  # type: ignore[no-any-return]
+        items = result["items"] if isinstance(result, dict) and "items" in result else result
+        return [CompletionItem.model_validate(item) for item in items]
 
-    async def get_diagnostics(self, file_path: str) -> list[dict[str, Any]]:
+    async def get_diagnostics(self, file_path: str) -> list[Diagnostic]:
         """Get cached diagnostics for a file.
 
         Args:
             file_path: Absolute path to the file
 
         Returns:
-            List of diagnostics
+            List of Diagnostic models
         """
         await self.open_file(file_path)
         return await self.wait_for_diagnostics(file_path)
 
-    def _normalize_locations(self, result: Any) -> list[dict[str, Any]]:  # noqa: ANN401
-        """Normalize location result to list format.
+    def _parse_locations(self, result: Any) -> list[Location]:  # noqa: ANN401
+        """Parse LSP location result into typed models.
 
         Args:
             result: LSP location result (single or list)
 
         Returns:
-            List of location dictionaries
+            List of Location models
         """
         if result is None:
             return []
         if isinstance(result, dict):
-            return [result]
+            return [Location.model_validate(result)]
         if isinstance(result, list):
-            return [loc for loc in result if loc is not None]
+            return [Location.model_validate(loc) for loc in result if loc is not None]
         return []
 
     # =========================================================================

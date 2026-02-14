@@ -124,8 +124,11 @@ claude mcp add \
 | `cangjie_list_topics` | 列出所有可用主题 |
 | `cangjie_get_code_examples` | 获取代码示例 |
 | `cangjie_get_tool_usage` | 获取工具使用说明 |
+| `cangjie_search_stdlib` | 搜索标准库 API |
 
 ### 代码智能
+
+> 需要设置 `CANGJIE_HOME` 环境变量指向仓颉 SDK 路径，LSP 工具才会注册。
 
 | 工具名称 | 功能 |
 |---------|------|
@@ -138,32 +141,21 @@ claude mcp add \
 
 ## 命令行参考
 
-### cangjie-mcp（默认命令）
+### cangjie-mcp
 
-启动聚合服务器，同时提供文档搜索和 LSP 代码智能功能。
+启动聚合服务器，同时提供文档搜索和 LSP 代码智能功能。LSP 功能在设置了 `CANGJIE_HOME` 环境变量时自动启用。
 
 ```bash
 cangjie-mcp [OPTIONS]
-cangjie-mcp docs [OPTIONS]   # 仅文档搜索
-cangjie-mcp lsp [OPTIONS]    # 仅代码智能
 ```
 
-### 通用选项
-
-以下选项适用于 `cangjie-mcp`、`cangjie-mcp docs` 和 `cangjie-mcp lsp`：
-
-| CLI 参数 | 环境变量 | 默认值 | 说明 |
-|---------|---------|-------|------|
-| `--log-file PATH` | `CANGJIE_LOG_FILE` | - | 日志文件路径 |
-| `--debug / --no-debug` | `CANGJIE_DEBUG` | `--no-debug` | 启用调试模式，将 stdio 流量写入日志文件 |
-
-### 文档选项
-
-以下选项适用于 `cangjie-mcp` 和 `cangjie-mcp docs`：
+### 选项
 
 | CLI 参数 | 环境变量 | 默认值 | 说明 |
 |---------|---------|-------|------|
 | `-v, --version` | - | - | 显示版本并退出 |
+| `--log-file PATH` | `CANGJIE_LOG_FILE` | - | 日志文件路径 |
+| `--debug / --no-debug` | `CANGJIE_DEBUG` | `--no-debug` | 启用调试模式，将 stdio 流量写入日志文件 |
 | `-V, --docs-version TEXT` | `CANGJIE_DOCS_VERSION` | `latest` | 文档版本 (git tag) |
 | `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | `zh` | 文档语言 (`zh` / `en`) |
 | `-e, --embedding TEXT` | `CANGJIE_EMBEDDING_TYPE` | `local` | 向量化类型 (`local` / `openai`) |
@@ -177,31 +169,51 @@ cangjie-mcp lsp [OPTIONS]    # 仅代码智能
 | `--rerank-initial-k INT` | `CANGJIE_RERANK_INITIAL_K` | `20` | 重排序前候选数 |
 | `--chunk-size INT` | `CANGJIE_CHUNK_MAX_SIZE` | `6000` | 最大分块大小（字符数） |
 | `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | `~/.cangjie-mcp` | 数据目录路径 |
+| `--prebuilt-url TEXT` | `CANGJIE_PREBUILT_URL` | - | 预构建索引下载 URL |
 
-### LSP 选项
+LSP 功能通过以下环境变量控制：
 
-以下选项仅适用于 `cangjie-mcp lsp`：
-
-| CLI 参数 | 环境变量 | 默认值 | 说明 |
-|---------|---------|-------|------|
-| `-v, --version` | - | - | 显示版本并退出 |
-| `-w, --workspace PATH` | `CANGJIE_WORKSPACE` | 当前目录 | 工作区根路径 |
-| `-s, --sdk PATH` | `CANGJIE_HOME` | - | 仓颉 SDK 路径 |
-| `--log / --no-log` | `CANGJIE_LSP_LOG` | `--no-log` | 启用 LSP 服务器日志 |
-| `--log-path PATH` | `CANGJIE_LSP_LOG_PATH` | - | LSP 日志文件目录 |
-| `-t, --timeout INT` | `CANGJIE_LSP_TIMEOUT` | `45000` | LSP 初始化超时（毫秒） |
+| 环境变量 | 说明 |
+|---------|------|
+| `CANGJIE_HOME` | 仓颉 SDK 路径，设置后自动启用 LSP 工具 |
 
 ### 预构建索引管理
 
 ```bash
-cangjie-mcp docs prebuilt download [OPTIONS]  # 下载预构建索引
-cangjie-mcp docs prebuilt build [OPTIONS]     # 构建预构建索引
-cangjie-mcp docs prebuilt list [OPTIONS]      # 列出可用索引
+cangjie-mcp prebuilt download [OPTIONS]  # 下载预构建索引
+cangjie-mcp prebuilt build [OPTIONS]     # 构建预构建索引
+cangjie-mcp prebuilt list [OPTIONS]      # 列出可用索引
 ```
+
+#### prebuilt download
 
 | CLI 参数 | 环境变量 | 说明 |
 |---------|---------|------|
 | `-u, --url TEXT` | `CANGJIE_PREBUILT_URL` | 预构建索引下载 URL |
+| `-v, --version TEXT` | `CANGJIE_DOCS_VERSION` | 文档版本 |
+| `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | 文档语言 |
+| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | 数据目录路径 |
+
+#### prebuilt build
+
+| CLI 参数 | 环境变量 | 说明 |
+|---------|---------|------|
+| `-v, --version TEXT` | `CANGJIE_DOCS_VERSION` | 文档版本 |
+| `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | 文档语言 |
+| `-e, --embedding TEXT` | `CANGJIE_EMBEDDING_TYPE` | 向量化类型 |
+| `--local-model TEXT` | `CANGJIE_LOCAL_MODEL` | 本地向量化模型 |
+| `--openai-api-key TEXT` | `OPENAI_API_KEY` | OpenAI API 密钥 |
+| `--openai-base-url TEXT` | `OPENAI_BASE_URL` | OpenAI API 基础 URL |
+| `--openai-model TEXT` | `OPENAI_EMBEDDING_MODEL` | OpenAI 向量化模型 |
+| `-c, --chunk-size INT` | `CANGJIE_CHUNK_MAX_SIZE` | 最大分块大小 |
+| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | 数据目录路径 |
+| `-o, --output PATH` | - | 输出目录或文件路径 |
+
+#### prebuilt list
+
+| CLI 参数 | 环境变量 | 说明 |
+|---------|---------|------|
+| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | 数据目录路径 |
 
 ### 调试与日志
 

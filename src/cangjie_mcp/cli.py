@@ -3,11 +3,6 @@
 All CLI options can be configured via environment variables.
 Run `cangjie-mcp --help` to see all options and their environment variables.
 
-Commands:
-- cangjie-mcp: Combined MCP server with docs + LSP tools (default)
-- cangjie-mcp docs: Documentation search only
-- cangjie-mcp lsp: LSP code intelligence only
-
 Environment variable naming:
 - CANGJIE_* prefix for most options
 - OPENAI_* prefix for OpenAI-related options
@@ -32,6 +27,7 @@ from cangjie_mcp.cli_args import (
     OpenAIApiKeyOption,
     OpenAIBaseUrlOption,
     OpenAIModelOption,
+    PrebuiltUrlOption,
     RerankInitialKOption,
     RerankModelOption,
     RerankOption,
@@ -55,8 +51,7 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TYPE,
 )
 from cangjie_mcp.factory import create_settings_from_args
-from cangjie_mcp.indexer.initializer import initialize_and_index, print_settings_summary
-from cangjie_mcp.lsp.cli import lsp_app
+from cangjie_mcp.indexer.initializer import initialize_and_index
 from cangjie_mcp.utils import console, setup_logging
 
 
@@ -72,12 +67,16 @@ def _default_data_dir() -> Path:
     return Path.home() / ".cangjie-mcp"
 
 
-# Root app - starts combined server by default
+# Root app
 app = typer.Typer(
     name="cangjie-mcp",
-    help="MCP server for Cangjie programming language (docs + LSP)",
+    help="MCP server for Cangjie programming language",
     invoke_without_command=True,
 )
+
+# Prebuilt index management
+prebuilt_app = typer.Typer(help="Prebuilt index management commands")
+app.add_typer(prebuilt_app, name="prebuilt")
 
 
 @app.callback(invoke_without_command=True)
@@ -107,14 +106,11 @@ def main(
     rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
     chunk_max_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
     data_dir: DataDirOption = None,
+    prebuilt_url: PrebuiltUrlOption = None,
     log_file: LogFileOption = None,
     debug: DebugOption = False,
 ) -> None:
-    """Start the combined MCP server with docs and LSP tools.
-
-    This is the default command that provides both documentation search
-    and LSP code intelligence features in a single MCP server.
-    """
+    """Start the MCP server."""
     # If a subcommand is invoked, let it handle execution
     if ctx.invoked_subcommand is not None:
         return
@@ -125,9 +121,9 @@ def main(
     # Check if LSP is available
     import os
 
-    if not os.environ.get("CANGJIE_HOME"):
-        console.print("[yellow]Warning: LSP server not available (CANGJIE_HOME not set)[/yellow]")
-        console.print("[yellow]LSP tools will return errors. Set CANGJIE_HOME to enable.[/yellow]")
+    lsp_enabled = bool(os.environ.get("CANGJIE_HOME"))
+    if not lsp_enabled:
+        console.print("[yellow]CANGJIE_HOME not set — LSP tools will not be registered.[/yellow]")
 
     # Validate and build settings
     settings = create_settings_from_args(
@@ -144,95 +140,18 @@ def main(
         rerank_initial_k=rerank_initial_k,
         chunk_max_size=chunk_max_size,
         data_dir=data_dir,
+        prebuilt_url=prebuilt_url,
     )
     set_settings(settings)
 
     # Initialize docs index
     initialize_and_index(settings)
 
-    # Create and run combined server
-    from cangjie_mcp.server.combined_app import create_combined_mcp_server
+    # Create and run server
+    from cangjie_mcp.server.factory import create_mcp_server
 
-    mcp = create_combined_mcp_server(settings)
-    console.print("[blue]Starting combined MCP server (docs + LSP)...[/blue]")
-    mcp.run(transport="stdio")
-
-
-# Docs subcommand
-docs_app = typer.Typer(
-    name="docs",
-    help="Documentation search MCP server",
-    invoke_without_command=True,
-)
-app.add_typer(docs_app, name="docs")
-
-# Prebuilt index management (under docs)
-prebuilt_app = typer.Typer(help="Prebuilt index management commands")
-docs_app.add_typer(prebuilt_app, name="prebuilt")
-
-# LSP subcommand (imported from lsp/cli.py)
-app.add_typer(lsp_app, name="lsp")
-
-
-@docs_app.callback(invoke_without_command=True)
-def docs_main(
-    ctx: typer.Context,
-    docs_version: DocsVersionOption = DEFAULT_DOCS_VERSION,
-    lang: LangOption = DEFAULT_DOCS_LANG,
-    embedding: EmbeddingOption = DEFAULT_EMBEDDING_TYPE,
-    local_model: LocalModelOption = DEFAULT_LOCAL_MODEL,
-    openai_api_key: OpenAIApiKeyOption = None,
-    openai_base_url: OpenAIBaseUrlOption = DEFAULT_OPENAI_BASE_URL,
-    openai_model: OpenAIModelOption = DEFAULT_OPENAI_MODEL,
-    rerank: RerankOption = DEFAULT_RERANK_TYPE,
-    rerank_model: RerankModelOption = DEFAULT_RERANK_MODEL,
-    rerank_top_k: RerankTopKOption = DEFAULT_RERANK_TOP_K,
-    rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
-    chunk_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
-    data_dir: DataDirOption = None,
-    log_file: LogFileOption = None,
-    debug: DebugOption = False,
-) -> None:
-    """Start the documentation MCP server in stdio mode.
-
-    Starts the MCP server using stdio transport for MCP client integration.
-    """
-    # If a subcommand is invoked, let it handle execution
-    if ctx.invoked_subcommand is not None:
-        return
-
-    # Set up logging early
-    setup_logging(log_file, debug)
-
-    # Validate and build settings
-    settings = create_settings_from_args(
-        docs_version=docs_version,
-        docs_lang=validate_lang(lang),  # type: ignore[arg-type]
-        embedding_type=validate_embedding_type(embedding),  # type: ignore[arg-type]
-        local_model=local_model,
-        openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url,
-        openai_model=openai_model,
-        rerank_type=validate_rerank_type(rerank),  # type: ignore[arg-type]
-        rerank_model=rerank_model,
-        rerank_top_k=rerank_top_k,
-        rerank_initial_k=rerank_initial_k,
-        chunk_max_size=chunk_size,
-        data_dir=data_dir,
-    )
-    set_settings(settings)
-
-    # Print settings summary
-    print_settings_summary(settings)
-
-    # Initialize and index
-    initialize_and_index(settings)
-
-    # Start server in stdio mode
-    from cangjie_mcp.server.app import create_mcp_server
-
-    mcp = create_mcp_server(settings)
-    console.print("[blue]Starting MCP server (stdio)...[/blue]")
+    mcp = create_mcp_server(settings, lsp_enabled=lsp_enabled)
+    console.print("[blue]Starting MCP server...[/blue]")
     mcp.run(transport="stdio")
 
 
@@ -514,11 +433,11 @@ def prebuilt_list(
 
         console.print(table)
 
-    # Show currently installed index (for stdio mode)
+    # Show currently installed index
     installed = mgr.get_installed_metadata()
     if installed:
         console.print()
-        console.print("[bold]Currently Installed (stdio mode):[/bold]")
+        console.print("[bold]Currently Installed:[/bold]")
         console.print(f"  Version: {installed.version}")
         console.print(f"  Language: {installed.lang}")
         console.print(f"  Embedding: {installed.embedding_model}")

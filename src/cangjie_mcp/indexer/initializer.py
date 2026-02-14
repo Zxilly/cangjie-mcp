@@ -42,6 +42,16 @@ def initialize_and_index(settings: Settings) -> None:
         )
         return
 
+    # Auto-download prebuilt index if URL is configured
+    if settings.prebuilt_url:
+        console.print(f"[blue]Downloading prebuilt index from {settings.prebuilt_url}...[/blue]")
+        archive = prebuilt_mgr.download(settings.prebuilt_url, settings.docs_version, settings.docs_lang)
+        prebuilt_mgr.install(archive)
+        console.print(
+            f"[green]Prebuilt index installed (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
+        )
+        return
+
     # Check existing index
     store = create_vector_store(settings, with_rerank=False)
 

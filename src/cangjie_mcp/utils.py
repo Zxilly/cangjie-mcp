@@ -140,6 +140,68 @@ def create_literal_validator(
     return validator
 
 
+def detect_device() -> str:
+    """Detect the best available compute device for model inference.
+
+    Checks for accelerators in order: NVIDIA CUDA, AMD ROCm,
+    Intel XPU, Apple MPS, then falls back to CPU.
+
+    Returns:
+        Device string: "cuda", "xpu", "mps", or "cpu"
+    """
+    # NVIDIA CUDA / AMD ROCm (both exposed via torch.cuda)
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            device_name = torch.cuda.get_device_name(0)
+            logger.info("Using CUDA device: %s", device_name)
+            return "cuda"
+    except ImportError:
+        pass
+
+    # Intel XPU (requires intel_extension_for_pytorch)
+    try:
+        import intel_extension_for_pytorch  # type: ignore[import-not-found]  # noqa: F401  # pyright: ignore[reportMissingImports, reportUnusedImport]
+        import torch
+
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            device_name = torch.xpu.get_device_name(0)
+            logger.info("Using Intel XPU device: %s", device_name)
+            return "xpu"
+    except ImportError:
+        pass
+
+    # Apple MPS (Metal Performance Shaders)
+    try:
+        import torch
+
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            logger.info("Using Apple MPS device")
+            return "mps"
+    except ImportError:
+        pass
+
+    logger.info("No GPU detected, using CPU")
+    return "cpu"
+
+
+# Cache the result so we only probe once per process
+_detected_device: str | None = None
+
+
+def get_device() -> str:
+    """Get the cached detected device (probes hardware once per process).
+
+    Returns:
+        Device string: "cuda", "xpu", "mps", or "cpu"
+    """
+    global _detected_device
+    if _detected_device is None:
+        _detected_device = detect_device()
+    return _detected_device
+
+
 # Default encoding for file operations
 ENCODING = "utf-8"
 

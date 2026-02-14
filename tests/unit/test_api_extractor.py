@@ -22,8 +22,8 @@ let list = ArrayList<Int64>()
 ```
 """
         result = extract_stdlib_info(content)
-        assert result["is_stdlib"] is True
-        assert "std.collection" in result["packages"]
+        assert result.is_stdlib is True
+        assert "std.collection" in result.packages
 
     def test_multiple_packages(self) -> None:
         """Test detection of multiple packages."""
@@ -35,11 +35,11 @@ import std.net.Socket
 ```
 """
         result = extract_stdlib_info(content)
-        assert result["is_stdlib"] is True
-        assert len(result["packages"]) == 3
-        assert "std.collection.ArrayList" in result["packages"]
-        assert "std.fs.File" in result["packages"]
-        assert "std.net.Socket" in result["packages"]
+        assert result.is_stdlib is True
+        assert len(result.packages) == 3
+        assert "std.collection.ArrayList" in result.packages
+        assert "std.fs.File" in result.packages
+        assert "std.net.Socket" in result.packages
 
     def test_no_stdlib_imports(self) -> None:
         """Test content without stdlib imports."""
@@ -52,8 +52,8 @@ var y = "hello"
 ```
 """
         result = extract_stdlib_info(content)
-        assert result["is_stdlib"] is False
-        assert result["packages"] == []
+        assert result.is_stdlib is False
+        assert result.packages == []
 
     def test_detects_import_std_in_text(self) -> None:
         """Test that 'import std.' in text is detected."""
@@ -61,7 +61,7 @@ var y = "hello"
 You can use import std.collection to access collections.
 """
         result = extract_stdlib_info(content)
-        assert result["is_stdlib"] is True
+        assert result.is_stdlib is True
 
 
 class TestExtractTypeDeclarations:
@@ -149,8 +149,8 @@ func add(a: Int64, b: Int64): Int64 {
 """
         methods = extract_method_signatures(content)
         assert len(methods) == 1
-        assert methods[0]["name"] == "add"
-        assert methods[0]["return_type"] == "Int64"
+        assert methods[0].name == "add"
+        assert methods[0].return_type == "Int64"
 
     def test_extract_public_func(self) -> None:
         """Test extracting public function."""
@@ -163,7 +163,7 @@ public func greet(name: String): Unit {
 """
         methods = extract_method_signatures(content)
         assert len(methods) == 1
-        assert methods[0]["name"] == "greet"
+        assert methods[0].name == "greet"
 
     def test_extract_static_func(self) -> None:
         """Test extracting static function."""
@@ -176,7 +176,7 @@ public static func create(): MyClass {
 """
         methods = extract_method_signatures(content)
         assert len(methods) == 1
-        assert methods[0]["name"] == "create"
+        assert methods[0].name == "create"
 
     def test_extract_generic_func(self) -> None:
         """Test extracting generic function."""
@@ -189,7 +189,7 @@ func identity<T>(value: T): T {
 """
         methods = extract_method_signatures(content)
         assert len(methods) == 1
-        assert methods[0]["name"] == "identity"
+        assert methods[0].name == "identity"
 
     def test_no_duplicates(self) -> None:
         """Test that duplicate method names are not returned."""
@@ -202,7 +202,7 @@ func process(): Unit { }
 """
         methods = extract_method_signatures(content)
         assert len(methods) == 1
-        assert methods[0]["name"] == "process"
+        assert methods[0].name == "process"
 
     def test_multiple_methods(self) -> None:
         """Test extracting multiple methods."""
@@ -214,7 +214,7 @@ public func multiply(a: Int64, b: Int64): Int64 { a * b }
 ```
 """
         methods = extract_method_signatures(content)
-        names = [m["name"] for m in methods]
+        names = [m.name for m in methods]
         assert "add" in names
         assert "subtract" in names
         assert "multiply" in names

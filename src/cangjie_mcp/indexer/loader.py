@@ -173,9 +173,9 @@ class DocumentLoader:
                 "code_block_count": len(metadata.code_blocks),
                 "source": "cangjie_docs",
                 # Stdlib metadata (lists serialized as JSON for ChromaDB compatibility)
-                "is_stdlib": stdlib_info["is_stdlib"],
-                "packages": json.dumps(stdlib_info["packages"]),
-                "type_names": json.dumps(stdlib_info["type_names"]),
+                "is_stdlib": stdlib_info.is_stdlib,
+                "packages": json.dumps(stdlib_info.packages),
+                "type_names": json.dumps(stdlib_info.type_names),
             },
             doc_id=metadata.file_path,
         )

@@ -160,17 +160,18 @@ cjc [options] <files>
 
 
 @pytest.fixture(autouse=True)
-def auto_reset_providers() -> Generator[None]:
+def auto_reset_providers(request: pytest.FixtureRequest) -> Generator[None]:
     """Automatically reset singleton providers after each test.
 
-    This fixture runs automatically for all tests and ensures a clean
-    state by resetting all singleton providers after each test completes.
+    Only resets in unit tests to avoid destroying session-scoped
+    providers shared by integration tests.
     """
     yield
-    # Reset after test
-    reset_embedding_provider()
-    reset_reranker_provider()
-    reset_settings()
+    # Only reset in unit tests to preserve session-scoped providers
+    if "unit" in str(request.path):
+        reset_embedding_provider()
+        reset_reranker_provider()
+        reset_settings()
 
 
 @pytest.fixture

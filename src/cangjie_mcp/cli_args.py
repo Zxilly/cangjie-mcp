@@ -204,6 +204,15 @@ DebugOption = Annotated[
     ),
 ]
 
+PrebuiltUrlOption = Annotated[
+    str | None,
+    typer.Option(
+        "--prebuilt-url",
+        help="URL to download prebuilt index from",
+        envvar="CANGJIE_PREBUILT_URL",
+    ),
+]
+
 
 def create_literal_validator(
     name: str,

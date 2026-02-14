@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from llama_index.core.postprocessor import SentenceTransformerRerank
 
-from cangjie_mcp.utils import SingletonProvider, console
+from cangjie_mcp.utils import SingletonProvider, console, get_device
 
 if TYPE_CHECKING:
     from llama_index.core.schema import NodeWithScore
@@ -79,28 +79,31 @@ class LocalReranker(RerankerProvider):
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL,
-        device: str = "cpu",
+        device: str | None = None,
     ) -> None:
         """Initialize local reranker.
 
         Args:
             model_name: HuggingFace cross-encoder model name
-            device: Device to use (cuda, cpu, mps).
+            device: Device to use (cuda, xpu, mps, cpu).
+                    If None, auto-detects the best available device.
         """
         self.model_name = model_name
-        self.device = device
+        self.device = device or get_device()
         self._reranker: SentenceTransformerRerank | None = None
 
     def _get_reranker(self, top_n: int) -> SentenceTransformerRerank:
         """Get or create the SentenceTransformerRerank instance."""
-        if self._reranker is None or self._reranker.top_n != top_n:
-            console.print(f"[blue]Loading local reranker model: {self.model_name}...[/blue]")
+        if self._reranker is None:
+            console.print(f"[blue]Loading local reranker model: {self.model_name} (device={self.device})...[/blue]")
             self._reranker = SentenceTransformerRerank(
                 model=self.model_name,
                 top_n=top_n,
                 device=self.device,
             )
             console.print("[green]Local reranker model loaded.[/green]")
+        elif self._reranker.top_n != top_n:
+            self._reranker.top_n = top_n
         return self._reranker
 
     def rerank(
