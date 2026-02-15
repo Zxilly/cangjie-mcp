@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from llama_index.core.postprocessor import SentenceTransformerRerank
 
-from cangjie_mcp.utils import SingletonProvider, console, get_device
+from cangjie_mcp.utils import SingletonProvider, get_device, logger
 
 if TYPE_CHECKING:
     from llama_index.core.schema import NodeWithScore
@@ -95,13 +95,13 @@ class LocalReranker(RerankerProvider):
     def _get_reranker(self, top_n: int) -> SentenceTransformerRerank:
         """Get or create the SentenceTransformerRerank instance."""
         if self._reranker is None:
-            console.print(f"[blue]Loading local reranker model: {self.model_name} (device={self.device})...[/blue]")
+            logger.info("Loading local reranker model: %s (device=%s)...", self.model_name, self.device)
             self._reranker = SentenceTransformerRerank(
                 model=self.model_name,
                 top_n=top_n,
                 device=self.device,
             )
-            console.print("[green]Local reranker model loaded.[/green]")
+            logger.info("Local reranker model loaded.")
         elif self._reranker.top_n != top_n:
             self._reranker.top_n = top_n
         return self._reranker
@@ -170,7 +170,7 @@ class OpenAICompatibleReranker(RerankerProvider):
 
         import httpx
 
-        console.print(f"[blue]Reranking {len(nodes)} results with API ({self.base_url})...[/blue]")
+        logger.info("Reranking %d results with API (%s)...", len(nodes), self.base_url)
 
         # Prepare documents for API call
         documents = [node.text for node in nodes]
@@ -205,7 +205,7 @@ class OpenAICompatibleReranker(RerankerProvider):
             node.score = rerank_score
             reranked.append(node)
 
-        console.print("[green]Reranking complete.[/green]")
+        logger.info("Reranking complete.")
         return reranked
 
     def get_model_name(self) -> str:

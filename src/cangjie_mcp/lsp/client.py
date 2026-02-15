@@ -25,6 +25,7 @@ from cangjie_mcp.lsp.types import (
     HoverResult,
     Location,
 )
+from cangjie_mcp.lsp.utils import is_dict, is_list
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,11 @@ class CangjieClient:
     _reader: asyncio.StreamReader | None = field(default=None, init=False)
     _writer: asyncio.StreamWriter | None = field(default=None, init=False)
     _request_id: int = field(default=0, init=False)
-    _pending_requests: dict[int, asyncio.Future[Any]] = field(default_factory=dict, init=False)
-    _diagnostics: dict[str, list[Diagnostic]] = field(default_factory=dict, init=False)
-    _files: dict[str, int] = field(default_factory=dict, init=False)  # path -> version
+    _pending_requests: dict[int, asyncio.Future[Any]] = field(
+        default_factory=lambda: dict[int, asyncio.Future[Any]](), init=False
+    )
+    _diagnostics: dict[str, list[Diagnostic]] = field(default_factory=lambda: dict[str, list[Diagnostic]](), init=False)
+    _files: dict[str, int] = field(default_factory=lambda: dict[str, int](), init=False)  # path -> version
     _initialized: bool = field(default=False, init=False)
     _message_task: asyncio.Task[None] | None = field(default=None, init=False)
 
@@ -155,7 +158,8 @@ class CangjieClient:
             timeout=timeout / 1000,
         )
 
-        capabilities = result.get("capabilities", {}) if result else {}
+        result_dict = result if is_dict(result) else {}
+        capabilities = result_dict.get("capabilities", {})
         logger.info(f"LSP server capabilities: {list(capabilities.keys())}")
 
         # Send initialized notification
@@ -293,8 +297,8 @@ class CangjieClient:
         Args:
             params: Diagnostics parameters
         """
-        uri = params.get("uri", "")
-        path = unquote(urlparse(uri).path)
+        uri: str = params.get("uri", "")
+        path: str = unquote(urlparse(uri).path)
 
         # Windows: remove leading slash from /C:/path
         if sys.platform == "win32" and path.startswith("/") and len(path) > 2 and path[2] == ":":
@@ -490,7 +494,12 @@ class CangjieClient:
 
         if result is None:
             return []
-        items = result["items"] if isinstance(result, dict) and "items" in result else result
+        if is_dict(result) and "items" in result:
+            items = result["items"]
+        elif is_list(result):
+            items = result
+        else:
+            return []
         return [CompletionItem.model_validate(item) for item in items]
 
     async def get_diagnostics(self, file_path: str) -> list[Diagnostic]:
@@ -516,9 +525,9 @@ class CangjieClient:
         """
         if result is None:
             return []
-        if isinstance(result, dict):
+        if is_dict(result):
             return [Location.model_validate(result)]
-        if isinstance(result, list):
+        if is_list(result):
             return [Location.model_validate(loc) for loc in result if loc is not None]
         return []
 

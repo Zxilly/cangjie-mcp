@@ -8,7 +8,7 @@ from pathlib import Path
 from llama_index.core import Document
 
 from cangjie_mcp.indexer.api_extractor import extract_stdlib_info
-from cangjie_mcp.utils import console
+from cangjie_mcp.utils import logger
 
 
 @dataclass
@@ -124,7 +124,7 @@ class DocumentLoader:
         documents: list[Document] = []
         md_files = list(self.source_dir.rglob("*.md"))
 
-        console.print(f"[blue]Found {len(md_files)} markdown files.[/blue]")
+        logger.info("Found %d markdown files.", len(md_files))
 
         for file_path in md_files:
             try:
@@ -132,9 +132,9 @@ class DocumentLoader:
                 if doc:
                     documents.append(doc)
             except Exception as e:
-                console.print(f"[yellow]Warning: Failed to load {file_path}: {e}[/yellow]")
+                logger.warning("Failed to load %s: %s", file_path, e)
 
-        console.print(f"[green]Loaded {len(documents)} documents.[/green]")
+        logger.info("Loaded %d documents.", len(documents))
         return documents
 
     def _load_document(self, file_path: Path) -> Document | None:
@@ -198,7 +198,7 @@ class DocumentLoader:
                 if doc:
                     documents.append(doc)
             except Exception as e:
-                console.print(f"[yellow]Warning: Failed to load {file_path}: {e}[/yellow]")
+                logger.warning("Failed to load %s: %s", file_path, e)
 
         return documents
 

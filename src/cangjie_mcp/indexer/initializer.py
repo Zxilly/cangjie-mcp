@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cangjie_mcp.utils import console, logger
+from cangjie_mcp.utils import logger
 
 if TYPE_CHECKING:
     from cangjie_mcp.config import Settings
@@ -35,36 +35,36 @@ def build_index(settings: Settings, store: VectorStore, embedding_provider: Embe
     from cangjie_mcp.repo.git_manager import GitManager
 
     # Ensure repo is ready
-    console.print("[blue]Ensuring documentation repository...[/blue]")
+    logger.info("Ensuring documentation repository...")
     git_mgr = GitManager(settings.docs_repo_dir)
     git_mgr.ensure_cloned()
 
     current_version = git_mgr.get_current_version()
     if current_version != settings.docs_version:
-        console.print(f"[blue]Checking out version {settings.docs_version}...[/blue]")
+        logger.info("Checking out version %s...", settings.docs_version)
         git_mgr.checkout(settings.docs_version)
 
     # Load documents
-    console.print("[blue]Loading documents...[/blue]")
+    logger.info("Loading documents...")
     loader = DocumentLoader(settings.docs_source_dir)
     documents = loader.load_all_documents()
 
     if not documents:
-        console.print("[red]No documents found![/red]")
+        logger.error("No documents found!")
         import typer
 
         raise typer.Exit(1)
 
-    console.print(f"  Loaded {len(documents)} documents")
+    logger.info("Loaded %d documents", len(documents))
 
     # Chunk documents
-    console.print("[blue]Chunking documents...[/blue]")
+    logger.info("Chunking documents...")
     chunker = create_chunker(embedding_provider, max_chunk_size=settings.chunk_max_size)
     nodes = chunker.chunk_documents(documents, use_semantic=True)
-    console.print(f"  Created {len(nodes)} chunks")
+    logger.info("Created %d chunks", len(nodes))
 
     # Index
-    console.print("[blue]Building index...[/blue]")
+    logger.info("Building index...")
     store.index_nodes(nodes)
     store.save_metadata(
         version=settings.docs_version,
@@ -72,7 +72,7 @@ def build_index(settings: Settings, store: VectorStore, embedding_provider: Embe
         embedding_model=embedding_provider.get_model_name(),
     )
 
-    console.print("[green]Index built successfully![/green]")
+    logger.info("Index built successfully!")
 
 
 def initialize_and_index(settings: Settings) -> None:
@@ -96,10 +96,7 @@ def initialize_and_index(settings: Settings) -> None:
 
         installed = prebuilt_mgr.get_installed_metadata()
         if installed:
-            console.print(
-                f"[green]Using prebuilt index "
-                f"(version: {installed.version}, lang: {installed.lang})[/green]"
-            )
+            logger.info("Using prebuilt index (version: %s, lang: %s)", installed.version, installed.lang)
             return
 
         archive = prebuilt_mgr.download(settings.prebuilt_url)
@@ -112,17 +109,13 @@ def initialize_and_index(settings: Settings) -> None:
 
     installed = prebuilt_mgr.get_installed_metadata()
     if installed and installed.version == settings.docs_version and installed.lang == settings.docs_lang:
-        console.print(
-            f"[green]Using prebuilt index (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
-        )
+        logger.info("Using prebuilt index (version: %s, lang: %s)", settings.docs_version, settings.docs_lang)
         return
 
     store = create_vector_store(settings, with_rerank=False)
 
     if store.is_indexed() and store.version_matches(settings.docs_version, settings.docs_lang):
-        console.print(
-            f"[green]Index already exists (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
-        )
+        logger.info("Index already exists (version: %s, lang: %s)", settings.docs_version, settings.docs_lang)
         return
 
     # Need to build index
@@ -154,13 +147,8 @@ def _warn_ignored_settings(settings: Settings) -> None:
     if overridden:
         names = ", ".join(f"--{name.replace('_', '-')}" for name in overridden)
         logger.warning(
-            "prebuilt_url is set, %s will be ignored — "
-            "these values are determined by the prebuilt archive.",
+            "prebuilt_url is set, %s will be ignored — these values are determined by the prebuilt archive.",
             names,
-        )
-        console.print(
-            f"[yellow]Warning: prebuilt_url is set, {names} will be ignored — "
-            f"these values are determined by the prebuilt archive.[/yellow]"
         )
 
 
@@ -170,11 +158,11 @@ def print_settings_summary(settings: Settings) -> None:
     Args:
         settings: Application settings to summarize
     """
-    console.print("[bold]Cangjie MCP Server[/bold]")
-    console.print(f"  Version: {settings.docs_version}")
-    console.print(f"  Language: {settings.docs_lang}")
-    console.print(f"  Embedding: {settings.embedding_type}")
-    console.print(f"  Rerank: {settings.rerank_type}")
-    if settings.rerank_type != "none":
-        console.print(f"  Rerank Model: {settings.rerank_model}")
-    console.print()
+    logger.info(
+        "Cangjie MCP Server — version=%s, lang=%s, embedding=%s, rerank=%s%s",
+        settings.docs_version,
+        settings.docs_lang,
+        settings.embedding_type,
+        settings.rerank_type,
+        f", rerank_model={settings.rerank_model}" if settings.rerank_type != "none" else "",
+    )

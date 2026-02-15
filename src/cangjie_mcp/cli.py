@@ -51,7 +51,6 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TYPE,
     get_default_data_dir,
 )
-from cangjie_mcp.indexer.initializer import initialize_and_index
 from cangjie_mcp.utils import console, setup_logging
 
 
@@ -131,9 +130,6 @@ def main(
         prebuilt_url=prebuilt_url,
     )
     set_settings(settings)
-
-    # Initialize docs index
-    initialize_and_index(settings)
 
     # Create and run server
     from cangjie_mcp.server.factory import create_mcp_server

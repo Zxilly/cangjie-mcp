@@ -12,8 +12,10 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 from urllib.parse import unquote
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -27,22 +29,14 @@ CJPM_GIT_SUBDIR = "git"
 CJPM_REPOSITORY_SUBDIR = "repository"
 
 
-def check_is_valid(value: object) -> bool:
-    """Check if a value is valid (non-empty, non-null).
+def is_dict(val: object) -> TypeGuard[dict[str, Any]]:
+    """Type-narrowing check: isinstance(val, dict) with proper generic type."""
+    return isinstance(val, dict)
 
-    Args:
-        value: Value to check
 
-    Returns:
-        True if value is valid, False otherwise
-    """
-    if value is None:
-        return False
-    if isinstance(value, str) and value == "":
-        return False
-    if isinstance(value, bool):
-        return value
-    return not (isinstance(value, int | float) and value == 0)
+def is_list(val: object) -> TypeGuard[list[Any]]:
+    """Type-narrowing check: isinstance(val, list) with proper generic type."""
+    return isinstance(val, list)
 
 
 def get_real_path(path_str: str) -> str:
@@ -57,7 +51,7 @@ def get_real_path(path_str: str) -> str:
     Returns:
         Path string with environment variables substituted
     """
-    if not check_is_valid(path_str):
+    if not path_str:
         return path_str
 
     # Normalize to forward slashes
@@ -69,7 +63,7 @@ def get_real_path(path_str: str) -> str:
     def replace_var(match: re.Match[str]) -> str:
         var_name = match.group(1)
         env_value = os.environ.get(var_name, "")
-        if check_is_valid(var_name) and check_is_valid(env_value):
+        if var_name and env_value:
             return env_value.replace("\\", "/")
         return match.group(0)  # Return original if not found
 
@@ -138,7 +132,7 @@ def get_cjpm_config_path(subdir: str) -> Path:
     """
     # Check for CJPM_CONFIG environment variable
     cjpm_config = os.environ.get("CJPM_CONFIG")
-    if cjpm_config and check_is_valid(cjpm_config):
+    if cjpm_config:
         return Path(cjpm_config) / subdir
 
     # Use home directory
@@ -225,6 +219,140 @@ def load_toml_safe(toml_path: Path) -> dict[str, Any]:
     except tomllib.TOMLDecodeError as e:
         logger.warning(f"Failed to parse {toml_path}: {e}")
         return {}
+
+
+# ====================================
+# TOML Schema Models (Pydantic)
+# ====================================
+
+
+class CjpmPackage(BaseModel):
+    """[package] section of cjpm.toml."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = ""
+    target_dir: str = Field(default="", alias="target-dir")
+
+
+class CjpmWorkspace(BaseModel):
+    """[workspace] section of cjpm.toml."""
+
+    model_config = ConfigDict(extra="allow")
+
+    members: list[str] = Field(default_factory=list)
+
+
+class CjpmDepConfig(BaseModel):
+    """Dependency table value (path or git dependency)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    path: str | None = None
+    git: str | None = None
+
+
+class CjpmBinDependencies(BaseModel):
+    """bin-dependencies section within a target."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    path_option: list[str] = Field(default_factory=list, alias="path-option")
+    package_option: dict[str, str] = Field(default_factory=dict, alias="package-option")
+
+
+class CjpmTargetConfig(BaseModel):
+    """A single target platform configuration."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    dependencies: dict[str, str | CjpmDepConfig] = Field(default_factory=dict)
+    dev_dependencies: dict[str, str | CjpmDepConfig] = Field(default_factory=dict, alias="dev-dependencies")
+    bin_dependencies: CjpmBinDependencies | None = Field(default=None, alias="bin-dependencies")
+
+
+class CjpmCModule(BaseModel):
+    """A C FFI module configuration."""
+
+    model_config = ConfigDict(extra="allow")
+
+    path: str = ""
+
+
+class CjpmFfi(BaseModel):
+    """[ffi] section of cjpm.toml."""
+
+    model_config = ConfigDict(extra="allow")
+
+    java: dict[str, Any] = Field(default_factory=dict)
+    c: dict[str, CjpmCModule] = Field(default_factory=dict)
+
+
+class CjpmToml(BaseModel):
+    """Complete cjpm.toml structure."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    package: CjpmPackage | None = None
+    workspace: CjpmWorkspace | None = None
+    dependencies: dict[str, str | CjpmDepConfig] = Field(default_factory=dict)
+    dev_dependencies: dict[str, str | CjpmDepConfig] = Field(default_factory=dict, alias="dev-dependencies")
+    target: dict[str, CjpmTargetConfig] = Field(default_factory=dict)
+    ffi: CjpmFfi | None = None
+
+
+class CjpmLockRequire(BaseModel):
+    """A single entry in cjpm.lock requires section."""
+
+    model_config = ConfigDict(extra="allow")
+
+    commitId: str = ""
+
+
+class CjpmLock(BaseModel):
+    """cjpm.lock structure."""
+
+    model_config = ConfigDict(extra="allow")
+
+    requires: dict[str, CjpmLockRequire] = Field(default_factory=dict)
+
+
+def load_cjpm_toml(toml_path: Path) -> CjpmToml | None:
+    """Load and validate a cjpm.toml file as a typed model.
+
+    Args:
+        toml_path: Path to the cjpm.toml file
+
+    Returns:
+        Validated CjpmToml model, or None if file is missing/empty/invalid
+    """
+    raw = load_toml_safe(toml_path)
+    if not raw:
+        return None
+    try:
+        return CjpmToml.model_validate(raw)
+    except ValidationError as e:
+        logger.warning(f"Invalid cjpm.toml at {toml_path}: {e}")
+        return None
+
+
+def load_cjpm_lock(lock_path: Path) -> CjpmLock | None:
+    """Load and validate a cjpm.lock file as a typed model.
+
+    Args:
+        lock_path: Path to the cjpm.lock file
+
+    Returns:
+        Validated CjpmLock model, or None if file is missing/empty/invalid
+    """
+    raw = load_toml_safe(lock_path)
+    if not raw:
+        return None
+    try:
+        return CjpmLock.model_validate(raw)
+    except ValidationError as e:
+        logger.warning(f"Invalid cjpm.lock at {lock_path}: {e}")
+        return None
 
 
 def strip_trailing_separator(path_str: str) -> str:

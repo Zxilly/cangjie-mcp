@@ -152,7 +152,7 @@ class CompletionItem(BaseModel):
     label: str
     kind: int | None = None
     detail: str | None = None
-    documentation: str | dict[str, Any] | None = None
+    documentation: str | MarkupContent | None = None
     insert_text: str | None = Field(None, alias="insertText")
     insert_text_format: int | None = Field(None, alias="insertTextFormat")
 
@@ -165,16 +165,23 @@ class CompletionItem(BaseModel):
 
 
 class MarkupContent(BaseModel):
-    """Markup content for hover information."""
+    """LSP MarkupContent: { kind: MarkupKind, value: string }."""
 
     kind: str = "markdown"
+    value: str
+
+
+class MarkedString(BaseModel):
+    """LSP MarkedString (object form): { language: string, value: string }."""
+
+    language: str
     value: str
 
 
 class HoverResult(BaseModel):
     """Result of a hover request."""
 
-    contents: str | dict[str, Any] | list[Any]
+    contents: MarkupContent | MarkedString | str | list[MarkupContent | MarkedString | str]
     range: Range | None = None
 
 
@@ -225,14 +232,14 @@ class LocationResult(BaseModel):
 class DefinitionResult(BaseModel):
     """Result of a definition request."""
 
-    locations: list[LocationResult] = Field(default_factory=list)
+    locations: list[LocationResult] = Field(default_factory=lambda: list[LocationResult]())
     count: int = 0
 
 
 class ReferencesResult(BaseModel):
     """Result of a references request."""
 
-    locations: list[LocationResult] = Field(default_factory=list)
+    locations: list[LocationResult] = Field(default_factory=lambda: list[LocationResult]())
     count: int = 0
 
 
@@ -258,7 +265,7 @@ class SymbolOutput(BaseModel):
 class SymbolsResult(BaseModel):
     """Result of a document symbols request."""
 
-    symbols: list[SymbolOutput] = Field(default_factory=list)
+    symbols: list[SymbolOutput] = Field(default_factory=lambda: list[SymbolOutput]())
     count: int = 0
 
 
@@ -278,7 +285,7 @@ class DiagnosticOutput(BaseModel):
 class DiagnosticsResult(BaseModel):
     """Result of a diagnostics request."""
 
-    diagnostics: list[DiagnosticOutput] = Field(default_factory=list)
+    diagnostics: list[DiagnosticOutput] = Field(default_factory=lambda: list[DiagnosticOutput]())
     error_count: int = 0
     warning_count: int = 0
     info_count: int = 0
@@ -298,7 +305,7 @@ class CompletionOutput(BaseModel):
 class CompletionResult(BaseModel):
     """Result of a completion request."""
 
-    items: list[CompletionOutput] = Field(default_factory=list)
+    items: list[CompletionOutput] = Field(default_factory=lambda: list[CompletionOutput]())
     count: int = 0
 
 

@@ -286,7 +286,6 @@ def create_tool_context(
     Args:
         settings: Application settings
         store: Optional pre-loaded VectorStore. If None, creates a new one.
-               Used by HTTP server where store is already loaded by MultiIndexStore.
         document_source: Optional DocumentSource. If None, auto-detects the best source.
                         Priority: prebuilt docs > git repo > null source
 

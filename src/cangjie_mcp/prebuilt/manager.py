@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
-from cangjie_mcp.utils import console, create_download_progress
+from cangjie_mcp.utils import create_download_progress, logger
 
 # Metadata file inside the archive
 ARCHIVE_METADATA_FILE = "prebuilt_metadata.json"
@@ -96,7 +96,7 @@ class PrebuiltManager:
         else:
             output_path = output_path / archive_name if output_path.is_dir() else output_path
 
-        console.print(f"[blue]Building prebuilt index archive: {output_path}[/blue]")
+        logger.info("Building prebuilt index archive: %s", output_path)
 
         # Create temporary directory for packaging
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -109,7 +109,7 @@ class PrebuiltManager:
             # Copy docs files (required)
             temp_docs = temp_path / "docs"
             shutil.copytree(docs_source_dir, temp_docs)
-            console.print(f"[blue]Including docs from: {docs_source_dir}[/blue]")
+            logger.info("Including docs from: %s", docs_source_dir)
 
             # Create metadata file
             metadata = PrebuiltMetadata(
@@ -126,7 +126,7 @@ class PrebuiltManager:
                 tar.add(temp_docs, arcname="docs")
                 tar.add(metadata_path, arcname=ARCHIVE_METADATA_FILE)
 
-        console.print(f"[green]Prebuilt index created: {output_path}[/green]")
+        logger.info("Prebuilt index created: %s", output_path)
         return output_path
 
     def download(self, url: str) -> Path:
@@ -141,7 +141,7 @@ class PrebuiltManager:
         Raises:
             httpx.HTTPError: If download fails
         """
-        console.print(f"[blue]Downloading prebuilt index from {url}...[/blue]")
+        logger.info("Downloading prebuilt index from %s...", url)
 
         self.prebuilt_dir.mkdir(parents=True, exist_ok=True)
         archive_name = url.split("/")[-1] or "prebuilt-index.tar.gz"
@@ -159,7 +159,7 @@ class PrebuiltManager:
                         f.write(chunk)
                         progress.update(task, advance=len(chunk))
 
-        console.print(f"[green]Downloaded to {output_path}[/green]")
+        logger.info("Downloaded to %s", output_path)
         return output_path
 
     def install(self, archive_path: Path) -> PrebuiltMetadata:
@@ -178,7 +178,7 @@ class PrebuiltManager:
         if not archive_path.exists():
             raise FileNotFoundError(f"Archive not found: {archive_path}")
 
-        console.print(f"[blue]Installing prebuilt index from {archive_path}...[/blue]")
+        logger.info("Installing prebuilt index from %s...", archive_path)
 
         # Extract to temporary directory first
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -232,11 +232,13 @@ class PrebuiltManager:
             index_metadata_path = self.chroma_dir / "index_metadata.json"
             index_metadata_path.write_text(installed.model_dump_json(indent=2), encoding="utf-8")
 
-        console.print("[green]Prebuilt index installed successfully.[/green]")
-        console.print(f"  Version: {metadata.version}")
-        console.print(f"  Language: {metadata.lang}")
-        console.print(f"  Embedding: {metadata.embedding_model}")
-        console.print(f"  Docs: {docs_install_path}")
+        logger.info(
+            "Prebuilt index installed successfully. version=%s, lang=%s, embedding=%s, docs=%s",
+            metadata.version,
+            metadata.lang,
+            metadata.embedding_model,
+            docs_install_path,
+        )
 
         return metadata
 

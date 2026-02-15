@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -16,26 +18,28 @@ from cangjie_mcp.server.tools import (
     SearchDocsInput,
     SearchStdlibInput,
     StdlibSearchResult,
-    ToolContext,
     ToolUsageResult,
     TopicResult,
     TopicsListResult,
 )
+
+if TYPE_CHECKING:
+    from cangjie_mcp.server.factory import InitGate
 
 # =============================================================================
 # Tool Registration
 # =============================================================================
 
 
-def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
+def register_docs_tools(mcp: FastMCP, gate: InitGate) -> None:
     """Register all MCP tools with the server.
 
-    This function is shared between create_mcp_server and create_mcp_server_with_store
-    to avoid code duplication.
+    Each tool awaits the gate before processing, so the server can accept
+    connections immediately while initialization runs in the background.
 
     Args:
         mcp: FastMCP server instance
-        ctx: Tool context with store and loader
+        gate: Initialization gate that resolves to ToolContext when ready
     """
 
     @mcp.tool(
@@ -48,7 +52,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             openWorldHint=False,
         ),
     )
-    def cangjie_search_docs(params: SearchDocsInput) -> DocsSearchResult:
+    async def cangjie_search_docs(params: SearchDocsInput) -> DocsSearchResult:
         """Search Cangjie documentation using semantic search.
 
         Performs vector similarity search across all indexed documentation.
@@ -75,6 +79,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - Query: "pattern matching syntax" -> Returns pattern matching docs
             - Query: "async programming" with category="stdlib" -> Filters to stdlib
         """
+        ctx = await gate.get()
         return tools.search_docs(ctx, params)
 
     @mcp.tool(
@@ -87,7 +92,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             openWorldHint=False,
         ),
     )
-    def cangjie_get_topic(params: GetTopicInput) -> TopicResult | str:
+    async def cangjie_get_topic(params: GetTopicInput) -> TopicResult | str:
         """Get complete documentation for a specific topic.
 
         Retrieves the full content of a documentation file by topic name.
@@ -111,6 +116,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - topic="classes" -> Returns full class documentation
             - topic="pattern-matching", category="syntax" -> Specific category lookup
         """
+        ctx = await gate.get()
         result = tools.get_topic(ctx, params)
         return result if result else f"Topic '{params.topic}' not found"
 
@@ -124,7 +130,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             openWorldHint=False,
         ),
     )
-    def cangjie_list_topics(params: ListTopicsInput) -> TopicsListResult:
+    async def cangjie_list_topics(params: ListTopicsInput) -> TopicsListResult:
         """List available documentation topics organized by category.
 
         Returns all documentation topics, optionally filtered by category.
@@ -144,6 +150,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - No params -> Returns all categories and their topics
             - category="cjpm" -> Returns only cjpm-related topics
         """
+        ctx = await gate.get()
         return tools.list_topics(ctx, params)
 
     @mcp.tool(
@@ -156,7 +163,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             openWorldHint=False,
         ),
     )
-    def cangjie_get_code_examples(params: GetCodeExamplesInput) -> list[CodeExample]:
+    async def cangjie_get_code_examples(params: GetCodeExamplesInput) -> list[CodeExample]:
         """Get code examples for a specific Cangjie language feature.
 
         Searches documentation for code blocks related to a feature.
@@ -180,6 +187,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - feature="generics" -> Generic type usage examples
             - feature="async/await" -> Async programming examples
         """
+        ctx = await gate.get()
         return tools.get_code_examples(ctx, params)
 
     @mcp.tool(
@@ -192,7 +200,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             openWorldHint=False,
         ),
     )
-    def cangjie_get_tool_usage(params: GetToolUsageInput) -> ToolUsageResult | str:
+    async def cangjie_get_tool_usage(params: GetToolUsageInput) -> ToolUsageResult | str:
         """Get usage information for Cangjie development tools.
 
         Searches for documentation about Cangjie CLI tools including
@@ -214,6 +222,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - tool_name="cjpm" -> Package manager commands
             - tool_name="cjfmt" -> Code formatter usage
         """
+        ctx = await gate.get()
         result = tools.get_tool_usage(ctx, params)
         return result if result else f"No usage information found for tool '{params.tool_name}'"
 
@@ -227,7 +236,7 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             openWorldHint=False,
         ),
     )
-    def cangjie_search_stdlib(params: SearchStdlibInput) -> StdlibSearchResult:
+    async def cangjie_search_stdlib(params: SearchStdlibInput) -> StdlibSearchResult:
         """Search Cangjie standard library APIs.
 
         Specialized search for standard library documentation.
@@ -252,4 +261,5 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - query="file read", package="std.fs" -> File I/O docs
             - query="HashMap get", type_name="HashMap" -> HashMap-specific docs
         """
+        ctx = await gate.get()
         return tools.search_stdlib(ctx, params)

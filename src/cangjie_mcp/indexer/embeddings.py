@@ -8,7 +8,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 
 from cangjie_mcp.config import Settings
-from cangjie_mcp.utils import SingletonProvider, console, get_device
+from cangjie_mcp.utils import SingletonProvider, get_device, logger
 
 # Known OpenAI models that work with the standard OpenAIEmbedding class
 _OPENAI_NATIVE_MODELS = {
@@ -66,9 +66,9 @@ class LocalEmbedding(EmbeddingProvider):
     def get_embedding_model(self) -> BaseEmbedding:
         """Get the HuggingFace embedding model."""
         if self._model is None:
-            console.print(f"[blue]Loading local embedding model: {self.model_name} (device={self.device})...[/blue]")
+            logger.info("Loading local embedding model: %s (device=%s)...", self.model_name, self.device)
             self._model = HuggingFaceEmbedding(model_name=self.model_name, device=self.device)
-            console.print("[green]Local embedding model loaded.[/green]")
+            logger.info("Local embedding model loaded.")
         return self._model
 
     def get_model_name(self) -> str:
@@ -108,7 +108,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         OpenAILikeEmbedding for custom models on compatible APIs.
         """
         if self._embedding_model is None:
-            console.print(f"[blue]Initializing OpenAI embedding model: {self.model}...[/blue]")
+            logger.info("Initializing OpenAI embedding model: %s...", self.model)
 
             # Use native OpenAI embedding for known models, OpenAILikeEmbedding otherwise
             if self.model in _OPENAI_NATIVE_MODELS:
@@ -125,7 +125,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                     api_base=self.base_url,
                 )
 
-            console.print("[green]OpenAI embedding model initialized.[/green]")
+            logger.info("OpenAI embedding model initialized.")
         return self._embedding_model
 
     def get_model_name(self) -> str:

@@ -10,7 +10,6 @@ from unittest import mock
 import pytest
 
 from cangjie_mcp.lsp.utils import (
-    check_is_valid,
     get_cjpm_config_path,
     get_path_separator,
     get_real_path,
@@ -21,39 +20,6 @@ from cangjie_mcp.lsp.utils import (
     strip_trailing_separator,
     uri_to_path,
 )
-
-
-class TestCheckIsValid:
-    """Tests for check_is_valid function."""
-
-    def test_none_is_invalid(self) -> None:
-        assert check_is_valid(None) is False
-
-    def test_empty_string_is_invalid(self) -> None:
-        assert check_is_valid("") is False
-
-    def test_zero_is_invalid(self) -> None:
-        assert check_is_valid(0) is False
-
-    def test_false_is_invalid(self) -> None:
-        assert check_is_valid(False) is False
-
-    def test_non_empty_string_is_valid(self) -> None:
-        assert check_is_valid("test") is True
-
-    def test_non_zero_number_is_valid(self) -> None:
-        assert check_is_valid(42) is True
-
-    def test_true_is_valid(self) -> None:
-        assert check_is_valid(True) is True
-
-    def test_list_is_valid(self) -> None:
-        assert check_is_valid([]) is True
-        assert check_is_valid([1, 2, 3]) is True
-
-    def test_dict_is_valid(self) -> None:
-        assert check_is_valid({}) is True
-        assert check_is_valid({"key": "value"}) is True
 
 
 class TestGetRealPath:

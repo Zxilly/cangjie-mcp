@@ -14,7 +14,7 @@ from llama_index.core.schema import BaseNode, TextNode
 
 from cangjie_mcp.defaults import DEFAULT_CHUNK_MAX_SIZE
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
-from cangjie_mcp.utils import console
+from cangjie_mcp.utils import logger
 
 # Regex pattern to match fenced code blocks (```language\ncode\n```)
 CODE_BLOCK_PATTERN = re.compile(r"```[\w]*\n.*?```", re.DOTALL)
@@ -237,11 +237,9 @@ class DocumentChunker:
                     result.extend(split_nodes)
 
         if split_count > 0:
-            console.print(
-                f"[yellow]Split {split_count} oversized text segments (>{self.max_chunk_size} chars).[/yellow]"
-            )
+            logger.warning("Split %d oversized text segments (>%d chars).", split_count, self.max_chunk_size)
         if preserved_code_count > 0:
-            console.print(f"[blue]Preserved {preserved_code_count} oversized code blocks intact.[/blue]")
+            logger.info("Preserved %d oversized code blocks intact.", preserved_code_count)
 
         return result
 
@@ -280,10 +278,7 @@ class DocumentChunker:
                     result.append(section_doc)
 
         if split_count > 0:
-            console.print(
-                f"[blue]Pre-split {split_count} large documents by markdown sections "
-                f"into {len(result)} sections.[/blue]"
-            )
+            logger.info("Pre-split %d large documents by markdown sections into %d sections.", split_count, len(result))
 
         return result
 
@@ -309,7 +304,7 @@ class DocumentChunker:
         if not documents:
             return []
 
-        console.print(f"[blue]Chunking {len(documents)} documents...[/blue]")
+        logger.info("Chunking %d documents...", len(documents))
 
         # Step 1: Pre-split large documents by markdown sections
         documents = self._split_large_documents(documents)
@@ -321,7 +316,7 @@ class DocumentChunker:
                 splitter = self._get_semantic_splitter()
                 nodes = splitter.get_nodes_from_documents(documents, show_progress=True)
             except Exception as e:
-                console.print(f"[yellow]Semantic splitting failed: {e}. Falling back to sentence splitting.[/yellow]")
+                logger.warning("Semantic splitting failed: %s. Falling back to sentence splitting.", e)
                 splitter = self._get_fallback_splitter()
                 nodes = splitter.get_nodes_from_documents(documents, show_progress=True)
         else:
@@ -331,7 +326,7 @@ class DocumentChunker:
         # Step 3: Enforce size limits to prevent exceeding embedding model token limits
         nodes = self._enforce_size_limit(nodes)
 
-        console.print(f"[green]Created {len(nodes)} chunks.[/green]")
+        logger.info("Created %d chunks.", len(nodes))
         return nodes
 
     def chunk_single_document(

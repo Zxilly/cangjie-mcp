@@ -22,6 +22,8 @@ from cangjie_mcp.lsp.types import (
     HoverResult,
     Location,
     LocationResult,
+    MarkedString,
+    MarkupContent,
     PositionInput,
     ReferencesResult,
     SymbolOutput,
@@ -161,18 +163,18 @@ def _extract_hover_content(result: HoverResult) -> str:
         Extracted content string
     """
     contents = result.contents
-    if isinstance(contents, dict):
-        return str(contents.get("value", contents))
-    elif isinstance(contents, list):
-        parts = []
-        for item in contents:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                parts.append(item.get("value", str(item)))
-        return "\n\n".join(parts)
-    else:
-        return str(contents)
+    if isinstance(contents, (MarkupContent, MarkedString)):
+        return contents.value
+    if isinstance(contents, str):
+        return contents
+    # list[MarkupContent | MarkedString | str]
+    parts: list[str] = []
+    for item in contents:
+        if isinstance(item, (MarkupContent, MarkedString)):
+            parts.append(item.value)
+        else:
+            parts.append(item)
+    return "\n\n".join(parts)
 
 
 def _convert_symbol(sym: DocumentSymbol, file_path: str) -> SymbolOutput:
@@ -330,8 +332,8 @@ def _extract_documentation(item: CompletionItem) -> str | None:
     doc = item.documentation
     if isinstance(doc, str):
         return doc
-    elif isinstance(doc, dict):
-        return str(doc.get("value", doc))
+    if isinstance(doc, MarkupContent):
+        return doc.value
     return None
 
 

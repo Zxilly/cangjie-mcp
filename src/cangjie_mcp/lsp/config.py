@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cangjie_mcp.lsp.utils import load_toml_safe
+from cangjie_mcp.lsp.utils import load_cjpm_toml
 
 if TYPE_CHECKING:
     from cangjie_mcp.lsp.dependency import DependencyResolver
@@ -277,20 +277,12 @@ def _get_target_dir(workspace_path: Path) -> Path:
     default_target_dir = workspace_path / "target"
     cjpm_path = workspace_path / "cjpm.toml"
 
-    config = load_toml_safe(cjpm_path)
+    cjpm = load_cjpm_toml(cjpm_path)
 
-    if not config or "package" not in config:
+    if cjpm is None or cjpm.package is None or not cjpm.package.target_dir:
         return default_target_dir
 
-    pkg = config["package"]
-    if "target-dir" not in pkg:
-        return default_target_dir
-
-    custom_target_dir = pkg["target-dir"]
-    if custom_target_dir and isinstance(custom_target_dir, str):
-        return Path((workspace_path / custom_target_dir.strip()).resolve())
-
-    return default_target_dir
+    return Path((workspace_path / cjpm.package.target_dir.strip()).resolve())
 
 
 def _get_std_lib_path(sdk_path: Path, extension_path: str) -> str:
@@ -300,7 +292,7 @@ def _get_std_lib_path(sdk_path: Path, extension_path: str) -> str:
 
     Args:
         sdk_path: Path to SDK
-        extension_path: Path to VSCode extension (unused in CLI context)
+        extension_path: Path to VSCode extension
 
     Returns:
         Path string to standard library sources

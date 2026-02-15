@@ -37,9 +37,9 @@ class StdlibInfo:
     """Stdlib information extracted from document."""
 
     is_stdlib: bool = False
-    packages: list[str] = field(default_factory=list)
-    type_names: list[str] = field(default_factory=list)
-    method_names: list[MethodSignature] = field(default_factory=list)
+    packages: list[str] = field(default_factory=lambda: list[str]())
+    type_names: list[str] = field(default_factory=lambda: list[str]())
+    method_names: list[MethodSignature] = field(default_factory=lambda: list[MethodSignature]())
 
 
 def extract_stdlib_info(content: str) -> StdlibInfo:

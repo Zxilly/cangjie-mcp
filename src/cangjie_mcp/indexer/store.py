@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
 from cangjie_mcp.indexer.reranker import RerankerProvider
-from cangjie_mcp.utils import console
+from cangjie_mcp.utils import logger
 
 if TYPE_CHECKING:
     from chromadb.api import ClientAPI
@@ -181,7 +181,7 @@ class VectorStore:
         Returns:
             VectorStoreIndex for querying
         """
-        console.print(f"[blue]Indexing {len(nodes)} nodes into ChromaDB...[/blue]")
+        logger.info("Indexing %d nodes into ChromaDB...", len(nodes))
 
         storage_context = self._reset_collection()
         embed_model = self.embedding_provider.get_embedding_model()
@@ -193,7 +193,7 @@ class VectorStore:
             show_progress=True,
         )
 
-        console.print("[green]Indexing complete.[/green]")
+        logger.info("Indexing complete.")
         return self._index
 
     def index_documents(self, documents: list[Document]) -> VectorStoreIndex:
@@ -205,7 +205,7 @@ class VectorStore:
         Returns:
             VectorStoreIndex for querying
         """
-        console.print(f"[blue]Indexing {len(documents)} documents into ChromaDB...[/blue]")
+        logger.info("Indexing %d documents into ChromaDB...", len(documents))
 
         storage_context = self._reset_collection()
         embed_model = self.embedding_provider.get_embedding_model()
@@ -217,7 +217,7 @@ class VectorStore:
             show_progress=True,
         )
 
-        console.print("[green]Indexing complete.[/green]")
+        logger.info("Indexing complete.")
         return self._index
 
     def get_index(self) -> VectorStoreIndex | None:
@@ -235,10 +235,11 @@ class VectorStore:
         # Load existing index
         vector_store = ChromaVectorStore(chroma_collection=self.collection)
         embed_model = self.embedding_provider.get_embedding_model()
-        self._index = VectorStoreIndex.from_vector_store(
+        index: VectorStoreIndex = VectorStoreIndex.from_vector_store(
             vector_store=vector_store,
             embed_model=embed_model,
         )
+        self._index = index
         return self._index
 
     def search(
@@ -310,9 +311,9 @@ class VectorStore:
             self.client.delete_collection(self.collection_name)
             self._collection = None
             self._index = None
-            console.print("[green]Index cleared.[/green]")
+            logger.info("Index cleared.")
         except Exception as e:
-            console.print(f"[yellow]Warning: Failed to clear index: {e}[/yellow]")
+            logger.warning("Failed to clear index: %s", e)
 
         # Remove metadata file
         metadata_path = self.db_path / METADATA_FILE

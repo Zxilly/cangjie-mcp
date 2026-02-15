@@ -15,7 +15,8 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 if TYPE_CHECKING:
     from cangjie_mcp.config import Settings
 
-# Global console instance - use this instead of creating new Console() instances
+
+# Global console instance - only use for user-facing CLI output (not MCP runtime)
 console = Console()
 
 # Application logger

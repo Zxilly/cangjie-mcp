@@ -4,7 +4,7 @@ from pathlib import Path
 
 from git import GitCommandError, Repo
 
-from cangjie_mcp.utils import console
+from cangjie_mcp.utils import logger
 
 DOCS_REPO_URL = "https://gitcode.com/Cangjie/cangjie_docs.git"
 
@@ -41,10 +41,10 @@ class GitManager:
         Returns:
             The cloned repository
         """
-        console.print(f"[blue]Cloning repository from {DOCS_REPO_URL}...[/blue]")
+        logger.info("Cloning repository from %s...", DOCS_REPO_URL)
         self.repo_dir.parent.mkdir(parents=True, exist_ok=True)
         self._repo = Repo.clone_from(DOCS_REPO_URL, self.repo_dir)
-        console.print("[green]Repository cloned successfully.[/green]")
+        logger.info("Repository cloned successfully.")
         return self._repo
 
     def ensure_cloned(self, fetch: bool = True) -> Repo:
@@ -73,13 +73,13 @@ class GitManager:
         Args:
             repo: The git repository
         """
-        console.print("[blue]Fetching latest tags and commits...[/blue]")
+        logger.info("Fetching latest tags and commits...")
         try:
             # Fetch all branches and tags
             repo.remotes.origin.fetch(tags=True, prune=True)
-            console.print("[green]Fetch complete.[/green]")
+            logger.info("Fetch complete.")
         except GitCommandError as e:
-            console.print(f"[yellow]Warning: Failed to fetch from remote: {e}[/yellow]")
+            logger.warning("Failed to fetch from remote: %s", e)
 
     def list_tags(self) -> list[str]:
         """List all available tags in the repository.
@@ -129,7 +129,7 @@ class GitManager:
             for branch in ("main", "master"):
                 try:
                     repo.git.checkout(branch)
-                    console.print(f"[green]Checked out {branch} branch.[/green]")
+                    logger.info("Checked out %s branch.", branch)
                     return
                 except GitCommandError:
                     continue
@@ -138,7 +138,7 @@ class GitManager:
         # Try to checkout the specified version
         try:
             repo.git.checkout(version)
-            console.print(f"[green]Checked out version {version}.[/green]")
+            logger.info("Checked out version %s.", version)
         except GitCommandError as e:
             raise ValueError(f"Failed to checkout version '{version}': {e}") from e
 
@@ -152,6 +152,6 @@ class GitManager:
         repo = self.ensure_cloned(fetch=False)
         self._fetch_all(repo)
         if not repo.head.is_detached:
-            console.print("[blue]Pulling latest changes...[/blue]")
+            logger.info("Pulling latest changes...")
             repo.remotes.origin.pull()
-            console.print("[green]Pull complete.[/green]")
+            logger.info("Pull complete.")
