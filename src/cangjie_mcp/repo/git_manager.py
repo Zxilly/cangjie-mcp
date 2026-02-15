@@ -3,11 +3,10 @@
 from pathlib import Path
 
 from git import GitCommandError, Repo
-from rich.console import Console
+
+from cangjie_mcp.utils import console
 
 DOCS_REPO_URL = "https://gitcode.com/Cangjie/cangjie_docs.git"
-
-console = Console()
 
 
 class GitManager:

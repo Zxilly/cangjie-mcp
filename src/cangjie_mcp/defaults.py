@@ -5,6 +5,7 @@ used throughout the application. CLI options, configuration, and other
 modules should import from here to avoid duplication.
 """
 
+from pathlib import Path
 from typing import Literal
 
 # Documentation settings
@@ -27,3 +28,11 @@ DEFAULT_CHUNK_MAX_SIZE: int = 6000
 # OpenAI-compatible API settings
 DEFAULT_OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL: str = "text-embedding-3-small"
+
+# Data directory
+DEFAULT_DATA_DIR_NAME: str = ".cangjie-mcp"
+
+
+def get_default_data_dir() -> Path:
+    """Get the default data directory (~/.cangjie-mcp)."""
+    return Path.home() / DEFAULT_DATA_DIR_NAME

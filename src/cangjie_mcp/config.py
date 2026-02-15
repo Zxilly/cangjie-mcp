@@ -24,12 +24,8 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_MODEL,
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
+    get_default_data_dir,
 )
-
-
-def _default_data_dir() -> Path:
-    """Get the default data directory (~/.cangjie-mcp)."""
-    return Path.home() / ".cangjie-mcp"
 
 
 @dataclass
@@ -60,7 +56,7 @@ class Settings:
     chunk_max_size: int = DEFAULT_CHUNK_MAX_SIZE
 
     # Data directory (use field with default_factory for mutable default)
-    data_dir: Path = field(default_factory=_default_data_dir)
+    data_dir: Path = field(default_factory=get_default_data_dir)
 
     # Prebuilt index URL
     prebuilt_url: str | None = None

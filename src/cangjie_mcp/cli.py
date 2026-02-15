@@ -49,6 +49,7 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_MODEL,
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
+    get_default_data_dir,
 )
 from cangjie_mcp.factory import create_settings_from_args
 from cangjie_mcp.indexer.initializer import initialize_and_index
@@ -60,11 +61,6 @@ def _version_callback(value: bool) -> None:
     if value:
         console.print(f"cangjie-mcp {__version__}")
         raise typer.Exit()
-
-
-def _default_data_dir() -> Path:
-    """Get the default data directory (~/.cangjie-mcp)."""
-    return Path.home() / ".cangjie-mcp"
 
 
 # Root app
@@ -203,7 +199,7 @@ def prebuilt_download(
 
     actual_version = version or DEFAULT_DOCS_VERSION
     actual_lang = lang or DEFAULT_DOCS_LANG
-    actual_data_dir = data_dir or _default_data_dir()
+    actual_data_dir = data_dir or get_default_data_dir()
 
     mgr = PrebuiltManager(actual_data_dir)
     try:
@@ -303,12 +299,10 @@ def prebuilt_build(
     Automatically clones documentation repository and builds the vector index
     before creating the archive.
     """
-    from cangjie_mcp.indexer.chunker import create_chunker
     from cangjie_mcp.indexer.embeddings import create_embedding_provider
-    from cangjie_mcp.indexer.loader import DocumentLoader
+    from cangjie_mcp.indexer.initializer import build_index
     from cangjie_mcp.indexer.store import VectorStore
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
-    from cangjie_mcp.repo.git_manager import GitManager
 
     # Build settings with optional overrides
     defaults = Settings()
@@ -333,49 +327,15 @@ def prebuilt_build(
     console.print(f"  Data dir: {settings.data_dir}")
     console.print()
 
-    # Step 1: Ensure repo is ready
-    console.print("[blue]Ensuring documentation repository...[/blue]")
-    git_mgr = GitManager(settings.docs_repo_dir)
-    git_mgr.ensure_cloned()
-
-    current_version = git_mgr.get_current_version()
-    if current_version != settings.docs_version:
-        console.print(f"[blue]Checking out version {settings.docs_version}...[/blue]")
-        git_mgr.checkout(settings.docs_version)
-
-    # Step 2: Load documents
-    console.print("[blue]Loading documents...[/blue]")
-    loader = DocumentLoader(settings.docs_source_dir)
-    documents = loader.load_all_documents()
-
-    if not documents:
-        console.print("[red]No documents found![/red]")
-        raise typer.Exit(1)
-
-    console.print(f"  Loaded {len(documents)} documents")
-
-    # Step 3: Chunk documents
-    console.print("[blue]Chunking documents...[/blue]")
+    # Build the index
     embedding_provider = create_embedding_provider(settings)
-    chunker = create_chunker(embedding_provider, max_chunk_size=settings.chunk_max_size)
-    nodes = chunker.chunk_documents(documents, use_semantic=True)
-    console.print(f"  Created {len(nodes)} chunks")
-
-    # Step 4: Build index
-    console.print("[blue]Building index...[/blue]")
     store = VectorStore(
         db_path=settings.chroma_db_dir,
         embedding_provider=embedding_provider,
     )
-    store.index_nodes(nodes)
-    store.save_metadata(
-        version=settings.docs_version,
-        lang=settings.docs_lang,
-        embedding_model=embedding_provider.get_model_name(),
-    )
-    console.print("[green]Index built successfully![/green]")
+    build_index(settings, store, embedding_provider)
 
-    # Step 5: Create archive
+    # Create archive
     console.print("[blue]Creating archive...[/blue]")
     mgr = PrebuiltManager(settings.index_dir)
 
@@ -408,7 +368,7 @@ def prebuilt_list(
     """List available prebuilt indexes."""
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
-    actual_data_dir = data_dir or _default_data_dir()
+    actual_data_dir = data_dir or get_default_data_dir()
     mgr = PrebuiltManager(actual_data_dir)
 
     # List local archives

@@ -6,11 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from llama_index.core import Document
-from rich.console import Console
 
 from cangjie_mcp.indexer.api_extractor import extract_stdlib_info
-
-console = Console()
+from cangjie_mcp.utils import console
 
 
 @dataclass

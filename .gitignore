@@ -33,3 +33,9 @@ docs_repo/
 
 ref/
 temp/
+
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+*.log

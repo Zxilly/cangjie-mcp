@@ -7,7 +7,6 @@ global state and singleton patterns with a clean dependency injection approach.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -147,12 +146,3 @@ def reset_context() -> None:
     if _context is not None:
         _context.reset()
     _context = None
-
-
-def get_default_data_dir() -> Path:
-    """Get the default data directory (~/.cangjie-mcp).
-
-    Returns:
-        Path to the default data directory
-    """
-    return Path.home() / ".cangjie-mcp"

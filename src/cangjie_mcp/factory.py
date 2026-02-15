@@ -10,11 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from cangjie_mcp.config import Settings
-
-
-def _get_default_data_dir() -> Path:
-    """Get the default data directory (~/.cangjie-mcp)."""
-    return Path.home() / ".cangjie-mcp"
+from cangjie_mcp.defaults import get_default_data_dir
 
 
 def create_settings_from_args(
@@ -70,6 +66,6 @@ def create_settings_from_args(
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
         chunk_max_size=chunk_max_size,
-        data_dir=data_dir if data_dir else _get_default_data_dir(),
+        data_dir=data_dir if data_dir else get_default_data_dir(),
         prebuilt_url=prebuilt_url,
     )

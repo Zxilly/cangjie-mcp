@@ -13,19 +13,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from llama_index.core import Document
-from rich.console import Console
 
 from cangjie_mcp.indexer.loader import (
     extract_code_blocks,
+    extract_metadata_from_path,
     extract_title_from_content,
 )
+from cangjie_mcp.utils import console
 
 if TYPE_CHECKING:
     from git import Repo
     from git.objects import Blob, Tree
     from git.objects.base import IndexObjUnion
-
-console = Console()
 
 
 class DocumentSource(ABC):
@@ -404,27 +403,21 @@ class PrebuiltDocumentSource(DocumentSource):
         if not content.strip():
             return None
 
-        # Extract metadata from path
-        relative_path = file_path.relative_to(self.docs_dir)
-        parts = relative_path.parts
-
-        # Category is typically the first directory
-        category = parts[0] if len(parts) > 1 else "general"
-        topic = file_path.stem
-        title = extract_title_from_content(content)
-        code_blocks = extract_code_blocks(content)
+        metadata = extract_metadata_from_path(file_path, self.docs_dir)
+        metadata.title = extract_title_from_content(content)
+        metadata.code_blocks = extract_code_blocks(content)
 
         return Document(
             text=content,
             metadata={
-                "file_path": str(relative_path),
-                "category": category,
-                "topic": topic,
-                "title": title,
-                "code_block_count": len(code_blocks),
+                "file_path": metadata.file_path,
+                "category": metadata.category,
+                "topic": metadata.topic,
+                "title": metadata.title,
+                "code_block_count": len(metadata.code_blocks),
                 "source": "cangjie_docs",
             },
-            doc_id=str(relative_path),
+            doc_id=metadata.file_path,
         )
 
     def load_all_documents(self) -> list[Document]:

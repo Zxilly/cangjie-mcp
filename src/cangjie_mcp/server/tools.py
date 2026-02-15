@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,9 +19,6 @@ from cangjie_mcp.indexer.store import SearchResult as StoreSearchResult
 from cangjie_mcp.indexer.store import VectorStore, create_vector_store
 from cangjie_mcp.prebuilt.manager import PrebuiltManager
 from cangjie_mcp.repo.git_manager import GitManager
-
-if TYPE_CHECKING:
-    pass
 
 # =============================================================================
 # Input Models (Pydantic)

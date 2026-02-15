@@ -6,7 +6,6 @@ duplication across different commands (main, docs, prebuilt).
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
@@ -26,6 +25,7 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
 )
+from cangjie_mcp.utils import create_literal_validator
 
 
 @dataclass
@@ -212,28 +212,6 @@ PrebuiltUrlOption = Annotated[
         envvar="CANGJIE_PREBUILT_URL",
     ),
 ]
-
-
-def create_literal_validator(
-    name: str,
-    valid_values: tuple[str, ...],
-) -> Callable[[str], str]:
-    """Create a validator for Literal types.
-
-    Args:
-        name: Human-readable name for the parameter
-        valid_values: Tuple of valid string values
-
-    Returns:
-        A validator function that takes a string and returns it if valid
-    """
-
-    def validator(value: str) -> str:
-        if value not in valid_values:
-            raise typer.BadParameter(f"Invalid {name}: {value}. Must be one of: {', '.join(valid_values)}.")
-        return value
-
-    return validator
 
 
 # Pre-defined validators

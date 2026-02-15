@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cangjie": {
+      "command": "uv",
+      "args": ["run", "cangjie-mcp"],
+      "env": {
+        "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz",
+        "CANGJIE_LOG_FILE": "cangjie-mcp.log",
+        "CANGJIE_DEBUG": "1"
+      }
+    }
+  }
+}

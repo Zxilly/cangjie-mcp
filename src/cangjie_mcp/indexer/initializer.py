@@ -12,6 +12,67 @@ from cangjie_mcp.utils import console
 
 if TYPE_CHECKING:
     from cangjie_mcp.config import Settings
+    from cangjie_mcp.indexer.embeddings import EmbeddingProvider
+    from cangjie_mcp.indexer.store import VectorStore
+
+
+def build_index(settings: Settings, store: VectorStore, embedding_provider: EmbeddingProvider) -> None:
+    """Build the vector index from a git documentation repository.
+
+    Ensures the repo is cloned and at the correct version, loads documents,
+    chunks them, indexes into the store, and saves metadata.
+
+    Args:
+        settings: Application settings with paths and configuration
+        store: VectorStore instance to index into
+        embedding_provider: EmbeddingProvider for chunking
+
+    Raises:
+        typer.Exit: If no documents are found
+    """
+    from cangjie_mcp.indexer.chunker import create_chunker
+    from cangjie_mcp.indexer.loader import DocumentLoader
+    from cangjie_mcp.repo.git_manager import GitManager
+
+    # Ensure repo is ready
+    console.print("[blue]Ensuring documentation repository...[/blue]")
+    git_mgr = GitManager(settings.docs_repo_dir)
+    git_mgr.ensure_cloned()
+
+    current_version = git_mgr.get_current_version()
+    if current_version != settings.docs_version:
+        console.print(f"[blue]Checking out version {settings.docs_version}...[/blue]")
+        git_mgr.checkout(settings.docs_version)
+
+    # Load documents
+    console.print("[blue]Loading documents...[/blue]")
+    loader = DocumentLoader(settings.docs_source_dir)
+    documents = loader.load_all_documents()
+
+    if not documents:
+        console.print("[red]No documents found![/red]")
+        import typer
+
+        raise typer.Exit(1)
+
+    console.print(f"  Loaded {len(documents)} documents")
+
+    # Chunk documents
+    console.print("[blue]Chunking documents...[/blue]")
+    chunker = create_chunker(embedding_provider, max_chunk_size=settings.chunk_max_size)
+    nodes = chunker.chunk_documents(documents, use_semantic=True)
+    console.print(f"  Created {len(nodes)} chunks")
+
+    # Index
+    console.print("[blue]Building index...[/blue]")
+    store.index_nodes(nodes)
+    store.save_metadata(
+        version=settings.docs_version,
+        lang=settings.docs_lang,
+        embedding_model=embedding_provider.get_model_name(),
+    )
+
+    console.print("[green]Index built successfully![/green]")
 
 
 def initialize_and_index(settings: Settings) -> None:
@@ -25,12 +86,9 @@ def initialize_and_index(settings: Settings) -> None:
     Args:
         settings: Application settings with paths and configuration
     """
-    from cangjie_mcp.indexer.chunker import create_chunker
     from cangjie_mcp.indexer.embeddings import get_embedding_provider
-    from cangjie_mcp.indexer.loader import DocumentLoader
     from cangjie_mcp.indexer.store import create_vector_store
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
-    from cangjie_mcp.repo.git_manager import GitManager
 
     # Check for prebuilt index first
     prebuilt_mgr = PrebuiltManager(settings.data_dir)
@@ -61,41 +119,9 @@ def initialize_and_index(settings: Settings) -> None:
         )
         return
 
-    # Need to build index - ensure repo is ready
-    console.print("[blue]Building new index...[/blue]")
-
-    git_mgr = GitManager(settings.docs_repo_dir)
-    git_mgr.ensure_cloned()
-
-    # Checkout correct version
-    current_version = git_mgr.get_current_version()
-    if current_version != settings.docs_version:
-        git_mgr.checkout(settings.docs_version)
-
-    # Load documents
-    loader = DocumentLoader(settings.docs_source_dir)
-    documents = loader.load_all_documents()
-
-    if not documents:
-        console.print("[red]No documents found![/red]")
-        import typer
-
-        raise typer.Exit(1)
-
-    # Chunk documents
+    # Need to build index
     embedding_provider = get_embedding_provider(settings)
-    chunker = create_chunker(embedding_provider, max_chunk_size=settings.chunk_max_size)
-    nodes = chunker.chunk_documents(documents, use_semantic=True)
-
-    # Index
-    store.index_nodes(nodes)
-    store.save_metadata(
-        version=settings.docs_version,
-        lang=settings.docs_lang,
-        embedding_model=embedding_provider.get_model_name(),
-    )
-
-    console.print("[green]Index built successfully![/green]")
+    build_index(settings, store, embedding_provider)
 
 
 def print_settings_summary(settings: Settings) -> None:

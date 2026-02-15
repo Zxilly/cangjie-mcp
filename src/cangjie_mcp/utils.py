@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, BinaryIO, TextIO, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
@@ -102,10 +102,6 @@ def setup_logging(log_file: Path | None = None, debug: bool = False) -> None:
         sys.stdin = _StreamWrapper(sys.stdin, stdin_tee)
         sys.stdout = _StreamWrapper(sys.stdout, stdout_tee)
         logger.debug("Debug mode: stdio tee enabled")
-
-
-# Type variable for validator return type
-T = TypeVar("T", bound=str)
 
 
 def create_literal_validator(
