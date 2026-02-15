@@ -142,6 +142,8 @@ class TestPrebuiltBuildCommand:
         assert "Archive built" in result.output
         mock_manager.build.assert_called_once()
 
+    @patch("cangjie_mcp.indexer.store.VectorStore")
+    @patch("cangjie_mcp.indexer.embeddings.create_embedding_provider")
     @patch("cangjie_mcp.indexer.loader.DocumentLoader")
     @patch("cangjie_mcp.repo.git_manager.GitManager")
     @patch("cangjie_mcp.cli.Settings")
@@ -150,6 +152,8 @@ class TestPrebuiltBuildCommand:
         mock_settings_class: MagicMock,
         mock_git_manager_class: MagicMock,
         mock_loader_class: MagicMock,
+        mock_embedding_provider: MagicMock,
+        mock_store_class: MagicMock,
     ) -> None:
         """Test prebuilt build when no documents found."""
         # Setup settings
@@ -161,6 +165,7 @@ class TestPrebuiltBuildCommand:
         mock_settings.data_dir = Path("/test/data")
         mock_settings.docs_repo_dir = Path("/test/repo")
         mock_settings.docs_source_dir = Path("/test/source")
+        mock_settings.chroma_db_dir = Path("/test/chroma")
         mock_settings_class.return_value = mock_settings
 
         # Setup GitManager
@@ -172,6 +177,14 @@ class TestPrebuiltBuildCommand:
         mock_loader = MagicMock()
         mock_loader.load_all_documents.return_value = []
         mock_loader_class.return_value = mock_loader
+
+        # Setup embedding provider
+        mock_provider = MagicMock()
+        mock_embedding_provider.return_value = mock_provider
+
+        # Setup VectorStore
+        mock_store = MagicMock()
+        mock_store_class.return_value = mock_store
 
         result = runner.invoke(app, ["prebuilt", "build"])
 

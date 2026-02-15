@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
-from cangjie_mcp.utils import create_download_progress, logger
+from cangjie_mcp.utils import logger, print_download_progress
 
 # Metadata file inside the archive
 ARCHIVE_METADATA_FILE = "prebuilt_metadata.json"
@@ -151,13 +151,17 @@ class PrebuiltManager:
             response.raise_for_status()
             total = int(response.headers.get("content-length", 0))
 
-            with create_download_progress() as progress:
-                task = progress.add_task("Downloading...", total=total)
+            downloaded = 0
+            with output_path.open("wb") as f:
+                for chunk in response.iter_bytes():
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    print_download_progress(downloaded, total)
+            if total > 0:
+                import sys
 
-                with output_path.open("wb") as f:
-                    for chunk in response.iter_bytes():
-                        f.write(chunk)
-                        progress.update(task, advance=len(chunk))
+                sys.stderr.write("\n")
+                sys.stderr.flush()
 
         logger.info("Downloaded to %s", output_path)
         return output_path

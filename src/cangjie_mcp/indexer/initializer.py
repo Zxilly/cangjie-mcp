@@ -50,9 +50,9 @@ def build_index(settings: Settings, store: VectorStore, embedding_provider: Embe
     documents = loader.load_all_documents()
 
     if not documents:
-        logger.error("No documents found!")
         import typer
 
+        typer.echo("No documents found!")
         raise typer.Exit(1)
 
     logger.info("Loaded %d documents", len(documents))

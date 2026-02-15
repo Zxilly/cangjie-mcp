@@ -13,16 +13,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
-from rich.table import Table
-
 from cangjie_mcp.config import Settings, reset_settings, set_settings
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.reranker import get_reranker_provider, reset_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
 from tests.eval.metrics import EvaluationMetrics, RetrievalResult
-
-console = Console()
 
 # Path to test queries
 QUERIES_FILE = Path(__file__).parent / "test_queries.json"
@@ -55,9 +50,9 @@ def run_evaluation(
 
     # Check if index exists
     if not settings.chroma_db_dir.exists():
-        console.print(f"[red]Index not found at {settings.chroma_db_dir}[/red]")
-        console.print("[yellow]Please build the index first:[/yellow]")
-        console.print("  uv run cangjie-mcp index --version latest --lang zh")
+        print(f"Error: Index not found at {settings.chroma_db_dir}", file=sys.stderr)
+        print("Please build the index first:", file=sys.stderr)
+        print("  uv run cangjie-mcp index --version latest --lang zh", file=sys.stderr)
         sys.exit(1)
 
     # Initialize providers
@@ -71,12 +66,12 @@ def run_evaluation(
         reranker=reranker_provider,
     )
 
-    console.print(f"[blue]Running evaluation with {len(queries)} queries...[/blue]")
-    console.print(f"  Index: {settings.chroma_db_dir}")
-    console.print(f"  Top-K: {top_k}")
-    console.print(f"  Embedding: {embedding_provider.get_model_name()}")
-    console.print(f"  Reranker: {reranker_provider.get_model_name()}")
-    console.print()
+    print(f"Running evaluation with {len(queries)} queries...")
+    print(f"  Index: {settings.chroma_db_dir}")
+    print(f"  Top-K: {top_k}")
+    print(f"  Embedding: {embedding_provider.get_model_name()}")
+    print(f"  Reranker: {reranker_provider.get_model_name()}")
+    print()
 
     results: list[RetrievalResult] = []
 
@@ -110,33 +105,21 @@ def run_evaluation(
         results.append(result)
 
         # Progress indicator
-        status = "[green]OK[/green]" if result.hit else "[red]MISS[/red]"
-        console.print(f"  {status} [{query_id}] {query[:40]}...")
+        status = "OK" if result.hit else "MISS"
+        print(f"  {status} [{query_id}] {query[:40]}...")
 
     return EvaluationMetrics(results=results)
 
 
 def print_detailed_results(metrics: EvaluationMetrics) -> None:
     """Print detailed results table."""
-    table = Table(title="Query Results")
-    table.add_column("ID", style="cyan")
-    table.add_column("Query", style="white")
-    table.add_column("Hit", style="green")
-    table.add_column("RR", style="yellow")
-    table.add_column("KW%", style="blue")
-
+    print("Query Results")
+    print(f"  {'ID':<10} {'Query':<35} {'Hit':<5} {'RR':<6} KW%")
+    print(f"  {'-' * 10} {'-' * 35} {'-' * 5} {'-' * 6} {'-' * 5}")
     for r in metrics.results:
         hit_str = "Y" if r.hit else "N"
-        hit_style = "green" if r.hit else "red"
-        table.add_row(
-            r.query_id,
-            r.query[:30] + "..." if len(r.query) > 30 else r.query,
-            f"[{hit_style}]{hit_str}[/{hit_style}]",
-            f"{r.reciprocal_rank:.2f}",
-            f"{r.keyword_recall:.0%}",
-        )
-
-    console.print(table)
+        query = r.query[:30] + "..." if len(r.query) > 30 else r.query
+        print(f"  {r.query_id:<10} {query:<35} {hit_str:<5} {r.reciprocal_rank:<6.2f} {r.keyword_recall:.0%}")
 
 
 def save_results(metrics: EvaluationMetrics, output_path: Path) -> None:
@@ -168,7 +151,7 @@ def save_results(metrics: EvaluationMetrics, output_path: Path) -> None:
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    console.print(f"\n[green]Results saved to {output_path}[/green]")
+    print(f"\nResults saved to {output_path}")
 
 
 def main() -> None:

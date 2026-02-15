@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.table import Table
 
 from cangjie_mcp import __version__
 from cangjie_mcp.cli_args import (
@@ -51,13 +50,13 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TYPE,
     get_default_data_dir,
 )
-from cangjie_mcp.utils import console, setup_logging
+from cangjie_mcp.utils import setup_logging
 
 
 def _version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console.print(f"cangjie-mcp {__version__}")
+        typer.echo(f"cangjie-mcp {__version__}")
         raise typer.Exit()
 
 
@@ -135,7 +134,7 @@ def main(
     from cangjie_mcp.server.factory import create_mcp_server
 
     mcp = create_mcp_server(settings)
-    console.print("[blue]Starting MCP server...[/blue]")
+    typer.echo("Starting MCP server...")
     mcp.run(transport="stdio")
 
 
@@ -164,7 +163,7 @@ def prebuilt_download(
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
     if not url:
-        console.print("[red]No URL provided. Set CANGJIE_PREBUILT_URL or use --url[/red]")
+        typer.echo("Error: No URL provided. Set CANGJIE_PREBUILT_URL or use --url")
         raise typer.Exit(1)
 
     actual_data_dir = data_dir or get_default_data_dir()
@@ -174,7 +173,7 @@ def prebuilt_download(
         archive_path = mgr.download(url)
         mgr.install(archive_path)
     except Exception as e:
-        console.print(f"[red]Failed to download: {e}[/red]")
+        typer.echo(f"Error: Failed to download: {e}")
         raise typer.Exit(1) from None
 
 
@@ -287,13 +286,13 @@ def prebuilt_build(
     )
     set_settings(settings)
 
-    console.print("[bold]Building Prebuilt Index Archive[/bold]")
-    console.print(f"  Version: {settings.docs_version}")
-    console.print(f"  Language: {settings.docs_lang}")
-    console.print(f"  Embedding: {settings.embedding_type}")
-    console.print(f"  Chunk size: {settings.chunk_max_size}")
-    console.print(f"  Data dir: {settings.data_dir}")
-    console.print()
+    typer.echo("Building Prebuilt Index Archive")
+    typer.echo(f"  Version: {settings.docs_version}")
+    typer.echo(f"  Language: {settings.docs_lang}")
+    typer.echo(f"  Embedding: {settings.embedding_type}")
+    typer.echo(f"  Chunk size: {settings.chunk_max_size}")
+    typer.echo(f"  Data dir: {settings.data_dir}")
+    typer.echo()
 
     # Build the index
     embedding_provider = create_embedding_provider(settings)
@@ -304,7 +303,7 @@ def prebuilt_build(
     build_index(settings, store, embedding_provider)
 
     # Create archive
-    console.print("[blue]Creating archive...[/blue]")
+    typer.echo("Creating archive...")
     mgr = PrebuiltManager(settings.index_dir)
 
     try:
@@ -315,9 +314,9 @@ def prebuilt_build(
             docs_source_dir=settings.docs_source_dir,
             output_path=output,
         )
-        console.print(f"[green]Archive built: {archive_path}[/green]")
+        typer.echo(f"Archive built: {archive_path}")
     except Exception as e:
-        console.print(f"[red]Failed to build archive: {e}[/red]")
+        typer.echo(f"Error: Failed to build archive: {e}")
         raise typer.Exit(1) from None
 
 
@@ -343,32 +342,22 @@ def prebuilt_list(
     local = mgr.list_local()
 
     if not local:
-        console.print("[yellow]No local prebuilt indexes found.[/yellow]")
+        typer.echo("No local prebuilt indexes found.")
     else:
-        table = Table(title="Local Prebuilt Indexes")
-        table.add_column("Version")
-        table.add_column("Language")
-        table.add_column("Embedding")
-        table.add_column("Path")
-
+        typer.echo("Local Prebuilt Indexes")
+        typer.echo(f"  {'Version':<12} {'Language':<10} {'Embedding':<20} Path")
+        typer.echo(f"  {'-' * 12} {'-' * 10} {'-' * 20} {'-' * 20}")
         for item in local:
-            table.add_row(
-                item.version,
-                item.lang,
-                item.embedding_model,
-                item.path,
-            )
-
-        console.print(table)
+            typer.echo(f"  {item.version:<12} {item.lang:<10} {item.embedding_model:<20} {item.path}")
 
     # Show currently installed index
     installed = mgr.get_installed_metadata()
     if installed:
-        console.print()
-        console.print("[bold]Currently Installed:[/bold]")
-        console.print(f"  Version: {installed.version}")
-        console.print(f"  Language: {installed.lang}")
-        console.print(f"  Embedding: {installed.embedding_model}")
+        typer.echo()
+        typer.echo("Currently Installed:")
+        typer.echo(f"  Version: {installed.version}")
+        typer.echo(f"  Language: {installed.lang}")
+        typer.echo(f"  Embedding: {installed.embedding_model}")
 
 
 if __name__ == "__main__":

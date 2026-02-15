@@ -9,15 +9,8 @@ from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 
-from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-
 if TYPE_CHECKING:
     from cangjie_mcp.config import Settings
-
-
-# Global console instance - only use for user-facing CLI output (not MCP runtime)
-console = Console()
 
 # Application logger
 logger = logging.getLogger("cangjie_mcp")
@@ -255,16 +248,17 @@ class SingletonProvider[T]:
         return self._instance is not None
 
 
-def create_download_progress() -> Progress:
-    """Create a Rich progress bar for download operations.
+def print_download_progress(downloaded: int, total: int) -> None:
+    """Print download progress to stderr.
 
-    Returns:
-        Configured Progress instance
+    Args:
+        downloaded: Bytes downloaded so far
+        total: Total bytes to download (0 if unknown)
     """
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        console=console,
-    )
+    if total > 0:
+        pct = downloaded * 100 // total
+        sys.stderr.write(f"\rDownloading... {pct}%")
+    else:
+        mb = downloaded / (1024 * 1024)
+        sys.stderr.write(f"\rDownloading... {mb:.1f} MB")
+    sys.stderr.flush()
