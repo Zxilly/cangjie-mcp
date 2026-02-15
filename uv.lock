@@ -247,7 +247,7 @@ wheels = [
 
 [[package]]
 name = "cangjie-mcp"
-version = "0.2.2"
+version = "0.2.4"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
