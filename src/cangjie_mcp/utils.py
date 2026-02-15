@@ -198,10 +198,6 @@ def get_device() -> str:
     return _detected_device
 
 
-# Default encoding for file operations
-ENCODING = "utf-8"
-
-
 class SingletonProvider[T]:
     """Thread-safe singleton provider for lazy initialization.
 
@@ -271,73 +267,3 @@ def create_download_progress() -> Progress:
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         console=console,
     )
-
-
-def ensure_dir(path: Path) -> Path:
-    """Ensure directory exists, creating if necessary.
-
-    Args:
-        path: Directory path to ensure exists
-
-    Returns:
-        The same path (for chaining)
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def extract_str_metadata(metadata: dict[str, str], *keys: str) -> dict[str, str]:
-    """Extract string values from metadata dictionary.
-
-    Args:
-        metadata: Source metadata dictionary
-        *keys: Keys to extract
-
-    Returns:
-        Dictionary with extracted string values (empty string for missing keys)
-    """
-    return {k: str(metadata.get(k, "")) for k in keys}
-
-
-# Import here to avoid circular imports in type hints
-from pydantic import BaseModel  # noqa: E402
-
-
-class JsonFileModel(BaseModel):
-    """Base model with JSON file I/O utilities.
-
-    Provides convenient methods for saving to and loading from JSON files.
-
-    Example:
-        >>> class MyConfig(JsonFileModel):
-        ...     name: str
-        ...     value: int
-        >>> config = MyConfig(name="test", value=42)
-        >>> config.save_to_file(Path("config.json"))
-        >>> loaded = MyConfig.load_from_file(Path("config.json"))
-    """
-
-    def save_to_file(self, path: Path, indent: int = 2) -> None:
-        """Save model to JSON file.
-
-        Args:
-            path: File path to write to
-            indent: JSON indentation level
-        """
-        path.write_text(self.model_dump_json(indent=indent), encoding=ENCODING)
-
-    @classmethod
-    def load_from_file(cls, path: Path) -> JsonFileModel:
-        """Load model from JSON file.
-
-        Args:
-            path: File path to read from
-
-        Returns:
-            Model instance loaded from file
-
-        Raises:
-            FileNotFoundError: If file does not exist
-            ValidationError: If JSON is invalid
-        """
-        return cls.model_validate_json(path.read_text(encoding=ENCODING))

@@ -12,14 +12,11 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.console import Console
 
 from cangjie_mcp import __version__
 from cangjie_mcp.cli_args import DebugOption, LogFileOption
-from cangjie_mcp.utils import setup_logging
-
-# Use stderr for logging (stdout is reserved for MCP communication)
-console = Console(stderr=True)
+from cangjie_mcp.config import Settings
+from cangjie_mcp.utils import console, setup_logging
 
 lsp_app = typer.Typer(
     name="lsp",
@@ -197,9 +194,9 @@ def lsp_main(
         console.print("[green]LSP server initialized successfully[/green]")
 
         # Create and run MCP server
-        from cangjie_mcp.server.lsp_app import create_lsp_mcp_server
+        from cangjie_mcp.server.factory import create_mcp_server
 
-        mcp = create_lsp_mcp_server()
+        mcp = create_mcp_server(Settings())
         console.print("[blue]Starting MCP server (stdio)...[/blue]")
 
         # Run MCP server (synchronous, blocks until complete)

@@ -1,12 +1,10 @@
-"""FastMCP server for Cangjie documentation."""
+"""FastMCP tool registration for Cangjie documentation."""
 
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from cangjie_mcp.config import Settings
-from cangjie_mcp.prompts import get_docs_prompt
 from cangjie_mcp.server import tools
 from cangjie_mcp.server.tools import (
     CodeExample,
@@ -255,31 +253,3 @@ def register_docs_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             - query="HashMap get", type_name="HashMap" -> HashMap-specific docs
         """
         return tools.search_stdlib(ctx, params)
-
-
-# =============================================================================
-# Server Factory Functions
-# =============================================================================
-
-
-def create_mcp_server(settings: Settings) -> FastMCP:
-    """Create and configure the MCP server.
-
-    Creates a FastMCP server with all Cangjie documentation tools registered.
-    The VectorStore is initialized from settings.
-
-    Args:
-        settings: Application settings including paths and embedding config
-
-    Returns:
-        Configured FastMCP instance ready to serve requests
-    """
-    mcp = FastMCP(
-        name="cangjie_mcp",
-        instructions=get_docs_prompt(),
-    )
-
-    ctx = tools.create_tool_context(settings)
-    register_docs_tools(mcp, ctx)
-
-    return mcp

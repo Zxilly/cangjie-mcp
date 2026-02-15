@@ -8,20 +8,16 @@ def _load(name: str) -> str:
     return files(__package__).joinpath(f"{name}.txt").read_text(encoding="utf-8").strip()
 
 
-def get_docs_prompt() -> str:
-    """Get documentation server prompt."""
-    return _load("docs")
+def get_prompt(*, lsp_enabled: bool = False) -> str:
+    """Get server prompt, optionally including LSP instructions.
 
+    Args:
+        lsp_enabled: Whether LSP tools are available
 
-def get_lsp_prompt() -> str:
-    """Get LSP server prompt."""
-    return _load("lsp")
-
-
-def get_prompt() -> str:
-    """Get server prompt."""
-    return f"""{get_docs_prompt()}
-
----
-
-{get_lsp_prompt()}"""
+    Returns:
+        Combined prompt string
+    """
+    prompt = _load("docs")
+    if lsp_enabled:
+        prompt += f"\n\n---\n\n{_load('lsp')}"
+    return prompt

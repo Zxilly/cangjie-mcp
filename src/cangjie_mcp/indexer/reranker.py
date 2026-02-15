@@ -252,26 +252,16 @@ def create_reranker_provider(
             raise ValueError(f"Unknown rerank type: {rerank_type}")
 
 
-def _create_reranker_from_settings(settings: Settings) -> RerankerProvider:
-    """Create reranker provider from settings.
-
-    Args:
-        settings: Application settings
-
-    Returns:
-        Configured reranker provider
-    """
-    return create_reranker_provider(
+# Global reranker provider singleton
+_reranker_provider = SingletonProvider[RerankerProvider](
+    lambda settings: create_reranker_provider(
         rerank_type=settings.rerank_type,
         local_model=settings.rerank_model,
         api_key=settings.openai_api_key,
         api_model=settings.rerank_model,
         api_base_url=settings.openai_base_url,
     )
-
-
-# Global reranker provider singleton
-_reranker_provider = SingletonProvider[RerankerProvider](_create_reranker_from_settings)
+)
 
 
 def get_reranker_provider(settings: Settings | None = None) -> RerankerProvider:

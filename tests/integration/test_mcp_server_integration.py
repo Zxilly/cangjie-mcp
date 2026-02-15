@@ -47,9 +47,10 @@ class TestMCPServerWithLSPDisabled:
     """Test MCP server creation with LSP disabled (no CANGJIE_HOME)."""
 
     @pytest.mark.asyncio
-    async def test_only_docs_tools_registered(self, local_settings: Settings) -> None:
-        """When lsp_enabled=False, only documentation tools are registered."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=False)
+    async def test_only_docs_tools_registered(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When CANGJIE_HOME is unset, only documentation tools are registered."""
+        monkeypatch.delenv("CANGJIE_HOME", raising=False)
+        mcp = create_mcp_server(local_settings)
 
         tools_list = await mcp.list_tools()
         tool_names = [t.name for t in tools_list]
@@ -61,16 +62,18 @@ class TestMCPServerWithLSPDisabled:
             assert name not in tool_names, f"LSP tool '{name}' should not be registered"
 
     @pytest.mark.asyncio
-    async def test_docs_tool_count(self, local_settings: Settings) -> None:
+    async def test_docs_tool_count(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
         """Exactly 6 docs tools are registered when LSP is disabled."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=False)
+        monkeypatch.delenv("CANGJIE_HOME", raising=False)
+        mcp = create_mcp_server(local_settings)
         tools_list = await mcp.list_tools()
         assert len(tools_list) == len(DOCS_TOOLS)
 
     @pytest.mark.asyncio
-    async def test_all_tools_have_descriptions(self, local_settings: Settings) -> None:
+    async def test_all_tools_have_descriptions(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
         """Every registered tool has a non-empty description."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=False)
+        monkeypatch.delenv("CANGJIE_HOME", raising=False)
+        mcp = create_mcp_server(local_settings)
         tools_list = await mcp.list_tools()
         for tool in tools_list:
             assert tool.description, f"Tool '{tool.name}' has no description"
@@ -81,9 +84,10 @@ class TestMCPServerWithLSPEnabled:
     """Test MCP server creation with LSP enabled."""
 
     @pytest.mark.asyncio
-    async def test_all_tools_registered(self, local_settings: Settings) -> None:
-        """When lsp_enabled=True, both docs and LSP tools are registered."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=True)
+    async def test_all_tools_registered(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When CANGJIE_HOME is set, both docs and LSP tools are registered."""
+        monkeypatch.setenv("CANGJIE_HOME", "/fake/sdk")
+        mcp = create_mcp_server(local_settings)
 
         tools_list = await mcp.list_tools()
         tool_names = [t.name for t in tools_list]
@@ -92,16 +96,18 @@ class TestMCPServerWithLSPEnabled:
             assert name in tool_names, f"Tool '{name}' missing"
 
     @pytest.mark.asyncio
-    async def test_total_tool_count(self, local_settings: Settings) -> None:
+    async def test_total_tool_count(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
         """All 12 tools (6 docs + 6 LSP) are registered."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=True)
+        monkeypatch.setenv("CANGJIE_HOME", "/fake/sdk")
+        mcp = create_mcp_server(local_settings)
         tools_list = await mcp.list_tools()
         assert len(tools_list) == len(DOCS_TOOLS) + len(LSP_TOOLS)
 
     @pytest.mark.asyncio
-    async def test_all_tools_have_descriptions(self, local_settings: Settings) -> None:
+    async def test_all_tools_have_descriptions(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
         """Every registered tool has a non-empty description."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=True)
+        monkeypatch.setenv("CANGJIE_HOME", "/fake/sdk")
+        mcp = create_mcp_server(local_settings)
         tools_list = await mcp.list_tools()
         for tool in tools_list:
             assert tool.description, f"Tool '{tool.name}' has no description"
@@ -110,14 +116,16 @@ class TestMCPServerWithLSPEnabled:
 class TestMCPServerProperties:
     """Test basic MCP server properties."""
 
-    def test_server_name(self, local_settings: Settings) -> None:
+    def test_server_name(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
         """Server is named 'cangjie_mcp'."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=False)
+        monkeypatch.delenv("CANGJIE_HOME", raising=False)
+        mcp = create_mcp_server(local_settings)
         assert mcp.name == "cangjie_mcp"
 
-    def test_server_has_instructions(self, local_settings: Settings) -> None:
+    def test_server_has_instructions(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
         """Server has non-empty instructions (system prompt)."""
-        mcp = create_mcp_server(local_settings, lsp_enabled=False)
+        monkeypatch.delenv("CANGJIE_HOME", raising=False)
+        mcp = create_mcp_server(local_settings)
         assert mcp.instructions is not None
         assert len(mcp.instructions) > 0
 

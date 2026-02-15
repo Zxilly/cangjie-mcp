@@ -1,7 +1,6 @@
-"""FastMCP server for Cangjie LSP.
+"""FastMCP tool registration for Cangjie LSP.
 
-This module creates the MCP server that exposes LSP functionality
-through MCP tools.
+This module registers LSP tools with the MCP server.
 """
 
 from __future__ import annotations
@@ -28,27 +27,6 @@ from cangjie_mcp.lsp.types import (
     ReferencesResult,
     SymbolsResult,
 )
-from cangjie_mcp.prompts import get_lsp_prompt
-
-# =============================================================================
-# Server Creation
-# =============================================================================
-
-
-def create_lsp_mcp_server() -> FastMCP:
-    """Create and configure the LSP MCP server.
-
-    Returns:
-        Configured FastMCP instance with LSP tools registered
-    """
-    mcp = FastMCP(
-        name="cangjie_lsp_mcp",
-        instructions=get_lsp_prompt(),
-    )
-
-    register_lsp_tools(mcp)
-
-    return mcp
 
 
 def register_lsp_tools(mcp: FastMCP) -> None:

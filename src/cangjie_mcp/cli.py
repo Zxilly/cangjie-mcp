@@ -51,7 +51,6 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TYPE,
     get_default_data_dir,
 )
-from cangjie_mcp.factory import create_settings_from_args
 from cangjie_mcp.indexer.initializer import initialize_and_index
 from cangjie_mcp.utils import console, setup_logging
 
@@ -114,15 +113,8 @@ def main(
     # Set up logging early
     setup_logging(log_file, debug)
 
-    # Check if LSP is available
-    import os
-
-    lsp_enabled = bool(os.environ.get("CANGJIE_HOME"))
-    if not lsp_enabled:
-        console.print("[yellow]CANGJIE_HOME not set — LSP tools will not be registered.[/yellow]")
-
     # Validate and build settings
-    settings = create_settings_from_args(
+    settings = Settings(
         docs_version=docs_version,
         docs_lang=validate_lang(lang),  # type: ignore[arg-type]
         embedding_type=validate_embedding_type(embedding),  # type: ignore[arg-type]
@@ -135,7 +127,7 @@ def main(
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
         chunk_max_size=chunk_max_size,
-        data_dir=data_dir,
+        data_dir=data_dir if data_dir else get_default_data_dir(),
         prebuilt_url=prebuilt_url,
     )
     set_settings(settings)
@@ -146,7 +138,7 @@ def main(
     # Create and run server
     from cangjie_mcp.server.factory import create_mcp_server
 
-    mcp = create_mcp_server(settings, lsp_enabled=lsp_enabled)
+    mcp = create_mcp_server(settings)
     console.print("[blue]Starting MCP server...[/blue]")
     mcp.run(transport="stdio")
 
