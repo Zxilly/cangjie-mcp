@@ -1,176 +1,31 @@
 """MCP tool definitions for Cangjie documentation server."""
 
-from __future__ import annotations
-
-from dataclasses import dataclass
+import asyncio
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
 
-from cangjie_mcp.config import Settings
+from cangjie_mcp.config import Settings, get_settings
 from cangjie_mcp.indexer.document_source import (
     DocumentSource,
     GitDocumentSource,
     NullDocumentSource,
     PrebuiltDocumentSource,
 )
+from cangjie_mcp.indexer.initializer import initialize_and_index
 from cangjie_mcp.indexer.loader import extract_code_blocks
 from cangjie_mcp.indexer.store import SearchResult as StoreSearchResult
 from cangjie_mcp.indexer.store import VectorStore, create_vector_store
 from cangjie_mcp.prebuilt.manager import PrebuiltManager
+from cangjie_mcp.prompts import get_prompt
 from cangjie_mcp.repo.git_manager import GitManager
-
-# =============================================================================
-# Input Models (Pydantic)
-# =============================================================================
-
-
-class SearchDocsInput(BaseModel):
-    """Input model for cangjie_search_docs tool."""
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        extra="forbid",
-    )
-
-    query: str = Field(
-        ...,
-        description="Search query describing what you're looking for "
-        "(e.g., 'how to define a class', 'pattern matching syntax')",
-        min_length=1,
-        max_length=500,
-    )
-    category: str | None = Field(
-        default=None,
-        description="Optional category to filter results (e.g., 'cjpm', 'syntax', 'stdlib')",
-    )
-    top_k: int = Field(
-        default=5,
-        description="Number of results to return",
-        ge=1,
-        le=20,
-    )
-    offset: int = Field(
-        default=0,
-        description="Number of results to skip for pagination",
-        ge=0,
-    )
-
-
-class GetTopicInput(BaseModel):
-    """Input model for cangjie_get_topic tool."""
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        extra="forbid",
-    )
-
-    topic: str = Field(
-        ...,
-        description="Topic name - the documentation file name without .md extension "
-        "(e.g., 'classes', 'pattern-matching', 'async-programming')",
-        min_length=1,
-        max_length=200,
-    )
-    category: str | None = Field(
-        default=None,
-        description="Optional category to narrow the search (e.g., 'syntax', 'stdlib')",
-    )
-
-
-class ListTopicsInput(BaseModel):
-    """Input model for cangjie_list_topics tool."""
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        extra="forbid",
-    )
-
-    category: str | None = Field(
-        default=None,
-        description="Optional category to filter by (e.g., 'cjpm', 'syntax')",
-    )
-
-
-class GetCodeExamplesInput(BaseModel):
-    """Input model for cangjie_get_code_examples tool."""
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        extra="forbid",
-    )
-
-    feature: str = Field(
-        ...,
-        description="Feature to find examples for (e.g., 'pattern matching', 'async/await', 'generics')",
-        min_length=1,
-        max_length=200,
-    )
-    top_k: int = Field(
-        default=3,
-        description="Number of documents to search for examples",
-        ge=1,
-        le=10,
-    )
-
-
-class GetToolUsageInput(BaseModel):
-    """Input model for cangjie_get_tool_usage tool."""
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        extra="forbid",
-    )
-
-    tool_name: str = Field(
-        ...,
-        description="Name of the Cangjie tool (e.g., 'cjc', 'cjpm', 'cjfmt', 'cjcov')",
-        min_length=1,
-        max_length=50,
-    )
-
-
-class SearchStdlibInput(BaseModel):
-    """Input model for cangjie_search_stdlib tool."""
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        extra="forbid",
-    )
-
-    query: str = Field(
-        ...,
-        description="API name, method, or description to search for "
-        "(e.g., 'ArrayList add', 'file read', 'HashMap get')",
-        min_length=1,
-        max_length=500,
-    )
-    package: str | None = Field(
-        default=None,
-        description="Filter by package name (e.g., 'std.collection', 'std.fs', 'std.net'). "
-        "Packages are automatically detected from import statements.",
-    )
-    type_name: str | None = Field(
-        default=None,
-        description="Filter by type name (e.g., 'ArrayList', 'HashMap', 'File')",
-    )
-    include_examples: bool = Field(
-        default=True,
-        description="Whether to include code examples in results",
-    )
-    top_k: int = Field(
-        default=5,
-        description="Number of results to return",
-        ge=1,
-        le=20,
-    )
-
 
 # =============================================================================
 # Output Models (Pydantic)
@@ -276,6 +131,30 @@ class ToolContext:
     document_source: DocumentSource
 
 
+@dataclass
+class LifespanContext:
+    """Application context yielded by the lifespan.
+
+    Yielded immediately so the server can accept connections while
+    background initialization is still running.  Tools call
+    ``await ready()`` to block until the ``ToolContext`` is available.
+    """
+
+    _event: asyncio.Event = field(default_factory=asyncio.Event)
+    _tool_ctx: ToolContext | None = field(default=None, init=False)
+
+    async def ready(self) -> ToolContext:
+        """Block until initialization is complete, then return the ToolContext."""
+        await self._event.wait()
+        assert self._tool_ctx is not None
+        return self._tool_ctx
+
+    def complete(self, tool_ctx: ToolContext) -> None:
+        """Signal that initialization is complete."""
+        self._tool_ctx = tool_ctx
+        self._event.set()
+
+
 def create_tool_context(
     settings: Settings,
     store: VectorStore | None = None,
@@ -339,42 +218,118 @@ def _create_document_source(settings: Settings) -> DocumentSource:
 
 
 # =============================================================================
+# MCP Server Instance
+# =============================================================================
+
+
+@asynccontextmanager
+async def _lifespan(_server: FastMCP) -> AsyncIterator[LifespanContext]:
+    settings = get_settings()
+    lifespan_ctx = LifespanContext()
+
+    async def _init() -> None:
+        await asyncio.to_thread(initialize_and_index, settings)
+        tool_ctx = await asyncio.to_thread(create_tool_context, settings)
+        lifespan_ctx.complete(tool_ctx)
+
+    task = asyncio.create_task(_init())
+    try:
+        yield lifespan_ctx
+    finally:
+        await task
+
+
+ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
+
+mcp = FastMCP(
+    "cangjie_mcp",
+    lifespan=_lifespan,
+    instructions=get_prompt(lsp_enabled=bool(os.environ.get("CANGJIE_HOME"))),
+)
+
+
+# =============================================================================
 # Tool Implementations
 # =============================================================================
 
 
-def search_docs(ctx: ToolContext, params: SearchDocsInput) -> DocsSearchResult:
-    """Search documentation using semantic search.
+@mcp.tool(name="cangjie_search_docs", annotations=ANNOTATIONS)
+async def search_docs(
+    query: Annotated[
+        str,
+        Field(
+            description="Search query describing what you're looking for "
+            "(e.g., 'how to define a class', 'pattern matching syntax')",
+            min_length=1,
+            max_length=500,
+        ),
+    ],
+    category: Annotated[
+        str,
+        Field(
+            description="Optional category to filter results (e.g., 'cjpm', 'syntax', 'stdlib')",
+        ),
+    ] = "",
+    top_k: Annotated[
+        int,
+        Field(
+            description="Number of results to return",
+            ge=1,
+            le=20,
+        ),
+    ] = 5,
+    offset: Annotated[
+        int,
+        Field(
+            description="Number of results to skip for pagination",
+            ge=0,
+        ),
+    ] = 0,
+    *,
+    ctx: Context[Any, LifespanContext, Any],
+) -> DocsSearchResult:
+    """Search Cangjie documentation using semantic search.
 
-    Performs semantic search across Cangjie documentation using vector embeddings.
-    Returns matching documentation sections with relevance scores and pagination.
+    Performs vector similarity search across all indexed documentation.
+    Returns matching sections ranked by relevance with pagination support.
 
     Args:
-        ctx: Tool context with store and settings
-        params: Validated search parameters
+        query: Search query describing what you're looking for
+        category: Optional category filter (e.g., 'cjpm', 'syntax')
+        top_k: Number of results to return (default: 5, max: 20)
+        offset: Pagination offset (default: 0)
 
     Returns:
-        SearchResult with items and pagination metadata:
-        {
-            "items": [...],      # List of matching documents
-            "total": int,        # Total matches found (estimated)
-            "count": int,        # Number of items in this response
-            "offset": int,       # Current pagination offset
-            "has_more": bool,    # Whether more results are available
-            "next_offset": int   # Next offset for pagination (or None)
-        }
+        DocsSearchResult containing:
+            - items: List of matching documents with content, score, and metadata
+            - total: Estimated total matches
+            - count: Number of items in this response
+            - offset: Current pagination offset
+            - has_more: Whether more results are available
+            - next_offset: Next offset for pagination (or None)
+
+    Examples:
+        - Query: "how to define a class" -> Returns class definition docs
+        - Query: "pattern matching syntax" -> Returns pattern matching docs
+        - Query: "async programming" with category="stdlib" -> Filters to stdlib
     """
+    tool_ctx = await ctx.request_context.lifespan_context.ready()
     # Request extra results for pagination estimation
-    fetch_count = params.offset + params.top_k + 1
-    results = ctx.store.search(
-        query=params.query,
-        category=params.category,
+    fetch_count = offset + top_k + 1
+    results = tool_ctx.store.search(
+        query=query,
+        category=category or None,
         top_k=fetch_count,
     )
 
     # Apply offset
-    paginated_results = results[params.offset : params.offset + params.top_k]
-    has_more = len(results) > params.offset + params.top_k
+    paginated_results = results[offset : offset + top_k]
+    has_more = len(results) > offset + top_k
 
     items = [
         SearchResultItem(
@@ -392,29 +347,59 @@ def search_docs(ctx: ToolContext, params: SearchDocsInput) -> DocsSearchResult:
         items=items,
         total=len(results),  # Estimated total
         count=len(items),
-        offset=params.offset,
+        offset=offset,
         has_more=has_more,
-        next_offset=params.offset + len(items) if has_more else None,
+        next_offset=offset + len(items) if has_more else None,
     )
 
 
-def get_topic(ctx: ToolContext, params: GetTopicInput) -> TopicResult | None:
-    """Get complete document for a specific topic.
+@mcp.tool(name="cangjie_get_topic", annotations=ANNOTATIONS)
+async def get_topic(
+    topic: Annotated[
+        str,
+        Field(
+            description="Topic name - the documentation file name without .md extension "
+            "(e.g., 'classes', 'pattern-matching', 'async-programming')",
+            min_length=1,
+            max_length=200,
+        ),
+    ],
+    category: Annotated[
+        str,
+        Field(
+            description="Optional category to narrow the search (e.g., 'syntax', 'stdlib')",
+        ),
+    ] = "",
+    *,
+    ctx: Context[Any, LifespanContext, Any],
+) -> TopicResult | str:
+    """Get complete documentation for a specific topic.
 
-    Retrieves the full documentation content for a named topic.
-    Use list_topics first to discover available topic names.
+    Retrieves the full content of a documentation file by topic name.
+    Use cangjie_list_topics first to discover available topic names.
 
     Args:
-        ctx: Tool context
-        params: Validated input with topic name and optional category
+        topic: Topic name (file name without .md extension)
+        category: Optional category to narrow search
 
     Returns:
-        TopicResult with full document content, or None if not found
+        TopicResult with full document content and metadata, or error string if not found.
+        TopicResult contains:
+            - content: Full markdown content of the document
+            - file_path: Path to the source file
+            - category: Document category
+            - topic: Topic name
+            - title: Document title
+
+    Examples:
+        - topic="classes" -> Returns full class documentation
+        - topic="pattern-matching", category="syntax" -> Specific category lookup
     """
-    doc = ctx.document_source.get_document_by_topic(params.topic, params.category)
+    tool_ctx = await ctx.request_context.lifespan_context.ready()
+    doc = tool_ctx.document_source.get_document_by_topic(topic, category or None)
 
     if doc is None:
-        return None
+        return f"Topic '{topic}' not found"
 
     return TopicResult(
         content=doc.text,
@@ -425,21 +410,38 @@ def get_topic(ctx: ToolContext, params: GetTopicInput) -> TopicResult | None:
     )
 
 
-def list_topics(ctx: ToolContext, params: ListTopicsInput) -> TopicsListResult:
-    """List available topics, optionally filtered by category.
+@mcp.tool(name="cangjie_list_topics", annotations=ANNOTATIONS)
+async def list_topics(
+    category: Annotated[
+        str,
+        Field(
+            description="Optional category to filter by (e.g., 'cjpm', 'syntax')",
+        ),
+    ] = "",
+    *,
+    ctx: Context[Any, LifespanContext, Any],
+) -> TopicsListResult:
+    """List available documentation topics organized by category.
 
-    Returns all available documentation topics organized by category.
-    Use this to discover topic names for use with get_topic.
+    Returns all documentation topics, optionally filtered by category.
+    Use this to discover topic names for use with cangjie_get_topic.
 
     Args:
-        ctx: Tool context
-        params: Validated input with optional category filter
+        category: Optional category filter
 
     Returns:
-        TopicsListResult with categories mapping and counts
+        TopicsListResult containing:
+            - categories: Dict mapping category names to lists of topic names
+            - total_categories: Number of categories
+            - total_topics: Total number of topics across all categories
+
+    Examples:
+        - No params -> Returns all categories and their topics
+        - category="cjpm" -> Returns only cjpm-related topics
     """
-    cats = [params.category] if params.category else ctx.document_source.get_categories()
-    categories = {cat: topics for cat in cats if (topics := ctx.document_source.get_topics_in_category(cat))}
+    tool_ctx = await ctx.request_context.lifespan_context.ready()
+    cats = [category] if category else tool_ctx.document_source.get_categories()
+    categories = {cat: topics for cat in cats if (topics := tool_ctx.document_source.get_topics_in_category(cat))}
 
     return TopicsListResult(
         categories=categories,
@@ -448,20 +450,51 @@ def list_topics(ctx: ToolContext, params: ListTopicsInput) -> TopicsListResult:
     )
 
 
-def get_code_examples(ctx: ToolContext, params: GetCodeExamplesInput) -> list[CodeExample]:
-    """Get code examples for a specific feature.
+@mcp.tool(name="cangjie_get_code_examples", annotations=ANNOTATIONS)
+async def get_code_examples(
+    feature: Annotated[
+        str,
+        Field(
+            description="Feature to find examples for (e.g., 'pattern matching', 'async/await', 'generics')",
+            min_length=1,
+            max_length=200,
+        ),
+    ],
+    top_k: Annotated[
+        int,
+        Field(
+            description="Number of documents to search for examples",
+            ge=1,
+            le=10,
+        ),
+    ] = 3,
+    *,
+    ctx: Context[Any, LifespanContext, Any],
+) -> list[CodeExample]:
+    """Get code examples for a specific Cangjie language feature.
 
-    Searches documentation for code examples related to a feature.
-    Returns code blocks with their surrounding context.
+    Searches documentation for code blocks related to a feature.
+    Returns extracted code examples with their surrounding context.
 
     Args:
-        ctx: Tool context
-        params: Validated input with feature name
+        feature: Feature to find examples for
+        top_k: Number of documents to search (default: 3)
 
     Returns:
-        List of CodeExample objects with language, code, and source info
+        List of CodeExample objects, each containing:
+            - language: Programming language of the code block
+            - code: The actual code content
+            - context: Surrounding text providing context
+            - source_topic: Topic where the example was found
+            - source_file: Source file path
+
+    Examples:
+        - feature="pattern matching" -> Pattern matching code examples
+        - feature="generics" -> Generic type usage examples
+        - feature="async/await" -> Async programming examples
     """
-    results = ctx.store.search(query=params.feature, top_k=params.top_k)
+    tool_ctx = await ctx.request_context.lifespan_context.ready()
+    results = tool_ctx.store.search(query=feature, top_k=top_k)
 
     examples: list[CodeExample] = []
     for result in results:
@@ -481,26 +514,47 @@ def get_code_examples(ctx: ToolContext, params: GetCodeExamplesInput) -> list[Co
     return examples
 
 
-def get_tool_usage(ctx: ToolContext, params: GetToolUsageInput) -> ToolUsageResult | None:
-    """Get usage information for a specific Cangjie tool/command.
+@mcp.tool(name="cangjie_get_tool_usage", annotations=ANNOTATIONS)
+async def get_tool_usage(
+    tool_name: Annotated[
+        str,
+        Field(
+            description="Name of the Cangjie tool (e.g., 'cjc', 'cjpm', 'cjfmt', 'cjcov')",
+            min_length=1,
+            max_length=50,
+        ),
+    ],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
+) -> ToolUsageResult | str:
+    """Get usage information for Cangjie development tools.
 
-    Searches for documentation about Cangjie development tools like
-    cjc (compiler), cjpm (package manager), cjfmt (formatter), etc.
+    Searches for documentation about Cangjie CLI tools including
+    compiler, package manager, formatter, and other utilities.
 
     Args:
-        ctx: Tool context
-        params: Validated input with tool name
+        tool_name: Name of the tool (e.g., 'cjc', 'cjpm', 'cjfmt')
 
     Returns:
-        ToolUsageResult with documentation and shell examples, or None if not found
+        ToolUsageResult with documentation and examples, or error string if not found.
+        ToolUsageResult contains:
+            - tool_name: Name of the tool
+            - content: Combined documentation content
+            - examples: List of shell command examples with context
+
+    Examples:
+        - tool_name="cjc" -> Compiler usage and options
+        - tool_name="cjpm" -> Package manager commands
+        - tool_name="cjfmt" -> Code formatter usage
     """
-    results = ctx.store.search(
-        query=f"{params.tool_name} tool usage command",
+    tool_ctx = await ctx.request_context.lifespan_context.ready()
+    results = tool_ctx.store.search(
+        query=f"{tool_name} tool usage command",
         top_k=3,
     )
 
     if not results:
-        return None
+        return f"No usage information found for tool '{tool_name}'"
 
     combined_content: list[str] = []
     code_examples: list[ToolExample] = []
@@ -519,33 +573,79 @@ def get_tool_usage(ctx: ToolContext, params: GetToolUsageInput) -> ToolUsageResu
                 )
 
     return ToolUsageResult(
-        tool_name=params.tool_name,
+        tool_name=tool_name,
         content="\n\n---\n\n".join(combined_content),
         examples=code_examples,
     )
 
 
-def search_stdlib(ctx: ToolContext, params: SearchStdlibInput) -> StdlibSearchResult:
+@mcp.tool(name="cangjie_search_stdlib", annotations=ANNOTATIONS)
+async def search_stdlib(
+    query: Annotated[
+        str,
+        Field(
+            description="API name, method, or description to search for "
+            "(e.g., 'ArrayList add', 'file read', 'HashMap get')",
+            min_length=1,
+            max_length=500,
+        ),
+    ],
+    package: Annotated[
+        str,
+        Field(
+            description="Filter by package name (e.g., 'std.collection', 'std.fs', 'std.net'). "
+            "Packages are automatically detected from import statements.",
+        ),
+    ] = "",
+    type_name: Annotated[
+        str,
+        Field(
+            description="Filter by type name (e.g., 'ArrayList', 'HashMap', 'File')",
+        ),
+    ] = "",
+    include_examples: Annotated[
+        bool,
+        Field(
+            description="Whether to include code examples in results",
+        ),
+    ] = True,
+    top_k: Annotated[
+        int,
+        Field(
+            description="Number of results to return",
+            ge=1,
+            le=20,
+        ),
+    ] = 5,
+    *,
+    ctx: Context[Any, LifespanContext, Any],
+) -> StdlibSearchResult:
     """Search Cangjie standard library APIs.
 
-    Performs semantic search filtered to stdlib documentation.
-    Dynamically filters results based on is_stdlib metadata that was
-    extracted from import statements at index time.
+    Specialized search for standard library documentation.
+    Dynamically detects stdlib-related content based on import statements.
 
     Args:
-        ctx: Tool context with store and settings
-        params: Validated search parameters including:
-            - query: API name, method, or description
-            - package: Optional package filter (e.g., 'std.collection')
-            - type_name: Optional type filter (e.g., 'ArrayList')
-            - include_examples: Whether to include code examples
-            - top_k: Number of results to return
+        query: API name, method, or description to search for
+        package: Filter by package (e.g., 'std.collection', 'std.fs')
+        type_name: Filter by type (e.g., 'ArrayList', 'HashMap')
+        include_examples: Whether to include code examples (default: True)
+        top_k: Number of results to return (default: 5)
 
     Returns:
-        StdlibSearchResult with filtered stdlib API documentation
+        StdlibSearchResult containing:
+            - items: List of stdlib API docs with content, packages, types, examples
+            - count: Number of results
+            - detected_packages: List of all packages found in results
+
+    Examples:
+        - query="ArrayList add" -> ArrayList methods documentation
+        - query="file read", package="std.fs" -> File I/O docs
+        - query="HashMap get", type_name="HashMap" -> HashMap-specific docs
     """
+    tool_ctx = await ctx.request_context.lifespan_context.ready()
     # Search with more candidates to allow for filtering
-    results = ctx.store.search(query=params.query, top_k=params.top_k * 3)
+    results = tool_ctx.store.search(query=query, top_k=top_k * 3)
 
     # Filter to stdlib docs only (using is_stdlib metadata)
     stdlib_results = [
@@ -555,19 +655,19 @@ def search_stdlib(ctx: ToolContext, params: SearchStdlibInput) -> StdlibSearchRe
     ]
 
     # Further filter by package if specified
-    if params.package:
-        stdlib_results = [r for r in stdlib_results if _has_package(r, params.package)]
+    if package:
+        stdlib_results = [r for r in stdlib_results if _has_package(r, package)]
 
     # Further filter by type_name if specified
-    if params.type_name:
-        stdlib_results = [r for r in stdlib_results if _has_type_name(r, params.type_name)]
+    if type_name:
+        stdlib_results = [r for r in stdlib_results if _has_type_name(r, type_name)]
 
     # Collect all detected packages from results for reference
     all_packages: set[str] = set()
 
     # Format results
     items: list[StdlibResultItem] = []
-    for result in stdlib_results[: params.top_k]:
+    for result in stdlib_results[:top_k]:
         # Get packages from metadata (stored as list)
         packages = _get_list_metadata(result, "packages")
         type_names = _get_list_metadata(result, "type_names")
@@ -576,7 +676,7 @@ def search_stdlib(ctx: ToolContext, params: SearchStdlibInput) -> StdlibSearchRe
 
         # Extract code examples if requested
         code_examples: list[CodeExample] = []
-        if params.include_examples:
+        if include_examples:
             code_blocks = extract_code_blocks(result.text)
             for block in code_blocks:
                 code_examples.append(
@@ -606,6 +706,11 @@ def search_stdlib(ctx: ToolContext, params: SearchStdlibInput) -> StdlibSearchRe
         count=len(items),
         detected_packages=sorted(all_packages),
     )
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
 
 def _get_list_metadata(result: StoreSearchResult, key: str) -> list[str]:

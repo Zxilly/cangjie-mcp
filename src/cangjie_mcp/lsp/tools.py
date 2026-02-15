@@ -1,12 +1,13 @@
 """MCP tool definitions for LSP operations.
 
 This module defines the MCP tools that expose LSP functionality
-for code intelligence features.
+for code intelligence features. Importing this module registers
+the LSP tools on the shared ``mcp`` instance from ``server.tools``.
 """
 
-from __future__ import annotations
+from typing import Annotated
 
-from pathlib import Path
+from pydantic import Field
 
 from cangjie_mcp.lsp import get_client, is_available
 from cangjie_mcp.lsp.types import (
@@ -17,14 +18,12 @@ from cangjie_mcp.lsp.types import (
     DiagnosticOutput,
     DiagnosticsResult,
     DocumentSymbol,
-    FileInput,
     HoverOutput,
     HoverResult,
     Location,
     LocationResult,
     MarkedString,
     MarkupContent,
-    PositionInput,
     ReferencesResult,
     SymbolOutput,
     SymbolsResult,
@@ -33,6 +32,7 @@ from cangjie_mcp.lsp.types import (
     symbol_kind_name,
 )
 from cangjie_mcp.lsp.utils import uri_to_path
+from cangjie_mcp.server.tools import ANNOTATIONS, mcp
 
 
 def _normalize_location(loc: Location) -> LocationResult:
@@ -60,97 +60,171 @@ def _check_available() -> None:
 
 
 # =============================================================================
+# Validation helpers
+# =============================================================================
+
+
+def validate_file_path(file_path: str) -> str | None:
+    """Validate that a file path exists and is a Cangjie file.
+
+    Args:
+        file_path: Path to validate
+
+    Returns:
+        Error message if invalid, None if valid
+    """
+    from pathlib import Path
+
+    path = Path(file_path)
+
+    if not path.exists():
+        return f"File not found: {file_path}"
+
+    if not path.is_file():
+        return f"Not a file: {file_path}"
+
+    if path.suffix != ".cj":
+        return f"Not a Cangjie file (expected .cj extension): {file_path}"
+
+    return None
+
+
+# =============================================================================
 # Tool Implementations
 # =============================================================================
 
 
-async def lsp_definition(params: PositionInput) -> DefinitionResult:
-    """Get definition locations for a symbol.
+@mcp.tool(name="cangjie_lsp_definition", annotations=ANNOTATIONS)
+async def lsp_definition(
+    file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+    line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
+    character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+) -> DefinitionResult | str:
+    """Jump to the definition of a symbol.
+
+    Navigate to where a symbol (variable, function, class, etc.) is defined.
 
     Args:
-        params: Position input with file_path, line, and character (1-based)
+        file_path: Absolute path to the .cj file
+        line: Line number (1-based)
+        character: Character position (1-based)
 
     Returns:
-        DefinitionResult with locations
+        DefinitionResult with locations where the symbol is defined,
+        or an error message string.
+
+    Examples:
+        - Cursor on function call -> Returns function definition location
+        - Cursor on variable -> Returns variable declaration location
+        - Cursor on type name -> Returns type definition location
     """
-    _check_available()
-    client = get_client()
+    error = validate_file_path(file_path)
+    if error:
+        return error
+    try:
+        _check_available()
+        client = get_client()
+        locations = await client.definition(file_path, line - 1, character - 1)
+        result_locations = [_normalize_location(loc) for loc in locations]
+        return DefinitionResult(
+            locations=result_locations,
+            count=len(result_locations),
+        )
+    except Exception as e:
+        return f"Error: {e}"
 
-    locations = await client.definition(
-        params.file_path,
-        params.line_0based,
-        params.character_0based,
-    )
 
-    result_locations = [_normalize_location(loc) for loc in locations]
-
-    return DefinitionResult(
-        locations=result_locations,
-        count=len(result_locations),
-    )
-
-
-async def lsp_references(params: PositionInput) -> ReferencesResult:
+@mcp.tool(name="cangjie_lsp_references", annotations=ANNOTATIONS)
+async def lsp_references(
+    file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+    line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
+    character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+) -> ReferencesResult | str:
     """Find all references to a symbol.
 
+    Locate all places where a symbol is used, including its definition.
+
     Args:
-        params: Position input with file_path, line, and character (1-based)
+        file_path: Absolute path to the .cj file
+        line: Line number (1-based)
+        character: Character position (1-based)
 
     Returns:
-        ReferencesResult with locations
+        ReferencesResult with all locations where the symbol is referenced,
+        or an error message string.
+
+    Examples:
+        - Find all calls to a function
+        - Find all uses of a variable
+        - Find all implementations of an interface
     """
-    _check_available()
-    client = get_client()
+    error = validate_file_path(file_path)
+    if error:
+        return error
+    try:
+        _check_available()
+        client = get_client()
+        locations = await client.references(file_path, line - 1, character - 1)
+        result_locations = [_normalize_location(loc) for loc in locations]
+        return ReferencesResult(
+            locations=result_locations,
+            count=len(result_locations),
+        )
+    except Exception as e:
+        return f"Error: {e}"
 
-    locations = await client.references(
-        params.file_path,
-        params.line_0based,
-        params.character_0based,
-    )
 
-    result_locations = [_normalize_location(loc) for loc in locations]
-
-    return ReferencesResult(
-        locations=result_locations,
-        count=len(result_locations),
-    )
-
-
-async def lsp_hover(params: PositionInput) -> HoverOutput | None:
+@mcp.tool(name="cangjie_lsp_hover", annotations=ANNOTATIONS)
+async def lsp_hover(
+    file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+    line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
+    character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+) -> HoverOutput | str:
     """Get hover information for a symbol.
 
+    Retrieve type information and documentation for the symbol at the cursor.
+
     Args:
-        params: Position input with file_path, line, and character (1-based)
+        file_path: Absolute path to the .cj file
+        line: Line number (1-based)
+        character: Character position (1-based)
 
     Returns:
-        HoverOutput with content, or None if no hover info available
+        HoverOutput with type/documentation content,
+        "No hover information available", or an error message.
+
+    Examples:
+        - Hover on variable -> Shows variable type
+        - Hover on function -> Shows function signature and docs
+        - Hover on type -> Shows type definition
     """
-    _check_available()
-    client = get_client()
+    error = validate_file_path(file_path)
+    if error:
+        return error
+    try:
+        _check_available()
+        client = get_client()
+        result = await client.hover(file_path, line - 1, character - 1)
 
-    result = await client.hover(
-        params.file_path,
-        params.line_0based,
-        params.character_0based,
-    )
+        if not result:
+            return "No hover information available"
 
-    if not result:
-        return None
+        content = _extract_hover_content(result)
 
-    content = _extract_hover_content(result)
+        # Extract range if available
+        range_result = None
+        if result.range:
+            range_result = LocationResult(
+                file_path=file_path,
+                line=result.range.start.line + 1,
+                character=result.range.start.character + 1,
+                end_line=result.range.end.line + 1,
+                end_character=result.range.end.character + 1,
+            )
 
-    # Extract range if available
-    range_result = None
-    if result.range:
-        range_result = LocationResult(
-            file_path=params.file_path,
-            line=result.range.start.line + 1,
-            character=result.range.start.character + 1,
-            end_line=result.range.end.line + 1,
-            end_character=result.range.end.character + 1,
-        )
-
-    return HoverOutput(content=content, range=range_result)
+        return HoverOutput(content=content, range=range_result)
+    except Exception as e:
+        return f"Error: {e}"
 
 
 def _extract_hover_content(result: HoverResult) -> str:
@@ -202,122 +276,168 @@ def _convert_symbol(sym: DocumentSymbol, file_path: str) -> SymbolOutput:
     )
 
 
-async def lsp_symbols(params: FileInput) -> SymbolsResult:
-    """Get document symbols.
+@mcp.tool(name="cangjie_lsp_symbols", annotations=ANNOTATIONS)
+async def lsp_symbols(
+    file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+) -> SymbolsResult | str:
+    """Get all symbols in a document.
+
+    List all classes, functions, variables, and other symbols defined in a file.
 
     Args:
-        params: File input with file_path
+        file_path: Absolute path to the .cj file
 
     Returns:
-        SymbolsResult with symbols
+        SymbolsResult with hierarchical list of symbols in the document,
+        or an error message string.
+
+    Examples:
+        - Get outline of a file
+        - Find all classes in a module
+        - Navigate to specific functions
     """
-    _check_available()
-    client = get_client()
-
-    symbols = await client.document_symbol(params.file_path)
-
-    result_symbols = [_convert_symbol(sym, params.file_path) for sym in symbols]
-
-    return SymbolsResult(
-        symbols=result_symbols,
-        count=len(result_symbols),
-    )
-
-
-async def lsp_diagnostics(params: FileInput) -> DiagnosticsResult:
-    """Get diagnostics for a file.
-
-    Args:
-        params: File input with file_path
-
-    Returns:
-        DiagnosticsResult with diagnostics and counts
-    """
-    _check_available()
-    client = get_client()
-
-    diagnostics = await client.get_diagnostics(params.file_path)
-
-    result_diagnostics: list[DiagnosticOutput] = []
-    error_count = 0
-    warning_count = 0
-    info_count = 0
-    hint_count = 0
-
-    for diag in diagnostics:
-        severity_str = severity_name(diag.severity)
-
-        # Count by severity
-        if diag.severity == 1:
-            error_count += 1
-        elif diag.severity == 2:
-            warning_count += 1
-        elif diag.severity == 3:
-            info_count += 1
-        elif diag.severity == 4:
-            hint_count += 1
-
-        code_str = str(diag.code) if diag.code is not None else None
-
-        result_diagnostics.append(
-            DiagnosticOutput(
-                message=diag.message,
-                severity=severity_str,
-                line=diag.range.start.line + 1,
-                character=diag.range.start.character + 1,
-                end_line=diag.range.end.line + 1,
-                end_character=diag.range.end.character + 1,
-                code=code_str,
-                source=diag.source,
-            )
+    error = validate_file_path(file_path)
+    if error:
+        return error
+    try:
+        _check_available()
+        client = get_client()
+        symbols = await client.document_symbol(file_path)
+        result_symbols = [_convert_symbol(sym, file_path) for sym in symbols]
+        return SymbolsResult(
+            symbols=result_symbols,
+            count=len(result_symbols),
         )
-
-    return DiagnosticsResult(
-        diagnostics=result_diagnostics,
-        error_count=error_count,
-        warning_count=warning_count,
-        info_count=info_count,
-        hint_count=hint_count,
-    )
+    except Exception as e:
+        return f"Error: {e}"
 
 
-async def lsp_completion(params: PositionInput) -> CompletionResult:
-    """Get code completion items.
+@mcp.tool(name="cangjie_lsp_diagnostics", annotations=ANNOTATIONS)
+async def lsp_diagnostics(
+    file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+) -> DiagnosticsResult | str:
+    """Get diagnostics (errors and warnings) for a file.
+
+    Retrieve all compilation errors, warnings, and hints for a source file.
 
     Args:
-        params: Position input with file_path, line, and character (1-based)
+        file_path: Absolute path to the .cj file
 
     Returns:
-        CompletionResult with completion items
+        DiagnosticsResult with list of diagnostics and severity counts,
+        or an error message string.
+
+    Examples:
+        - Check for syntax errors
+        - Find type mismatches
+        - Identify unused variables
     """
-    _check_available()
-    client = get_client()
+    error = validate_file_path(file_path)
+    if error:
+        return error
+    try:
+        _check_available()
+        client = get_client()
+        diagnostics = await client.get_diagnostics(file_path)
 
-    items = await client.completion(
-        params.file_path,
-        params.line_0based,
-        params.character_0based,
-    )
+        result_diagnostics: list[DiagnosticOutput] = []
+        error_count = 0
+        warning_count = 0
+        info_count = 0
+        hint_count = 0
 
-    result_items: list[CompletionOutput] = []
+        for diag in diagnostics:
+            severity_str = severity_name(diag.severity)
 
-    for item in items:
-        doc_str = _extract_documentation(item)
+            # Count by severity
+            if diag.severity == 1:
+                error_count += 1
+            elif diag.severity == 2:
+                warning_count += 1
+            elif diag.severity == 3:
+                info_count += 1
+            elif diag.severity == 4:
+                hint_count += 1
 
-        result_items.append(
-            CompletionOutput(
-                label=item.label,
-                kind=completion_kind_name(item.kind),
-                detail=item.detail,
-                documentation=doc_str,
-                insert_text=item.insert_text,
+            code_str = str(diag.code) if diag.code is not None else None
+
+            result_diagnostics.append(
+                DiagnosticOutput(
+                    message=diag.message,
+                    severity=severity_str,
+                    line=diag.range.start.line + 1,
+                    character=diag.range.start.character + 1,
+                    end_line=diag.range.end.line + 1,
+                    end_character=diag.range.end.character + 1,
+                    code=code_str,
+                    source=diag.source,
+                )
             )
-        )
 
-    return CompletionResult(
-        items=result_items,
-        count=len(result_items),
-    )
+        return DiagnosticsResult(
+            diagnostics=result_diagnostics,
+            error_count=error_count,
+            warning_count=warning_count,
+            info_count=info_count,
+            hint_count=hint_count,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool(name="cangjie_lsp_completion", annotations=ANNOTATIONS)
+async def lsp_completion(
+    file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+    line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
+    character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+) -> CompletionResult | str:
+    """Get code completion suggestions.
+
+    Retrieve completion suggestions for the current cursor position.
+
+    Args:
+        file_path: Absolute path to the .cj file
+        line: Line number (1-based)
+        character: Character position (1-based)
+
+    Returns:
+        CompletionResult with list of completion items,
+        or an error message string.
+
+    Examples:
+        - Complete method names after "."
+        - Complete variable names
+        - Complete keywords and types
+    """
+    error = validate_file_path(file_path)
+    if error:
+        return error
+    try:
+        _check_available()
+        client = get_client()
+        items = await client.completion(file_path, line - 1, character - 1)
+
+        result_items: list[CompletionOutput] = []
+
+        for item in items:
+            doc_str = _extract_documentation(item)
+
+            result_items.append(
+                CompletionOutput(
+                    label=item.label,
+                    kind=completion_kind_name(item.kind),
+                    detail=item.detail,
+                    documentation=doc_str,
+                    insert_text=item.insert_text,
+                )
+            )
+
+        return CompletionResult(
+            items=result_items,
+            count=len(result_items),
+        )
+    except Exception as e:
+        return f"Error: {e}"
 
 
 def _extract_documentation(item: CompletionItem) -> str | None:
@@ -334,32 +454,4 @@ def _extract_documentation(item: CompletionItem) -> str | None:
         return doc
     if isinstance(doc, MarkupContent):
         return doc.value
-    return None
-
-
-# =============================================================================
-# Validation helpers
-# =============================================================================
-
-
-def validate_file_path(file_path: str) -> str | None:
-    """Validate that a file path exists and is a Cangjie file.
-
-    Args:
-        file_path: Path to validate
-
-    Returns:
-        Error message if invalid, None if valid
-    """
-    path = Path(file_path)
-
-    if not path.exists():
-        return f"File not found: {file_path}"
-
-    if not path.is_file():
-        return f"Not a file: {file_path}"
-
-    if path.suffix != ".cj":
-        return f"Not a Cangjie file (expected .cj extension): {file_path}"
-
     return None

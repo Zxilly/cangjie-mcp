@@ -186,35 +186,6 @@ class HoverResult(BaseModel):
 
 
 # =============================================================================
-# MCP Tool Input Types
-# =============================================================================
-
-
-class PositionInput(BaseModel):
-    """Input for position-based LSP operations."""
-
-    file_path: str = Field(..., description="Absolute path to the source file")
-    line: int = Field(..., ge=1, description="Line number (1-based)")
-    character: int = Field(..., ge=1, description="Character position (1-based)")
-
-    @property
-    def line_0based(self) -> int:
-        """Get 0-based line number for LSP."""
-        return self.line - 1
-
-    @property
-    def character_0based(self) -> int:
-        """Get 0-based character position for LSP."""
-        return self.character - 1
-
-
-class FileInput(BaseModel):
-    """Input for file-based LSP operations."""
-
-    file_path: str = Field(..., description="Absolute path to the source file")
-
-
-# =============================================================================
 # MCP Tool Output Types
 # =============================================================================
 

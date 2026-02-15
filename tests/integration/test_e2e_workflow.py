@@ -5,6 +5,10 @@ through search and tool usage.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+from mcp.server.fastmcp import Context
 
 from cangjie_mcp.config import Settings
 from cangjie_mcp.indexer.document_source import PrebuiltDocumentSource
@@ -12,13 +16,15 @@ from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embeddi
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
-from cangjie_mcp.server.tools import (
-    GetCodeExamplesInput,
-    GetToolUsageInput,
-    GetTopicInput,
-    ListTopicsInput,
-    SearchDocsInput,
-)
+
+
+def _mock_ctx(tool_context: tools.ToolContext) -> MagicMock:
+    """Create a mock MCP Context wrapping a ToolContext."""
+    ctx = MagicMock(spec=Context)
+    lifespan_ctx = tools.LifespanContext()
+    lifespan_ctx.complete(tool_context)
+    ctx.request_context.lifespan_context = lifespan_ctx
+    return ctx
 
 
 class TestEndToEndWorkflow:
@@ -46,77 +52,80 @@ class TestEndToEndWorkflow:
         assert len(results) > 0
         assert any("match" in r.text.lower() or "模式" in r.text for r in results)
 
-    def test_tool_workflow_with_mcp_server(
+    @pytest.mark.asyncio
+    async def test_tool_workflow_with_mcp_server(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test using tools through ToolContext."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.list_topics(ctx, ListTopicsInput())
+        result = await tools.list_topics(ctx=ctx)
         assert result.total_topics > 0
 
         for category, topic_list in result.categories.items():
             if topic_list:
                 topic = topic_list[0]
-                doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
+                doc = await tools.get_topic(topic=topic, category=category, ctx=ctx)
                 assert doc is not None
                 break
 
-        search_results = tools.search_docs(ctx, SearchDocsInput(query="仓颉语言", top_k=5))
+        search_results = await tools.search_docs(query="仓颉语言", top_k=5, ctx=ctx)
         assert search_results.count > 0
 
-    def test_category_based_exploration(
+    @pytest.mark.asyncio
+    async def test_category_based_exploration(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test exploring documentation by category."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.list_topics(ctx, ListTopicsInput())
+        result = await tools.list_topics(ctx=ctx)
 
         for category in result.categories:
-            filtered = tools.list_topics(ctx, ListTopicsInput(category=category))
+            filtered = await tools.list_topics(category=category, ctx=ctx)
             assert category in filtered.categories
             assert len(filtered.categories[category]) > 0
 
-            search_results = tools.search_docs(
-                ctx,
-                SearchDocsInput(query="使用方法", category=category, top_k=2),
-            )
+            search_results = await tools.search_docs(query="使用方法", category=category, top_k=2, ctx=ctx)
             if search_results.count > 0:
                 assert all(r.category == category for r in search_results.items)
 
-    def test_full_document_discovery_workflow(
+    @pytest.mark.asyncio
+    async def test_full_document_discovery_workflow(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test complete document discovery workflow."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
         # 1. List all topics
-        result = tools.list_topics(ctx, ListTopicsInput())
+        result = await tools.list_topics(ctx=ctx)
         assert result.total_categories > 0
 
         # 2. Get topics count
@@ -125,28 +134,30 @@ class TestEndToEndWorkflow:
         # 3. Read each topic
         for category, topic_list in result.categories.items():
             for topic in topic_list:
-                doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
+                doc = await tools.get_topic(topic=topic, category=category, ctx=ctx)
                 assert doc is not None
                 assert doc.category == category
                 assert doc.topic == topic
                 assert len(doc.content) > 0
 
-    def test_search_and_retrieve_workflow(
+    @pytest.mark.asyncio
+    async def test_search_and_retrieve_workflow(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test search followed by document retrieval."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
         # Search for a topic
-        results = tools.search_docs(ctx, SearchDocsInput(query="函数定义", top_k=3))
+        results = await tools.search_docs(query="函数定义", top_k=3, ctx=ctx)
         assert results.count > 0
 
         # Get the top result's topic
@@ -155,26 +166,28 @@ class TestEndToEndWorkflow:
         category = top_result.category
 
         # Retrieve full document
-        doc = tools.get_topic(ctx, GetTopicInput(topic=topic, category=category))
+        doc = await tools.get_topic(topic=topic, category=category, ctx=ctx)
         assert doc is not None
         assert len(doc.content) >= len(top_result.content)
 
-    def test_code_examples_workflow(
+    @pytest.mark.asyncio
+    async def test_code_examples_workflow(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test finding and using code examples."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
         # Get code examples for a feature
-        examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="Hello World", top_k=5))
+        examples = await tools.get_code_examples(feature="Hello World", top_k=5, ctx=ctx)
         assert len(examples) > 0
 
         # Verify examples have required fields
@@ -184,7 +197,7 @@ class TestEndToEndWorkflow:
             assert len(example.code) > 0
 
         # Get tool usage
-        tool_result = tools.get_tool_usage(ctx, GetToolUsageInput(tool_name="cjc"))
+        tool_result = await tools.get_tool_usage(tool_name="cjc", ctx=ctx)
         assert tool_result is not None
         assert isinstance(tool_result.examples, list)
 

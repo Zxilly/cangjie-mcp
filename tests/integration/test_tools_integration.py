@@ -5,96 +5,110 @@ real document stores and indexed content.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+from mcp.server.fastmcp import Context
 
 from cangjie_mcp.config import Settings
 from cangjie_mcp.indexer.document_source import PrebuiltDocumentSource
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
-from cangjie_mcp.server.tools import (
-    GetCodeExamplesInput,
-    GetToolUsageInput,
-    GetTopicInput,
-    ListTopicsInput,
-    SearchDocsInput,
-)
+
+
+def _mock_ctx(tool_context: tools.ToolContext) -> MagicMock:
+    """Create a mock MCP Context wrapping a ToolContext."""
+    ctx = MagicMock(spec=Context)
+    lifespan_ctx = tools.LifespanContext()
+    lifespan_ctx.complete(tool_context)
+    ctx.request_context.lifespan_context = lifespan_ctx
+    return ctx
 
 
 class TestToolsIntegration:
     """Integration tests for MCP tool functions."""
 
-    def test_search_docs_tool(
+    @pytest.mark.asyncio
+    async def test_search_docs_tool(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test search_docs tool function."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        results = tools.search_docs(ctx, SearchDocsInput(query="变量声明", top_k=3))
+        results = await tools.search_docs(query="变量声明", top_k=3, ctx=ctx)
 
         assert results.count > 0
         assert all(isinstance(r.content, str) for r in results.items)
         assert all(r.score > 0 for r in results.items)
 
-    def test_get_topic_tool(
+    @pytest.mark.asyncio
+    async def test_get_topic_tool(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test get_topic tool function."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.get_topic(ctx, GetTopicInput(topic="hello_world"))
+        result = await tools.get_topic(topic="hello_world", ctx=ctx)
 
         assert result is not None
         assert "Hello World" in result.content or "Hello, Cangjie" in result.content
         assert result.category == "basics"
         assert result.topic == "hello_world"
 
-    def test_get_topic_not_found(
+    @pytest.mark.asyncio
+    async def test_get_topic_not_found(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test get_topic returns None for non-existent topic."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.get_topic(ctx, GetTopicInput(topic="nonexistent_topic"))
-        assert result is None
+        result = await tools.get_topic(topic="nonexistent_topic", ctx=ctx)
+        assert isinstance(result, str)
 
-    def test_list_topics_tool(
+    @pytest.mark.asyncio
+    async def test_list_topics_tool(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test list_topics tool function."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.list_topics(ctx, ListTopicsInput())
+        result = await tools.list_topics(ctx=ctx)
 
         assert "basics" in result.categories
         assert "syntax" in result.categories
@@ -102,122 +116,134 @@ class TestToolsIntegration:
         assert "hello_world" in result.categories["basics"]
         assert "functions" in result.categories["syntax"]
 
-    def test_list_topics_by_category(
+    @pytest.mark.asyncio
+    async def test_list_topics_by_category(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test list_topics with category filter."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.list_topics(ctx, ListTopicsInput(category="tools"))
+        result = await tools.list_topics(category="tools", ctx=ctx)
 
         assert result.total_categories == 1
         assert "tools" in result.categories
         assert "cjc" in result.categories["tools"]
         assert "cjpm" in result.categories["tools"]
 
-    def test_get_code_examples_tool(
+    @pytest.mark.asyncio
+    async def test_get_code_examples_tool(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test get_code_examples tool function."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="函数", top_k=3))
+        examples = await tools.get_code_examples(feature="函数", top_k=3, ctx=ctx)
 
         assert len(examples) > 0
         assert all(isinstance(e.language, str) for e in examples)
         assert all(isinstance(e.code, str) for e in examples)
 
-    def test_get_tool_usage_tool(
+    @pytest.mark.asyncio
+    async def test_get_tool_usage_tool(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test get_tool_usage tool function."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.get_tool_usage(ctx, GetToolUsageInput(tool_name="cjpm"))
+        result = await tools.get_tool_usage(tool_name="cjpm", ctx=ctx)
 
         assert result is not None
         assert result.tool_name == "cjpm"
         assert "cjpm" in result.content.lower()
         assert isinstance(result.examples, list)
 
-    def test_search_with_category_filter(
+    @pytest.mark.asyncio
+    async def test_search_with_category_filter(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test search_docs with category filter."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        results = tools.search_docs(ctx, SearchDocsInput(query="编译", category="tools", top_k=3))
+        results = await tools.search_docs(query="编译", category="tools", top_k=3, ctx=ctx)
 
         assert results.count > 0
         assert all(r.category == "tools" for r in results.items)
 
-    def test_get_topic_with_category(
+    @pytest.mark.asyncio
+    async def test_get_topic_with_category(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test get_topic with explicit category."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        result = tools.get_topic(ctx, GetTopicInput(topic="cjc", category="tools"))
+        result = await tools.get_topic(topic="cjc", category="tools", ctx=ctx)
 
         assert result is not None
         assert result.category == "tools"
         assert "cjc" in result.content.lower() or "编译" in result.content
 
-    def test_code_examples_filter_by_language(
+    @pytest.mark.asyncio
+    async def test_code_examples_filter_by_language(
         self,
         integration_docs_dir: Path,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
         """Test get_code_examples returns examples with expected languages."""
-        document_source = PrebuiltDocumentSource(integration_docs_dir)
-        ctx = tools.ToolContext(
-            settings=shared_local_settings,
-            store=local_indexed_store,
-            document_source=document_source,
+        ctx = _mock_ctx(
+            tools.ToolContext(
+                settings=shared_local_settings,
+                store=local_indexed_store,
+                document_source=PrebuiltDocumentSource(integration_docs_dir),
+            )
         )
 
-        examples = tools.get_code_examples(ctx, GetCodeExamplesInput(feature="编译", top_k=5))
+        examples = await tools.get_code_examples(feature="编译", top_k=5, ctx=ctx)
 
         languages = {e.language for e in examples}
         # Should have bash or cangjie examples
