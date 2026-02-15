@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cangjie_mcp.utils import console
+from cangjie_mcp.utils import console, logger
 
 if TYPE_CHECKING:
     from cangjie_mcp.config import Settings
@@ -86,31 +86,37 @@ def initialize_and_index(settings: Settings) -> None:
     Args:
         settings: Application settings with paths and configuration
     """
-    from cangjie_mcp.indexer.embeddings import get_embedding_provider
-    from cangjie_mcp.indexer.store import create_vector_store
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
-    # Check for prebuilt index first
     prebuilt_mgr = PrebuiltManager(settings.data_dir)
-    installed = prebuilt_mgr.get_installed_metadata()
 
+    # When prebuilt_url is configured, version/lang/embedding are determined by the archive
+    if settings.prebuilt_url:
+        _warn_ignored_settings(settings)
+
+        installed = prebuilt_mgr.get_installed_metadata()
+        if installed:
+            console.print(
+                f"[green]Using prebuilt index "
+                f"(version: {installed.version}, lang: {installed.lang})[/green]"
+            )
+            return
+
+        archive = prebuilt_mgr.download(settings.prebuilt_url)
+        prebuilt_mgr.install(archive)
+        return
+
+    # No prebuilt URL — use version/lang to check existing index
+    from cangjie_mcp.indexer.embeddings import get_embedding_provider
+    from cangjie_mcp.indexer.store import create_vector_store
+
+    installed = prebuilt_mgr.get_installed_metadata()
     if installed and installed.version == settings.docs_version and installed.lang == settings.docs_lang:
         console.print(
             f"[green]Using prebuilt index (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
         )
         return
 
-    # Auto-download prebuilt index if URL is configured
-    if settings.prebuilt_url:
-        console.print(f"[blue]Downloading prebuilt index from {settings.prebuilt_url}...[/blue]")
-        archive = prebuilt_mgr.download(settings.prebuilt_url, settings.docs_version, settings.docs_lang)
-        prebuilt_mgr.install(archive)
-        console.print(
-            f"[green]Prebuilt index installed (version: {settings.docs_version}, lang: {settings.docs_lang})[/green]"
-        )
-        return
-
-    # Check existing index
     store = create_vector_store(settings, with_rerank=False)
 
     if store.is_indexed() and store.version_matches(settings.docs_version, settings.docs_lang):
@@ -122,6 +128,40 @@ def initialize_and_index(settings: Settings) -> None:
     # Need to build index
     embedding_provider = get_embedding_provider(settings)
     build_index(settings, store, embedding_provider)
+
+
+_PREBUILT_IGNORED_SETTINGS = ("docs_version", "docs_lang", "embedding_type", "local_model")
+
+
+def _warn_ignored_settings(settings: Settings) -> None:
+    """Warn about settings that are ignored when prebuilt_url is set."""
+    from cangjie_mcp.defaults import (
+        DEFAULT_DOCS_LANG,
+        DEFAULT_DOCS_VERSION,
+        DEFAULT_EMBEDDING_TYPE,
+        DEFAULT_LOCAL_MODEL,
+    )
+
+    defaults = {
+        "docs_version": DEFAULT_DOCS_VERSION,
+        "docs_lang": DEFAULT_DOCS_LANG,
+        "embedding_type": DEFAULT_EMBEDDING_TYPE,
+        "local_model": DEFAULT_LOCAL_MODEL,
+    }
+
+    overridden = [name for name in _PREBUILT_IGNORED_SETTINGS if getattr(settings, name) != defaults[name]]
+
+    if overridden:
+        names = ", ".join(f"--{name.replace('_', '-')}" for name in overridden)
+        logger.warning(
+            "prebuilt_url is set, %s will be ignored — "
+            "these values are determined by the prebuilt archive.",
+            names,
+        )
+        console.print(
+            f"[yellow]Warning: prebuilt_url is set, {names} will be ignored — "
+            f"these values are determined by the prebuilt archive.[/yellow]"
+        )
 
 
 def print_settings_summary(settings: Settings) -> None:

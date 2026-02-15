@@ -129,18 +129,11 @@ class PrebuiltManager:
         console.print(f"[green]Prebuilt index created: {output_path}[/green]")
         return output_path
 
-    def download(
-        self,
-        url: str,
-        version: str | None = None,
-        lang: str | None = None,
-    ) -> Path:
+    def download(self, url: str) -> Path:
         """Download a prebuilt index from URL.
 
         Args:
-            url: URL to download from (can be a base URL or direct file URL)
-            version: Optional version to construct filename
-            lang: Optional language to construct filename
+            url: Direct URL to the .tar.gz archive
 
         Returns:
             Path to downloaded archive
@@ -148,18 +141,13 @@ class PrebuiltManager:
         Raises:
             httpx.HTTPError: If download fails
         """
-        # If version and lang provided, construct full URL
-        if version and lang and not url.endswith(".tar.gz"):
-            archive_name = f"cangjie-index-{version}-{lang}.tar.gz"
-            url = f"{url.rstrip('/')}/{archive_name}"
-
         console.print(f"[blue]Downloading prebuilt index from {url}...[/blue]")
 
         self.prebuilt_dir.mkdir(parents=True, exist_ok=True)
-        archive_name = url.split("/")[-1]
+        archive_name = url.split("/")[-1] or "prebuilt-index.tar.gz"
         output_path = self.prebuilt_dir / archive_name
 
-        with httpx.Client(timeout=300.0) as client, client.stream("GET", url) as response:
+        with httpx.Client(timeout=300.0, follow_redirects=True) as client, client.stream("GET", url) as response:
             response.raise_for_status()
             total = int(response.headers.get("content-length", 0))
 

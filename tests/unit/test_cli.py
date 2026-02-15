@@ -297,7 +297,7 @@ class TestInitializeAndIndex:
         initialize_and_index(mock_settings)
 
         # Should download and install
-        mock_manager.download.assert_called_once_with("https://example.com/prebuilt", "v1.0.0", "zh")
+        mock_manager.download.assert_called_once_with("https://example.com/prebuilt")
         mock_manager.install.assert_called_once_with(Path("/test/archive.tar.gz"))
 
     @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")

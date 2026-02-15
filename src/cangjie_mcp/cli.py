@@ -162,24 +162,6 @@ def prebuilt_download(
             envvar="CANGJIE_PREBUILT_URL",
         ),
     ] = None,
-    version: Annotated[
-        str | None,
-        typer.Option(
-            "--version",
-            "-v",
-            help="Version to download",
-            envvar="CANGJIE_DOCS_VERSION",
-        ),
-    ] = None,
-    lang: Annotated[
-        str | None,
-        typer.Option(
-            "--lang",
-            "-l",
-            help="Language to download",
-            envvar="CANGJIE_DOCS_LANG",
-        ),
-    ] = None,
     data_dir: Annotated[
         Path | None,
         typer.Option(
@@ -190,20 +172,18 @@ def prebuilt_download(
         ),
     ] = None,
 ) -> None:
-    """Download a prebuilt index."""
+    """Download and install a prebuilt index."""
     from cangjie_mcp.prebuilt.manager import PrebuiltManager
 
     if not url:
         console.print("[red]No URL provided. Set CANGJIE_PREBUILT_URL or use --url[/red]")
         raise typer.Exit(1)
 
-    actual_version = version or DEFAULT_DOCS_VERSION
-    actual_lang = lang or DEFAULT_DOCS_LANG
     actual_data_dir = data_dir or get_default_data_dir()
 
     mgr = PrebuiltManager(actual_data_dir)
     try:
-        archive_path = mgr.download(url, actual_version, actual_lang)
+        archive_path = mgr.download(url)
         mgr.install(archive_path)
     except Exception as e:
         console.print(f"[red]Failed to download: {e}[/red]")
