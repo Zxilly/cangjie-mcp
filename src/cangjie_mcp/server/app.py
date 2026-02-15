@@ -1,7 +1,5 @@
 """FastMCP tool registration for Cangjie documentation."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import FastMCP
@@ -31,7 +29,7 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-def register_docs_tools(mcp: FastMCP, gate: InitGate) -> None:
+def register_docs_tools(mcp: FastMCP, gate: "InitGate") -> None:
     """Register all MCP tools with the server.
 
     Each tool awaits the gate before processing, so the server can accept

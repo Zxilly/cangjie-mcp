@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from llama_index.core import Document
 
@@ -152,7 +152,7 @@ class GitDocumentSource(DocumentSource):
         Returns:
             File content as string
         """
-        data = bytes(blob.data_stream.read())
+        data = cast(bytes, blob.data_stream.read())
         return data.decode("utf-8")
 
     def _create_document(self, content: str, relative_path: str, category: str, topic: str) -> Document:

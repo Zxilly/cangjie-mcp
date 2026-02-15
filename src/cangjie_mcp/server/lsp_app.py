@@ -3,8 +3,6 @@
 This module registers LSP tools with the MCP server.
 """
 
-from __future__ import annotations
-
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 

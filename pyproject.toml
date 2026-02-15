@@ -138,9 +138,10 @@ reportMissingTypeStubs = "none"
 reportUnusedFunction = "none"
 # Use library source code for type inference when stubs are incomplete
 useLibraryCodeForTypes = true
-# Downgrade unknown type errors to warnings - these come from third-party libs
-# (llama_index, chromadb, gitpython) with incomplete type annotations
-reportUnknownMemberType = "warning"
+# Member types being unknown is inherently a third-party library issue
+# (own members are always typed in strict mode), so suppress it.
+# For argument/variable types, use cast() at third-party boundaries instead.
+reportUnknownMemberType = "none"
 reportUnknownArgumentType = "warning"
 reportUnknownVariableType = "warning"
 include = ["src", "tests"]
