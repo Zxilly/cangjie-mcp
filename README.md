@@ -6,6 +6,7 @@
 
 - **文档搜索**: 基于向量检索的仓颉语言文档搜索
 - **代码智能**: 基于 LSP 的代码补全、跳转定义、查找引用等功能
+- **客户端-服务器架构**: 支持通过 HTTP 服务器分离索引和查询
 
 ## 安装
 
@@ -16,20 +17,45 @@ pip install cangjie-mcp
 或使用 uvx 直接运行（推荐）：
 
 ```bash
-uvx cangjie-mcp  # 启动聚合服务器（包含文档搜索 + 代码智能）
+uvx cangjie-mcp  # 启动 MCP 服务器（包含文档搜索 + 代码智能）
+```
+
+## 架构
+
+cangjie-mcp 支持两种运行模式：
+
+### 本地模式（默认）
+
+MCP 服务器在本地加载嵌入模型和 ChromaDB 索引，直接处理查询。
+
+```bash
+cangjie-mcp
+```
+
+### 客户端-服务器模式
+
+将索引和嵌入模型放在独立的 HTTP 服务器上，MCP 客户端通过 `--server-url` 连接，无需本地加载模型。
+
+```bash
+# 终端 1：启动 HTTP 查询服务器
+cangjie-mcp server --embedding local --port 8765
+
+# 终端 2：启动 MCP 服务器，连接远程索引
+cangjie-mcp --server-url http://localhost:8765
 ```
 
 ## 快速配置
 
+公共文档服务器已部署在 `https://cj-mcp.learningman.top`，连接后无需本地加载嵌入模型，开箱即用。
+
 > **注意**：LSP 功能需要已安装仓颉 SDK，请将 `/path/to/cangjie-sdk` 替换为实际路径，或设置 `CANGJIE_HOME` 环境变量。
 
 <details>
-<summary>Claude Code</summary>
+<summary>Claude Code（推荐）</summary>
 
 ```bash
 claude mcp add \
-  -e CANGJIE_PREBUILT_URL=https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz \
-  -e CANGJIE_RERANK_TYPE=local \
+  -e CANGJIE_SERVER_URL=https://cj-mcp.learningman.top \
   -e CANGJIE_HOME=/path/to/cangjie-sdk \
   cangjie -- uvx cangjie-mcp
 ```
@@ -52,8 +78,7 @@ claude mcp add \
       "command": "uvx",
       "args": ["cangjie-mcp"],
       "env": {
-        "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz",
-        "CANGJIE_RERANK_TYPE": "local",
+        "CANGJIE_SERVER_URL": "https://cj-mcp.learningman.top",
         "CANGJIE_HOME": "/path/to/cangjie-sdk"
       }
     }
@@ -76,8 +101,7 @@ claude mcp add \
         "command": "uvx",
         "args": ["cangjie-mcp"],
         "env": {
-          "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz",
-          "CANGJIE_RERANK_TYPE": "local",
+          "CANGJIE_SERVER_URL": "https://cj-mcp.learningman.top",
           "CANGJIE_HOME": "/path/to/cangjie-sdk"
         }
       }
@@ -101,14 +125,27 @@ claude mcp add \
         "path": "uvx",
         "args": ["cangjie-mcp"],
         "env": {
-          "CANGJIE_PREBUILT_URL": "https://github.com/Zxilly/cangjie-mcp/releases/download/prebuilt-v1.0.7-zh/cangjie-index-v1.0.7-zh.tar.gz",
-          "CANGJIE_RERANK_TYPE": "local",
+          "CANGJIE_SERVER_URL": "https://cj-mcp.learningman.top",
           "CANGJIE_HOME": "/path/to/cangjie-sdk"
         }
       }
     }
   }
 }
+```
+
+</details>
+
+<details>
+<summary>本地模式（不使用远程服务器）</summary>
+
+如需完全离线使用或自建索引，可不设置 `CANGJIE_SERVER_URL`，MCP 会在本地加载嵌入模型和索引：
+
+```bash
+claude mcp add \
+  -e CANGJIE_RERANK_TYPE=local \
+  -e CANGJIE_HOME=/path/to/cangjie-sdk \
+  cangjie -- uvx cangjie-mcp
 ```
 
 </details>
@@ -143,7 +180,7 @@ claude mcp add \
 
 ### cangjie-mcp
 
-启动聚合服务器，同时提供文档搜索和 LSP 代码智能功能。LSP 功能在设置了 `CANGJIE_HOME` 环境变量时自动启用。
+启动 MCP 服务器，同时提供文档搜索和 LSP 代码智能功能。LSP 功能在设置了 `CANGJIE_HOME` 环境变量时自动启用。
 
 ```bash
 cangjie-mcp [OPTIONS]
@@ -169,7 +206,7 @@ cangjie-mcp [OPTIONS]
 | `--rerank-initial-k INT` | `CANGJIE_RERANK_INITIAL_K` | `20` | 重排序前候选数 |
 | `--chunk-size INT` | `CANGJIE_CHUNK_MAX_SIZE` | `6000` | 最大分块大小（字符数） |
 | `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | `~/.cangjie-mcp` | 数据目录路径 |
-| `--prebuilt-url TEXT` | `CANGJIE_PREBUILT_URL` | - | 预构建索引下载 URL |
+| `--server-url TEXT` | `CANGJIE_SERVER_URL` | - | 远程查询服务器 URL |
 
 LSP 功能通过以下环境变量控制：
 
@@ -177,43 +214,30 @@ LSP 功能通过以下环境变量控制：
 |---------|------|
 | `CANGJIE_HOME` | 仓颉 SDK 路径，设置后自动启用 LSP 工具 |
 
-### 预构建索引管理
+### cangjie-mcp server
+
+启动 HTTP 查询服务器，加载嵌入模型和 ChromaDB 索引，通过 HTTP 提供查询服务。
 
 ```bash
-cangjie-mcp prebuilt download [OPTIONS]  # 下载预构建索引
-cangjie-mcp prebuilt build [OPTIONS]     # 构建预构建索引
-cangjie-mcp prebuilt list [OPTIONS]      # 列出可用索引
+cangjie-mcp server [OPTIONS]
 ```
 
-#### prebuilt download
+支持所有与 `cangjie-mcp` 相同的索引选项，以及：
 
-| CLI 参数 | 环境变量 | 说明 |
-|---------|---------|------|
-| `-u, --url TEXT` | `CANGJIE_PREBUILT_URL` | 预构建索引下载 URL |
-| `-v, --version TEXT` | `CANGJIE_DOCS_VERSION` | 文档版本 |
-| `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | 文档语言 |
-| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | 数据目录路径 |
+| CLI 参数 | 环境变量 | 默认值 | 说明 |
+|---------|---------|-------|------|
+| `--host TEXT` | `CANGJIE_SERVER_HOST` | `127.0.0.1` | HTTP 服务器监听地址 |
+| `-p, --port INT` | `CANGJIE_SERVER_PORT` | `8765` | HTTP 服务器监听端口 |
 
-#### prebuilt build
+#### HTTP API
 
-| CLI 参数 | 环境变量 | 说明 |
-|---------|---------|------|
-| `-v, --version TEXT` | `CANGJIE_DOCS_VERSION` | 文档版本 |
-| `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | 文档语言 |
-| `-e, --embedding TEXT` | `CANGJIE_EMBEDDING_TYPE` | 向量化类型 |
-| `--local-model TEXT` | `CANGJIE_LOCAL_MODEL` | 本地向量化模型 |
-| `--openai-api-key TEXT` | `OPENAI_API_KEY` | OpenAI API 密钥 |
-| `--openai-base-url TEXT` | `OPENAI_BASE_URL` | OpenAI API 基础 URL |
-| `--openai-model TEXT` | `OPENAI_EMBEDDING_MODEL` | OpenAI 向量化模型 |
-| `-c, --chunk-size INT` | `CANGJIE_CHUNK_MAX_SIZE` | 最大分块大小 |
-| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | 数据目录路径 |
-| `-o, --output PATH` | - | 输出目录或文件路径 |
-
-#### prebuilt list
-
-| CLI 参数 | 环境变量 | 说明 |
-|---------|---------|------|
-| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | 数据目录路径 |
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/health` | 健康检查 |
+| `GET` | `/info` | 索引元数据 |
+| `POST` | `/search` | 向量搜索 |
+| `GET` | `/topics` | 列出所有分类和主题 |
+| `GET` | `/topics/{category}/{topic}` | 获取文档内容 |
 
 ### 调试与日志
 

@@ -35,7 +35,7 @@ class TestLocalEmbedding:
         provider = LocalEmbedding(model_name="test-model")
         assert provider.get_model_name() == "local:test-model"
 
-    @patch("cangjie_mcp.indexer.embeddings.HuggingFaceEmbedding")
+    @patch("llama_index.embeddings.huggingface.HuggingFaceEmbedding")
     def test_get_embedding_model_caching(self, mock_hf_embedding: MagicMock) -> None:
         """Test that embedding model is cached."""
         mock_model = MagicMock()
@@ -74,7 +74,7 @@ class TestOpenAIEmbeddingProvider:
         provider = OpenAIEmbeddingProvider(api_key="test-key", model="ada-002")
         assert provider.get_model_name() == "openai:ada-002"
 
-    @patch("cangjie_mcp.indexer.embeddings.OpenAIEmbedding")
+    @patch("llama_index.embeddings.openai.OpenAIEmbedding")
     def test_get_embedding_model_caching(self, mock_openai_embedding: MagicMock) -> None:
         """Test that embedding model is cached."""
         mock_model = MagicMock()

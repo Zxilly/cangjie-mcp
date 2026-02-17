@@ -7,12 +7,152 @@ from pathlib import Path
 
 import pytest
 
-from cangjie_mcp.config import Settings
+from cangjie_mcp.config import IndexInfo, Settings
+from cangjie_mcp.indexer.document_source import DocumentSource
 from cangjie_mcp.indexer.embeddings import get_embedding_provider
-from cangjie_mcp.indexer.loader import DocumentLoader
+from cangjie_mcp.indexer.loader import (
+    DocumentLoader,
+    extract_code_blocks,
+    extract_metadata_from_path,
+    extract_title_from_content,
+)
 from cangjie_mcp.indexer.reranker import LocalReranker
-from cangjie_mcp.indexer.store import VectorStore
+from cangjie_mcp.indexer.search_index import SearchIndex
+from cangjie_mcp.indexer.store import SearchResult, VectorStore
 from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
+
+# Read embedding configuration from environment (falls back to local defaults)
+_EMBEDDING_TYPE: str = os.environ.get("CANGJIE_EMBEDDING_TYPE", "local")
+_OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY")
+_OPENAI_BASE_URL: str = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+_OPENAI_MODEL: str = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+
+
+def _embedding_model_name() -> str:
+    """Return the canonical embedding model name for the current config."""
+    if _EMBEDDING_TYPE == "openai":
+        return f"openai:{_OPENAI_MODEL}"
+    return f"local:{CANGJIE_LOCAL_MODEL}"
+
+
+def _make_settings(data_dir: Path, **overrides: object) -> Settings:
+    """Create Settings using environment-driven embedding config."""
+    defaults: dict[str, object] = {
+        "docs_version": CANGJIE_DOCS_VERSION,
+        "docs_lang": "zh",
+        "embedding_type": _EMBEDDING_TYPE,
+        "local_model": CANGJIE_LOCAL_MODEL,
+        "openai_api_key": _OPENAI_API_KEY,
+        "openai_base_url": _OPENAI_BASE_URL,
+        "openai_model": _OPENAI_MODEL,
+        "rerank_type": "none",
+        "rerank_model": "BAAI/bge-reranker-v2-m3",
+        "rerank_top_k": 5,
+        "rerank_initial_k": 20,
+        "chunk_max_size": 6000,
+        "data_dir": data_dir,
+    }
+    defaults.update(overrides)
+    return Settings(**defaults)  # type: ignore[arg-type]
+
+
+class TestDocumentSource(DocumentSource):
+    """Configurable document source for testing.
+
+    Reads markdown files from a local directory and serves them via the
+    DocumentSource interface. Only used in tests — production code uses
+    GitDocumentSource or RemoteDocumentSource.
+    """
+
+    __test__ = False
+
+    def __init__(self, docs_dir: Path) -> None:
+        self.docs_dir = docs_dir
+
+    def is_available(self) -> bool:
+        return self.docs_dir.exists() and self.docs_dir.is_dir()
+
+    def get_categories(self) -> list[str]:
+        if not self.is_available():
+            return []
+        return sorted(
+            item.name for item in self.docs_dir.iterdir() if item.is_dir() and not item.name.startswith((".", "_"))
+        )
+
+    def get_topics_in_category(self, category: str) -> list[str]:
+        category_dir = self.docs_dir / category
+        if not category_dir.exists():
+            return []
+        return sorted(fp.stem for fp in category_dir.rglob("*.md"))
+
+    def get_document_by_topic(self, topic: str, category: str | None = None):
+        if not self.is_available():
+            return None
+        search_dir = self.docs_dir / category if category else self.docs_dir
+        for file_path in search_dir.rglob(f"{topic}.md"):
+            return self._load_document(file_path)
+        return None
+
+    def _load_document(self, file_path: Path):
+        from llama_index.core import Document
+
+        content = file_path.read_text(encoding="utf-8")
+        if not content.strip():
+            return None
+
+        metadata = extract_metadata_from_path(file_path, self.docs_dir)
+        metadata.title = extract_title_from_content(content)
+        metadata.code_blocks = extract_code_blocks(content)
+
+        return Document(
+            text=content,
+            metadata={
+                "file_path": metadata.file_path,
+                "category": metadata.category,
+                "topic": metadata.topic,
+                "title": metadata.title,
+                "code_block_count": len(metadata.code_blocks),
+                "source": "cangjie_docs",
+            },
+            doc_id=metadata.file_path,
+        )
+
+    def load_all_documents(self):
+        if not self.is_available():
+            return []
+        documents = []
+        for file_path in self.docs_dir.rglob("*.md"):
+            doc = self._load_document(file_path)
+            if doc:
+                documents.append(doc)
+        return documents
+
+
+class VectorStoreSearchIndex(SearchIndex):
+    """Test adapter wrapping a VectorStore as a SearchIndex."""
+
+    def __init__(self, store: VectorStore) -> None:
+        self._store = store
+
+    def init(self) -> IndexInfo:
+        raise NotImplementedError("Test adapter — call query() directly")
+
+    async def query(
+        self,
+        query: str,
+        top_k: int = 5,
+        category: str | None = None,
+        rerank: bool = True,
+    ) -> list[SearchResult]:
+        import asyncio
+
+        return await asyncio.to_thread(
+            self._store.search,
+            query=query,
+            top_k=top_k,
+            category=category,
+            use_rerank=rerank,
+        )
 
 
 def has_openai_credentials() -> bool:
@@ -234,20 +374,15 @@ cjpm add <package_name>
 
 
 @pytest.fixture(scope="session")
+def test_doc_source(integration_docs_dir: Path) -> TestDocumentSource:
+    """Session-scoped TestDocumentSource built from integration_docs_dir."""
+    return TestDocumentSource(integration_docs_dir)
+
+
+@pytest.fixture(scope="session")
 def shared_local_settings(shared_temp_dir: Path) -> Settings:
-    """Session-scoped settings for local embedding integration tests."""
-    return Settings(
-        docs_version=CANGJIE_DOCS_VERSION,
-        docs_lang="zh",
-        embedding_type="local",
-        local_model=CANGJIE_LOCAL_MODEL,
-        rerank_type="none",
-        rerank_model="BAAI/bge-reranker-v2-m3",
-        rerank_top_k=5,
-        rerank_initial_k=20,
-        chunk_max_size=6000,
-        data_dir=shared_temp_dir,
-    )
+    """Session-scoped settings for integration tests."""
+    return _make_settings(shared_temp_dir)
 
 
 @pytest.fixture(scope="session")
@@ -267,8 +402,9 @@ def local_indexed_store(
     Shared by all read-only integration tests. Tests that modify the
     store should create their own function-scoped fixtures instead.
     """
+    index_info = IndexInfo.from_settings(shared_local_settings)
     store = VectorStore(
-        db_path=shared_local_settings.chroma_db_dir,
+        db_path=index_info.chroma_db_dir,
         embedding_provider=shared_embedding_provider,
     )
 
@@ -279,7 +415,7 @@ def local_indexed_store(
     store.save_metadata(
         version=shared_local_settings.docs_version,
         lang=shared_local_settings.docs_lang,
-        embedding_model=CANGJIE_LOCAL_MODEL,
+        embedding_model=_embedding_model_name(),
     )
 
     return store
@@ -294,17 +430,9 @@ def shared_local_reranker() -> LocalReranker:
 @pytest.fixture(scope="session")
 def shared_reranker_settings(shared_temp_dir: Path) -> Settings:
     """Session-scoped settings with local reranker enabled."""
-    return Settings(
-        docs_version=CANGJIE_DOCS_VERSION,
-        docs_lang="zh",
-        embedding_type="local",
-        local_model=CANGJIE_LOCAL_MODEL,
+    return _make_settings(
+        shared_temp_dir / "reranker",
         rerank_type="local",
-        rerank_model="BAAI/bge-reranker-v2-m3",
-        rerank_top_k=5,
-        rerank_initial_k=20,
-        chunk_max_size=6000,
-        data_dir=shared_temp_dir / "reranker",
     )
 
 
@@ -316,8 +444,9 @@ def shared_indexed_store_with_reranker(
     shared_local_reranker: LocalReranker,
 ) -> VectorStore:
     """Session-scoped indexed VectorStore with reranker (created once)."""
+    index_info = IndexInfo.from_settings(shared_reranker_settings)
     store = VectorStore(
-        db_path=shared_reranker_settings.chroma_db_dir,
+        db_path=index_info.chroma_db_dir,
         embedding_provider=shared_embedding_provider,
         reranker=shared_local_reranker,
     )
@@ -329,7 +458,7 @@ def shared_indexed_store_with_reranker(
     store.save_metadata(
         version=shared_reranker_settings.docs_version,
         lang=shared_reranker_settings.docs_lang,
-        embedding_model=CANGJIE_LOCAL_MODEL,
+        embedding_model=_embedding_model_name(),
     )
 
     return store
@@ -338,17 +467,9 @@ def shared_indexed_store_with_reranker(
 @pytest.fixture(scope="session")
 def shared_small_chunk_settings(shared_temp_dir: Path) -> Settings:
     """Session-scoped settings with small chunk size."""
-    return Settings(
-        docs_version=CANGJIE_DOCS_VERSION,
-        docs_lang="zh",
-        embedding_type="local",
-        local_model=CANGJIE_LOCAL_MODEL,
-        rerank_type="none",
-        rerank_model="BAAI/bge-reranker-v2-m3",
-        rerank_top_k=5,
-        rerank_initial_k=20,
+    return _make_settings(
+        shared_temp_dir / "small_chunk",
         chunk_max_size=200,
-        data_dir=shared_temp_dir / "small_chunk",
     )
 
 
@@ -359,8 +480,9 @@ def shared_small_chunk_store(
     shared_embedding_provider,
 ) -> VectorStore:
     """Session-scoped VectorStore indexed with small chunks (created once)."""
+    index_info = IndexInfo.from_settings(shared_small_chunk_settings)
     store = VectorStore(
-        db_path=shared_small_chunk_settings.chroma_db_dir,
+        db_path=index_info.chroma_db_dir,
         embedding_provider=shared_embedding_provider,
     )
 
@@ -371,7 +493,7 @@ def shared_small_chunk_store(
     store.save_metadata(
         version=shared_small_chunk_settings.docs_version,
         lang=shared_small_chunk_settings.docs_lang,
-        embedding_model=CANGJIE_LOCAL_MODEL,
+        embedding_model=_embedding_model_name(),
     )
 
     return store
@@ -383,35 +505,10 @@ def shared_small_chunk_store(
 @pytest.fixture
 def local_settings(temp_data_dir: Path) -> Settings:
     """Function-scoped settings for tests that need write isolation."""
-    return Settings(
-        docs_version=CANGJIE_DOCS_VERSION,
-        docs_lang="zh",
-        embedding_type="local",
-        local_model=CANGJIE_LOCAL_MODEL,
-        rerank_type="none",
-        rerank_model="BAAI/bge-reranker-v2-m3",
-        rerank_top_k=5,
-        rerank_initial_k=20,
-        chunk_max_size=6000,
-        data_dir=temp_data_dir,
-    )
+    return _make_settings(temp_data_dir)
 
 
 @pytest.fixture
 def openai_settings(temp_data_dir: Path) -> Settings:
     """Create settings for OpenAI embedding integration tests."""
-    return Settings(
-        docs_version=CANGJIE_DOCS_VERSION,
-        docs_lang="zh",
-        embedding_type="openai",
-        local_model=CANGJIE_LOCAL_MODEL,
-        rerank_type="none",
-        rerank_model="BAAI/bge-reranker-v2-m3",
-        rerank_top_k=5,
-        rerank_initial_k=20,
-        chunk_max_size=6000,
-        data_dir=temp_data_dir,
-        openai_api_key=os.environ.get("OPENAI_API_KEY"),
-        openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        openai_model=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
-    )
+    return _make_settings(temp_data_dir, embedding_type="openai")

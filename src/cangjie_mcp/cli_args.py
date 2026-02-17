@@ -1,7 +1,7 @@
 """Shared CLI argument definitions for cangjie-mcp.
 
 This module provides a centralized definition of CLI arguments to eliminate
-duplication across different commands (main, docs, prebuilt).
+duplication across different commands (main, server).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ class DocsArgs:
     """Shared documentation-related CLI arguments.
 
     This dataclass holds all the common arguments used across different
-    CLI commands (main, docs, prebuilt build).
+    CLI commands (main, server).
     """
 
     docs_version: str = DEFAULT_DOCS_VERSION
@@ -204,12 +204,33 @@ DebugOption = Annotated[
     ),
 ]
 
-PrebuiltUrlOption = Annotated[
+ServerUrlOption = Annotated[
     str | None,
     typer.Option(
-        "--prebuilt-url",
-        help="URL to download prebuilt index from",
-        envvar="CANGJIE_PREBUILT_URL",
+        "--server-url",
+        help="URL of a remote cangjie-mcp server to forward queries to",
+        envvar="CANGJIE_SERVER_URL",
+    ),
+]
+
+HostOption = Annotated[
+    str,
+    typer.Option(
+        "--host",
+        help="Host to bind the HTTP server to",
+        envvar="CANGJIE_SERVER_HOST",
+        show_default=True,
+    ),
+]
+
+PortOption = Annotated[
+    int,
+    typer.Option(
+        "--port",
+        "-p",
+        help="Port to bind the HTTP server to",
+        envvar="CANGJIE_SERVER_PORT",
+        show_default=True,
     ),
 ]
 

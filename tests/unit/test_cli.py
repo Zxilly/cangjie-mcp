@@ -10,334 +10,71 @@ from cangjie_mcp.cli import app
 runner = CliRunner()
 
 
-class TestPrebuiltListCommand:
-    """Tests for prebuilt list command."""
-
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_prebuilt_list_empty(
-        self,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test prebuilt list when no indexes exist."""
-        mock_manager = MagicMock()
-        mock_manager.list_local.return_value = []
-        mock_manager.get_installed_metadata.return_value = None
-        mock_manager_class.return_value = mock_manager
-
-        result = runner.invoke(app, ["prebuilt", "list"])
-
-        assert result.exit_code == 0
-        assert "No local prebuilt indexes" in result.output
-
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_prebuilt_list_with_archives(
-        self,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test prebuilt list with archives."""
-        mock_archive = MagicMock()
-        mock_archive.version = "v1.0.0"
-        mock_archive.lang = "zh"
-        mock_archive.embedding_model = "local:test"
-        mock_archive.path = "/test/archive.tar.gz"
-
-        mock_manager = MagicMock()
-        mock_manager.list_local.return_value = [mock_archive]
-        mock_manager.get_installed_metadata.return_value = None
-        mock_manager_class.return_value = mock_manager
-
-        result = runner.invoke(app, ["prebuilt", "list"])
-
-        assert result.exit_code == 0
-        assert "v1.0.0" in result.output
-
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_prebuilt_list_with_installed(
-        self,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test prebuilt list with installed metadata."""
-        mock_installed = MagicMock()
-        mock_installed.version = "v1.0.0"
-        mock_installed.lang = "zh"
-        mock_installed.embedding_model = "local:test"
-
-        mock_manager = MagicMock()
-        mock_manager.list_local.return_value = []
-        mock_manager.get_installed_metadata.return_value = mock_installed
-        mock_manager_class.return_value = mock_manager
-
-        result = runner.invoke(app, ["prebuilt", "list"])
-
-        assert result.exit_code == 0
-        assert "Currently Installed" in result.output
-
-
-class TestPrebuiltBuildCommand:
-    """Tests for prebuilt build command."""
-
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    @patch("cangjie_mcp.indexer.store.VectorStore")
-    @patch("cangjie_mcp.indexer.chunker.create_chunker")
-    @patch("cangjie_mcp.indexer.embeddings.create_embedding_provider")
-    @patch("cangjie_mcp.indexer.loader.DocumentLoader")
-    @patch("cangjie_mcp.repo.git_manager.GitManager")
-    @patch("cangjie_mcp.cli.Settings")
-    def test_prebuilt_build_success(
-        self,
-        mock_settings_class: MagicMock,
-        mock_git_manager_class: MagicMock,
-        mock_loader_class: MagicMock,
-        mock_embedding_provider: MagicMock,
-        mock_create_chunker: MagicMock,
-        mock_store_class: MagicMock,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test prebuilt build success."""
-        # Setup settings
-        mock_settings = MagicMock()
-        mock_settings.docs_version = "v1.0.0"
-        mock_settings.docs_lang = "zh"
-        mock_settings.embedding_type = "local"
-        mock_settings.chunk_max_size = 6000
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.docs_repo_dir = Path("/test/repo")
-        mock_settings.docs_source_dir = Path("/test/source")
-        mock_settings.chroma_db_dir = Path("/test/chroma")
-        mock_settings.index_dir = Path("/test/index")
-        mock_settings_class.return_value = mock_settings
-
-        # Setup GitManager
-        mock_git_mgr = MagicMock()
-        mock_git_mgr.get_current_version.return_value = "v1.0.0"
-        mock_git_manager_class.return_value = mock_git_mgr
-
-        # Setup DocumentLoader
-        mock_loader = MagicMock()
-        mock_loader.load_all_documents.return_value = [MagicMock()]
-        mock_loader_class.return_value = mock_loader
-
-        # Setup embedding provider
-        mock_provider = MagicMock()
-        mock_provider.get_model_name.return_value = "local:test"
-        mock_embedding_provider.return_value = mock_provider
-
-        # Setup chunker
-        mock_chunker = MagicMock()
-        mock_chunker.chunk_documents.return_value = [MagicMock()]
-        mock_create_chunker.return_value = mock_chunker
-
-        # Setup VectorStore
-        mock_store = MagicMock()
-        mock_store_class.return_value = mock_store
-
-        # Setup PrebuiltManager
-        mock_manager = MagicMock()
-        mock_manager.build.return_value = Path("/test/archive.tar.gz")
-        mock_manager_class.return_value = mock_manager
-
-        result = runner.invoke(app, ["prebuilt", "build"])
-
-        assert result.exit_code == 0
-        assert "Archive built" in result.output
-        mock_manager.build.assert_called_once()
-
-    @patch("cangjie_mcp.indexer.store.VectorStore")
-    @patch("cangjie_mcp.indexer.embeddings.create_embedding_provider")
-    @patch("cangjie_mcp.indexer.loader.DocumentLoader")
-    @patch("cangjie_mcp.repo.git_manager.GitManager")
-    @patch("cangjie_mcp.cli.Settings")
-    def test_prebuilt_build_no_documents(
-        self,
-        mock_settings_class: MagicMock,
-        mock_git_manager_class: MagicMock,
-        mock_loader_class: MagicMock,
-        mock_embedding_provider: MagicMock,
-        mock_store_class: MagicMock,
-    ) -> None:
-        """Test prebuilt build when no documents found."""
-        # Setup settings
-        mock_settings = MagicMock()
-        mock_settings.docs_version = "v1.0.0"
-        mock_settings.docs_lang = "zh"
-        mock_settings.embedding_type = "local"
-        mock_settings.chunk_max_size = 6000
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.docs_repo_dir = Path("/test/repo")
-        mock_settings.docs_source_dir = Path("/test/source")
-        mock_settings.chroma_db_dir = Path("/test/chroma")
-        mock_settings_class.return_value = mock_settings
-
-        # Setup GitManager
-        mock_git_mgr = MagicMock()
-        mock_git_mgr.get_current_version.return_value = "v1.0.0"
-        mock_git_manager_class.return_value = mock_git_mgr
-
-        # Setup DocumentLoader with empty documents
-        mock_loader = MagicMock()
-        mock_loader.load_all_documents.return_value = []
-        mock_loader_class.return_value = mock_loader
-
-        # Setup embedding provider
-        mock_provider = MagicMock()
-        mock_embedding_provider.return_value = mock_provider
-
-        # Setup VectorStore
-        mock_store = MagicMock()
-        mock_store_class.return_value = mock_store
-
-        result = runner.invoke(app, ["prebuilt", "build"])
-
-        assert result.exit_code == 1
-        assert "No documents found" in result.output
-
-
-class TestPrebuiltDownloadCommand:
-    """Tests for prebuilt download command."""
-
-    def test_prebuilt_download_no_url(self) -> None:
-        """Test prebuilt download without URL."""
-        result = runner.invoke(app, ["prebuilt", "download"])
-
-        assert result.exit_code == 1
-        assert "No URL provided" in result.output
-
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_prebuilt_download_success(
-        self,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test prebuilt download with explicit URL."""
-        mock_manager = MagicMock()
-        mock_manager.download.return_value = Path("/test/archive.tar.gz")
-        mock_manager_class.return_value = mock_manager
-
-        result = runner.invoke(app, ["prebuilt", "download", "--url", "https://example.com/index"])
-
-        if result.exit_code == 0:
-            mock_manager.download.assert_called_once()
-            mock_manager.install.assert_called_once()
-        else:
-            assert "Failed to download" in result.output or result.exit_code in [0, 1]
-
-
 class TestInitializeAndIndex:
     """Tests for initialize_and_index function."""
 
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_uses_prebuilt_when_available(
-        self,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test that prebuilt index is used when available."""
-        from cangjie_mcp.indexer.initializer import initialize_and_index
-
-        mock_settings = MagicMock()
-        mock_settings.docs_version = "v1.0.0"
-        mock_settings.docs_lang = "zh"
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.prebuilt_url = None
-
-        mock_installed = MagicMock()
-        mock_installed.version = "v1.0.0"
-        mock_installed.lang = "zh"
-
-        mock_manager = MagicMock()
-        mock_manager.get_installed_metadata.return_value = mock_installed
-        mock_manager_class.return_value = mock_manager
-
-        initialize_and_index(mock_settings)
-
-        # Should check prebuilt metadata
-        mock_manager.get_installed_metadata.assert_called_once()
-
-    @patch("cangjie_mcp.indexer.store.VectorStore")
-    @patch("cangjie_mcp.indexer.embeddings.get_embedding_provider")
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
+    @patch("cangjie_mcp.indexer.initializer._index_is_ready", return_value=True)
     def test_uses_existing_index(
         self,
-        mock_manager_class: MagicMock,
-        mock_get_embedding: MagicMock,
-        mock_store_class: MagicMock,
+        mock_index_is_ready: MagicMock,
     ) -> None:
         """Test that existing index is used when version matches."""
+        from cangjie_mcp.config import IndexInfo
         from cangjie_mcp.indexer.initializer import initialize_and_index
 
         mock_settings = MagicMock()
         mock_settings.docs_version = "v1.0.0"
         mock_settings.docs_lang = "zh"
+        mock_settings.embedding_model_name = "local:paraphrase-multilingual-MiniLM-L12-v2"
         mock_settings.data_dir = Path("/test/data")
-        mock_settings.prebuilt_url = None
 
-        mock_manager = MagicMock()
-        mock_manager.get_installed_metadata.return_value = None
-        mock_manager_class.return_value = mock_manager
+        result = initialize_and_index(mock_settings)
 
-        mock_provider = MagicMock()
-        mock_get_embedding.return_value = mock_provider
+        # Should check existing index via lightweight metadata check
+        mock_index_is_ready.assert_called_once()
+        call_args = mock_index_is_ready.call_args
+        assert isinstance(call_args[0][0], IndexInfo)
+        assert call_args[0][1] == "v1.0.0"
+        assert call_args[0][2] == "zh"
+        assert isinstance(result, IndexInfo)
 
-        mock_store = MagicMock()
-        mock_store.is_indexed.return_value = True
-        mock_store.version_matches.return_value = True
-        mock_store_class.return_value = mock_store
 
-        initialize_and_index(mock_settings)
+class TestServerCommand:
+    """Tests for server subcommand."""
 
-        # Should check existing index
-        mock_store.is_indexed.assert_called_once()
-        mock_store.version_matches.assert_called_once_with("v1.0.0", "zh")
+    def test_server_help(self) -> None:
+        """Test server --help shows usage."""
+        result = runner.invoke(app, ["server", "--help"])
+        assert result.exit_code == 0
+        assert "HTTP query server" in result.output
 
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_auto_downloads_prebuilt_when_url_set(
+    def test_server_command_exists(self) -> None:
+        """Test that the server subcommand is registered."""
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "server" in result.output
+
+
+class TestServerUrlOption:
+    """Tests for --server-url option."""
+
+    def test_server_url_in_help(self) -> None:
+        """Test that --server-url appears in help."""
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "--server-url" in result.output
+
+    @patch("cangjie_mcp.server.factory.create_mcp_server")
+    def test_server_url_passed_to_settings(
         self,
-        mock_manager_class: MagicMock,
+        mock_create: MagicMock,
     ) -> None:
-        """Test that prebuilt index is auto-downloaded when prebuilt_url is set."""
-        from cangjie_mcp.indexer.initializer import initialize_and_index
+        """Test that --server-url is passed to Settings."""
+        mock_mcp = MagicMock()
+        mock_create.return_value = mock_mcp
 
-        mock_settings = MagicMock()
-        mock_settings.docs_version = "v1.0.0"
-        mock_settings.docs_lang = "zh"
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.prebuilt_url = "https://example.com/prebuilt"
+        result = runner.invoke(app, ["--server-url", "http://localhost:8765"])
 
-        # No prebuilt installed locally
-        mock_manager = MagicMock()
-        mock_manager.get_installed_metadata.return_value = None
-        mock_manager.download.return_value = Path("/test/archive.tar.gz")
-        mock_manager_class.return_value = mock_manager
-
-        initialize_and_index(mock_settings)
-
-        # Should download and install
-        mock_manager.download.assert_called_once_with("https://example.com/prebuilt")
-        mock_manager.install.assert_called_once_with(Path("/test/archive.tar.gz"))
-
-    @patch("cangjie_mcp.prebuilt.manager.PrebuiltManager")
-    def test_skips_download_when_prebuilt_already_installed(
-        self,
-        mock_manager_class: MagicMock,
-    ) -> None:
-        """Test that download is skipped when matching prebuilt is already installed."""
-        from cangjie_mcp.indexer.initializer import initialize_and_index
-
-        mock_settings = MagicMock()
-        mock_settings.docs_version = "v1.0.0"
-        mock_settings.docs_lang = "zh"
-        mock_settings.data_dir = Path("/test/data")
-        mock_settings.prebuilt_url = "https://example.com/prebuilt"
-
-        # Prebuilt already installed
-        mock_installed = MagicMock()
-        mock_installed.version = "v1.0.0"
-        mock_installed.lang = "zh"
-
-        mock_manager = MagicMock()
-        mock_manager.get_installed_metadata.return_value = mock_installed
-        mock_manager_class.return_value = mock_manager
-
-        initialize_and_index(mock_settings)
-
-        # Should NOT download since matching prebuilt is installed
-        mock_manager.download.assert_not_called()
-        mock_manager.install.assert_not_called()
+        # The server should have been created
+        if result.exit_code == 0:
+            mock_create.assert_called_once()

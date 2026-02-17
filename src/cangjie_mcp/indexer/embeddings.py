@@ -1,14 +1,16 @@
 """Embedding model abstraction layer."""
 
-from abc import ABC, abstractmethod
+from __future__ import annotations
 
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.embeddings.openai_like import OpenAILikeEmbedding
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from cangjie_mcp.config import Settings
 from cangjie_mcp.utils import SingletonProvider, get_device, logger
+
+if TYPE_CHECKING:
+    from llama_index.core.embeddings import BaseEmbedding
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # Known OpenAI models that work with the standard OpenAIEmbedding class
 _OPENAI_NATIVE_MODELS = {
@@ -66,6 +68,8 @@ class LocalEmbedding(EmbeddingProvider):
     def get_embedding_model(self) -> BaseEmbedding:
         """Get the HuggingFace embedding model."""
         if self._model is None:
+            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
             logger.info("Loading local embedding model: %s (device=%s)...", self.model_name, self.device)
             self._model = HuggingFaceEmbedding(model_name=self.model_name, device=self.device)
             logger.info("Local embedding model loaded.")
@@ -112,12 +116,16 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
             # Use native OpenAI embedding for known models, OpenAILikeEmbedding otherwise
             if self.model in _OPENAI_NATIVE_MODELS:
+                from llama_index.embeddings.openai import OpenAIEmbedding
+
                 self._embedding_model = OpenAIEmbedding(
                     api_key=self.api_key,
                     model=self.model,
                     api_base=self.base_url,
                 )
             else:
+                from llama_index.embeddings.openai_like import OpenAILikeEmbedding
+
                 # Use OpenAILikeEmbedding for custom models (e.g., SiliconFlow's BAAI/bge-m3)
                 self._embedding_model = OpenAILikeEmbedding(
                     api_key=self.api_key,
@@ -162,6 +170,49 @@ def create_embedding_provider(
             )
         case _:  # pyright: ignore[reportUnnecessaryComparison]
             raise ValueError(f"Unknown embedding type: {settings.embedding_type}")
+
+
+def create_embedding_provider_for_index(
+    model_name: str,
+    settings: Settings,
+) -> EmbeddingProvider:
+    """Create embedding provider matching an existing index.
+
+    Parses a fully qualified model name (e.g. ``"openai:Qwen/Qwen3-Embedding-8B"``,
+    ``"local:paraphrase-multilingual-MiniLM-L12-v2"``) and creates the correct
+    provider.  API credentials (key, base URL) are taken from *settings*.
+
+    Args:
+        model_name: Fully qualified model name from IndexInfo.embedding_model_name
+        settings: Application settings (used for API credentials only)
+
+    Returns:
+        Configured embedding provider
+
+    Raises:
+        ValueError: If the model name format is unknown or credentials are missing
+    """
+    if ":" in model_name:
+        type_prefix, model = model_name.split(":", 1)
+    else:
+        type_prefix, model = "local", model_name
+
+    match type_prefix:
+        case "local":
+            return LocalEmbedding(model_name=model)
+        case "openai":
+            if not settings.openai_api_key:
+                raise ValueError(
+                    f"OpenAI API key is required for index using embedding '{model_name}'. "
+                    "Set OPENAI_API_KEY or use --openai-api-key."
+                )
+            return OpenAIEmbeddingProvider(
+                api_key=settings.openai_api_key,
+                model=model,
+                base_url=settings.openai_base_url,
+            )
+        case _:
+            raise ValueError(f"Unknown embedding type prefix '{type_prefix}' in model name '{model_name}'")
 
 
 # Global embedding provider singleton

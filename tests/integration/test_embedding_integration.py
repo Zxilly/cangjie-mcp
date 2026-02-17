@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cangjie_mcp.config import Settings
+from cangjie_mcp.config import IndexInfo, Settings
 from cangjie_mcp.indexer.embeddings import (
     LocalEmbedding,
     OpenAIEmbeddingProvider,
@@ -18,7 +18,7 @@ from cangjie_mcp.indexer.embeddings import (
 )
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
-from tests.constants import CANGJIE_DOCS_VERSION, CANGJIE_LOCAL_MODEL
+from tests.constants import CANGJIE_DOCS_VERSION
 
 
 def _has_openai_credentials() -> bool:
@@ -27,15 +27,15 @@ def _has_openai_credentials() -> bool:
     return bool(api_key and api_key != "your-openai-api-key-here")
 
 
-class TestLocalEmbeddingIntegration:
-    """Integration tests using local embeddings."""
+class TestEmbeddingIntegration:
+    """Integration tests using the configured embedding provider."""
 
     def test_load_and_index_documents(
         self,
         integration_docs_dir: Path,
         local_settings: Settings,
     ) -> None:
-        """Test complete document loading and indexing workflow with local embeddings."""
+        """Test complete document loading and indexing workflow."""
         reset_embedding_provider()
         loader = DocumentLoader(integration_docs_dir)
         documents = loader.load_all_documents()
@@ -45,11 +45,10 @@ class TestLocalEmbeddingIntegration:
         assert all(doc.metadata.get("category") for doc in documents)
 
         embedding_provider = get_embedding_provider(local_settings)
-        assert isinstance(embedding_provider, LocalEmbedding)
-        assert embedding_provider.model_name == CANGJIE_LOCAL_MODEL
+        assert isinstance(embedding_provider, LocalEmbedding | OpenAIEmbeddingProvider)
 
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=embedding_provider,
         )
 
@@ -58,15 +57,15 @@ class TestLocalEmbeddingIntegration:
         assert store.is_indexed()
         assert store.collection.count() > 0
 
-    def test_semantic_search_with_local_embedding(self, local_indexed_store: VectorStore) -> None:
-        """Test semantic search with local embeddings."""
+    def test_semantic_search(self, local_indexed_store: VectorStore) -> None:
+        """Test semantic search returns relevant results."""
         results = local_indexed_store.search(query="如何定义函数", top_k=3)
 
         assert len(results) > 0
         assert any("func" in r.text.lower() or "函数" in r.text for r in results)
 
-    def test_search_with_category_filter_local(self, local_indexed_store: VectorStore) -> None:
-        """Test search with category filtering using local embeddings."""
+    def test_search_with_category_filter(self, local_indexed_store: VectorStore) -> None:
+        """Test search with category filtering."""
         results = local_indexed_store.search(
             query="编译器使用",
             category="tools",
@@ -76,17 +75,17 @@ class TestLocalEmbeddingIntegration:
         assert len(results) > 0
         assert all(r.metadata.category == "tools" for r in results)
 
-    def test_version_matching_local(
+    def test_version_matching(
         self,
         local_indexed_store: VectorStore,
     ) -> None:
-        """Test version matching functionality with local embeddings."""
+        """Test version matching functionality."""
         assert local_indexed_store.version_matches(CANGJIE_DOCS_VERSION, "zh")
         assert not local_indexed_store.version_matches(CANGJIE_DOCS_VERSION, "en")
         assert not local_indexed_store.version_matches("other", "zh")
 
     def test_search_multiple_queries(self, local_indexed_store: VectorStore) -> None:
-        """Test multiple search queries with local embeddings."""
+        """Test multiple search queries."""
         queries = [
             ("Hello World", ["Hello", "Cangjie", "程序"]),
             ("变量声明", ["let", "var", "变量"]),
@@ -133,7 +132,7 @@ class TestOpenAIEmbeddingIntegration:
         assert isinstance(embedding_provider, OpenAIEmbeddingProvider)
 
         store = VectorStore(
-            db_path=openai_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(openai_settings).chroma_db_dir,
             embedding_provider=embedding_provider,
         )
 
@@ -151,7 +150,7 @@ class TestOpenAIEmbeddingIntegration:
         reset_embedding_provider()
         embedding_provider = get_embedding_provider(openai_settings)
         store = VectorStore(
-            db_path=openai_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(openai_settings).chroma_db_dir,
             embedding_provider=embedding_provider,
         )
 

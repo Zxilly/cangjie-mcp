@@ -6,11 +6,6 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from llama_index.core import Document, StorageContext, VectorStoreIndex
-from llama_index.core.schema import BaseNode
-from llama_index.vector_stores.chroma import ChromaVectorStore
 from pydantic import BaseModel
 
 from cangjie_mcp.indexer.embeddings import EmbeddingProvider
@@ -20,8 +15,10 @@ from cangjie_mcp.utils import logger
 if TYPE_CHECKING:
     from chromadb.api import ClientAPI
     from chromadb.api.models.Collection import Collection
+    from llama_index.core import Document, StorageContext, VectorStoreIndex
+    from llama_index.core.schema import BaseNode
 
-    from cangjie_mcp.config import Settings
+    from cangjie_mcp.config import IndexInfo, Settings
 
 # Metadata file for version tracking
 METADATA_FILE = "index_metadata.json"
@@ -82,39 +79,31 @@ class VectorStore:
     ) -> None:
         """Initialize vector store.
 
+        Eagerly creates the ChromaDB client and collection.
+
         Args:
             db_path: Path to ChromaDB storage directory
             embedding_provider: Embedding provider for vectorization
             collection_name: Name of the ChromaDB collection
             reranker: Optional reranker provider for result reranking
         """
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+
         self.db_path = db_path
         self.embedding_provider = embedding_provider
         self.collection_name = collection_name
         self.reranker = reranker
-        self._client: ClientAPI | None = None
-        self._collection: Collection | None = None
+
+        self.db_path.mkdir(parents=True, exist_ok=True)
+        self.client: ClientAPI = chromadb.PersistentClient(
+            path=str(self.db_path),
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+        self.collection: Collection = self.client.get_or_create_collection(
+            name=self.collection_name,
+        )
         self._index: VectorStoreIndex | None = None
-
-    @property
-    def client(self) -> ClientAPI:
-        """Get or create ChromaDB client."""
-        if self._client is None:
-            self.db_path.mkdir(parents=True, exist_ok=True)
-            self._client = chromadb.PersistentClient(
-                path=str(self.db_path),
-                settings=ChromaSettings(anonymized_telemetry=False),
-            )
-        return self._client
-
-    @property
-    def collection(self) -> Collection:
-        """Get or create ChromaDB collection."""
-        if self._collection is None:
-            self._collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-            )
-        return self._collection
 
     def is_indexed(self) -> bool:
         """Check if documents are already indexed."""
@@ -165,10 +154,13 @@ class VectorStore:
 
     def _reset_collection(self) -> StorageContext:
         """Clear and recreate the collection, returning a storage context."""
+        from llama_index.core import StorageContext
+        from llama_index.vector_stores.chroma import ChromaVectorStore
+
         with contextlib.suppress(Exception):
             self.client.delete_collection(self.collection_name)
 
-        self._collection = self.client.create_collection(name=self.collection_name)
+        self.collection = self.client.create_collection(name=self.collection_name)
         vector_store = ChromaVectorStore(chroma_collection=self.collection)
         return StorageContext.from_defaults(vector_store=vector_store)
 
@@ -181,6 +173,8 @@ class VectorStore:
         Returns:
             VectorStoreIndex for querying
         """
+        from llama_index.core import VectorStoreIndex
+
         logger.info("Indexing %d nodes into ChromaDB...", len(nodes))
 
         storage_context = self._reset_collection()
@@ -205,6 +199,8 @@ class VectorStore:
         Returns:
             VectorStoreIndex for querying
         """
+        from llama_index.core import VectorStoreIndex
+
         logger.info("Indexing %d documents into ChromaDB...", len(documents))
 
         storage_context = self._reset_collection()
@@ -233,6 +229,9 @@ class VectorStore:
             return None
 
         # Load existing index
+        from llama_index.core import VectorStoreIndex
+        from llama_index.vector_stores.chroma import ChromaVectorStore
+
         vector_store = ChromaVectorStore(chroma_collection=self.collection)
         embed_model = self.embedding_provider.get_embedding_model()
         index: VectorStoreIndex = VectorStoreIndex.from_vector_store(
@@ -309,7 +308,7 @@ class VectorStore:
         """Clear all indexed data."""
         try:
             self.client.delete_collection(self.collection_name)
-            self._collection = None
+            self.collection = self.client.get_or_create_collection(name=self.collection_name)
             self._index = None
             logger.info("Index cleared.")
         except Exception as e:
@@ -322,26 +321,38 @@ class VectorStore:
 
 
 def create_vector_store(
+    index_info: IndexInfo,
     settings: Settings,
     with_rerank: bool = True,
 ) -> VectorStore:
-    """Factory function to create VectorStore from settings.
+    """Factory function to create a fully initialized VectorStore.
+
+    Creates the ChromaDB client, loads the embedding model matching the
+    index, and loads the existing index (if any). The returned store is
+    ready for queries.
+
+    The embedding provider is derived from ``index_info.embedding_model_name``
+    (not from ``settings.embedding_type``) so that the provider always matches
+    the model used to build the index.
 
     Args:
-        settings: Application settings
+        index_info: Index identity and paths (provides chroma_db_dir and embedding model name)
+        settings: Application settings (provides API credentials and rerank configuration)
         with_rerank: Whether to enable reranking
 
     Returns:
-        Configured VectorStore instance
+        Fully initialized VectorStore instance
     """
-    from cangjie_mcp.indexer.embeddings import get_embedding_provider
+    from cangjie_mcp.indexer.embeddings import create_embedding_provider_for_index
     from cangjie_mcp.indexer.reranker import get_reranker_provider
 
-    embedding_provider = get_embedding_provider(settings)
+    embedding_provider = create_embedding_provider_for_index(index_info.embedding_model_name, settings)
     reranker = get_reranker_provider(settings) if with_rerank and settings.rerank_type != "none" else None
 
-    return VectorStore(
-        db_path=settings.chroma_db_dir,
+    store = VectorStore(
+        db_path=index_info.chroma_db_dir,
         embedding_provider=embedding_provider,
         reranker=reranker,
     )
+    store.get_index()
+    return store

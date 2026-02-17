@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 from dotenv import load_dotenv
 
-from cangjie_mcp.config import Settings, reset_settings
+from cangjie_mcp.config import IndexInfo, Settings, reset_settings
 from cangjie_mcp.indexer.embeddings import reset_embedding_provider
 from cangjie_mcp.indexer.reranker import reset_reranker_provider
 
@@ -62,10 +62,31 @@ def make_test_settings(**kwargs: object) -> Settings:
     return Settings(**defaults)  # type: ignore[arg-type]
 
 
+def make_test_index_info(**kwargs: object) -> IndexInfo:
+    """Create IndexInfo with test defaults.
+
+    Any field can be overridden via kwargs.
+    """
+    defaults: dict[str, object] = {
+        "version": "latest",
+        "lang": "zh",
+        "embedding_model_name": "local:paraphrase-multilingual-MiniLM-L12-v2",
+        "data_dir": Path.home() / ".cangjie-mcp-test",
+    }
+    defaults.update(kwargs)
+    return IndexInfo(**defaults)  # type: ignore[arg-type]
+
+
 @pytest.fixture
 def create_test_settings() -> type[Settings]:
     """Fixture that provides the make_test_settings factory function."""
     return make_test_settings  # type: ignore[return-value]
+
+
+@pytest.fixture
+def create_test_index_info() -> type[IndexInfo]:
+    """Fixture that provides the make_test_index_info factory function."""
+    return make_test_index_info  # type: ignore[return-value]
 
 
 @pytest.fixture(scope="session")

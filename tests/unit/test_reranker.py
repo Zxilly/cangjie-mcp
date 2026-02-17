@@ -65,7 +65,7 @@ class TestLocalReranker:
         reranker = LocalReranker(model_name="test-model")
         assert reranker.get_model_name() == "local:test-model"
 
-    @patch("cangjie_mcp.indexer.reranker.SentenceTransformerRerank")
+    @patch("llama_index.core.postprocessor.SentenceTransformerRerank")
     def test_get_reranker_caching(self, mock_st_rerank: MagicMock) -> None:
         """Test that SentenceTransformerRerank is cached."""
         mock_reranker = MagicMock()

@@ -1,1 +1,0 @@
-"""Prebuilt index management module."""

@@ -32,6 +32,10 @@ DEFAULT_OPENAI_MODEL: str = "text-embedding-3-small"
 # Data directory
 DEFAULT_DATA_DIR_NAME: str = ".cangjie-mcp"
 
+# Server settings
+DEFAULT_SERVER_HOST: str = "127.0.0.1"
+DEFAULT_SERVER_PORT: int = 8765
+
 
 def get_default_data_dir() -> Path:
     """Get the default data directory (~/.cangjie-mcp)."""

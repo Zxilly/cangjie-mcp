@@ -1,7 +1,7 @@
 """Index initialization and building logic.
 
-This module provides functions for initializing the documentation index,
-checking for prebuilt indexes, and building new indexes when needed.
+This module provides functions for initializing the documentation index
+and building new indexes when needed.
 """
 
 from __future__ import annotations
@@ -11,24 +11,27 @@ from typing import TYPE_CHECKING
 from cangjie_mcp.utils import logger
 
 if TYPE_CHECKING:
-    from cangjie_mcp.config import Settings
+    from cangjie_mcp.config import IndexInfo, Settings
     from cangjie_mcp.indexer.embeddings import EmbeddingProvider
     from cangjie_mcp.indexer.store import VectorStore
 
 
-def build_index(settings: Settings, store: VectorStore, embedding_provider: EmbeddingProvider) -> None:
+def build_index(
+    settings: Settings, index_info: IndexInfo, store: VectorStore, embedding_provider: EmbeddingProvider
+) -> None:
     """Build the vector index from a git documentation repository.
 
     Ensures the repo is cloned and at the correct version, loads documents,
     chunks them, indexes into the store, and saves metadata.
 
     Args:
-        settings: Application settings with paths and configuration
+        settings: Application settings (CLI configuration like chunk_max_size)
+        index_info: Index identity and paths
         store: VectorStore instance to index into
         embedding_provider: EmbeddingProvider for chunking
 
     Raises:
-        typer.Exit: If no documents are found
+        RuntimeError: If no documents are found
     """
     from cangjie_mcp.indexer.chunker import create_chunker
     from cangjie_mcp.indexer.loader import DocumentLoader
@@ -36,24 +39,21 @@ def build_index(settings: Settings, store: VectorStore, embedding_provider: Embe
 
     # Ensure repo is ready
     logger.info("Ensuring documentation repository...")
-    git_mgr = GitManager(settings.docs_repo_dir)
+    git_mgr = GitManager(index_info.docs_repo_dir)
     git_mgr.ensure_cloned()
 
     current_version = git_mgr.get_current_version()
-    if current_version != settings.docs_version:
-        logger.info("Checking out version %s...", settings.docs_version)
-        git_mgr.checkout(settings.docs_version)
+    if current_version != index_info.version:
+        logger.info("Checking out version %s...", index_info.version)
+        git_mgr.checkout(index_info.version)
 
     # Load documents
     logger.info("Loading documents...")
-    loader = DocumentLoader(settings.docs_source_dir)
+    loader = DocumentLoader(index_info.docs_source_dir)
     documents = loader.load_all_documents()
 
     if not documents:
-        import typer
-
-        typer.echo("No documents found!")
-        raise typer.Exit(1)
+        raise RuntimeError(f"No documents found in {index_info.docs_source_dir}")
 
     logger.info("Loaded %d documents", len(documents))
 
@@ -67,102 +67,61 @@ def build_index(settings: Settings, store: VectorStore, embedding_provider: Embe
     logger.info("Building index...")
     store.index_nodes(nodes)
     store.save_metadata(
-        version=settings.docs_version,
-        lang=settings.docs_lang,
+        version=index_info.version,
+        lang=index_info.lang,
         embedding_model=embedding_provider.get_model_name(),
     )
 
     logger.info("Index built successfully!")
 
 
-def initialize_and_index(settings: Settings) -> None:
+def _index_is_ready(index_info: IndexInfo, version: str, lang: str) -> bool:
+    """Check if a valid index exists by reading the metadata file.
+
+    This avoids creating a ChromaDB client or loading the embedding model,
+    making it much cheaper than creating a full VectorStore just to check.
+    """
+    from cangjie_mcp.indexer.store import METADATA_FILE, IndexMetadata
+
+    metadata_path = index_info.chroma_db_dir / METADATA_FILE
+    if not metadata_path.exists():
+        return False
+    try:
+        metadata = IndexMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+        return metadata.version == version and metadata.lang == lang and metadata.document_count > 0
+    except Exception:
+        return False
+
+
+def initialize_and_index(settings: Settings) -> IndexInfo:
     """Initialize repository and build index if needed.
 
     This function:
-    1. Checks for a matching prebuilt index
-    2. If not found, checks for an existing index with matching version/lang
-    3. If neither exists, clones the repo and builds a new index
+    1. Checks for an existing index with matching version/lang
+    2. If none exists, clones the repo and builds a new index
 
     Args:
         settings: Application settings with paths and configuration
+
+    Returns:
+        IndexInfo describing the active index
     """
-    from cangjie_mcp.prebuilt.manager import PrebuiltManager
+    from cangjie_mcp.config import IndexInfo as IndexInfoCls
 
-    prebuilt_mgr = PrebuiltManager(settings.data_dir)
+    index_info = IndexInfoCls.from_settings(settings)
 
-    # When prebuilt_url is configured, version/lang/embedding are determined by the archive
-    if settings.prebuilt_url:
-        _warn_ignored_settings(settings)
-
-        installed = prebuilt_mgr.get_installed_metadata()
-        if installed:
-            logger.info("Using prebuilt index (version: %s, lang: %s)", installed.version, installed.lang)
-            return
-
-        archive = prebuilt_mgr.download(settings.prebuilt_url)
-        prebuilt_mgr.install(archive)
-        return
-
-    # No prebuilt URL — use version/lang to check existing index
-    from cangjie_mcp.indexer.embeddings import get_embedding_provider
-    from cangjie_mcp.indexer.store import create_vector_store
-
-    installed = prebuilt_mgr.get_installed_metadata()
-    if installed and installed.version == settings.docs_version and installed.lang == settings.docs_lang:
-        logger.info("Using prebuilt index (version: %s, lang: %s)", settings.docs_version, settings.docs_lang)
-        return
-
-    store = create_vector_store(settings, with_rerank=False)
-
-    if store.is_indexed() and store.version_matches(settings.docs_version, settings.docs_lang):
+    if _index_is_ready(index_info, settings.docs_version, settings.docs_lang):
         logger.info("Index already exists (version: %s, lang: %s)", settings.docs_version, settings.docs_lang)
-        return
+        return index_info
 
     # Need to build index
+    from cangjie_mcp.indexer.embeddings import get_embedding_provider
+    from cangjie_mcp.indexer.store import VectorStore
+
     embedding_provider = get_embedding_provider(settings)
-    build_index(settings, store, embedding_provider)
-
-
-_PREBUILT_IGNORED_SETTINGS = ("docs_version", "docs_lang", "embedding_type", "local_model")
-
-
-def _warn_ignored_settings(settings: Settings) -> None:
-    """Warn about settings that are ignored when prebuilt_url is set."""
-    from cangjie_mcp.defaults import (
-        DEFAULT_DOCS_LANG,
-        DEFAULT_DOCS_VERSION,
-        DEFAULT_EMBEDDING_TYPE,
-        DEFAULT_LOCAL_MODEL,
+    store = VectorStore(
+        db_path=index_info.chroma_db_dir,
+        embedding_provider=embedding_provider,
     )
-
-    defaults = {
-        "docs_version": DEFAULT_DOCS_VERSION,
-        "docs_lang": DEFAULT_DOCS_LANG,
-        "embedding_type": DEFAULT_EMBEDDING_TYPE,
-        "local_model": DEFAULT_LOCAL_MODEL,
-    }
-
-    overridden = [name for name in _PREBUILT_IGNORED_SETTINGS if getattr(settings, name) != defaults[name]]
-
-    if overridden:
-        names = ", ".join(f"--{name.replace('_', '-')}" for name in overridden)
-        logger.warning(
-            "prebuilt_url is set, %s will be ignored — these values are determined by the prebuilt archive.",
-            names,
-        )
-
-
-def print_settings_summary(settings: Settings) -> None:
-    """Print a summary of the current settings.
-
-    Args:
-        settings: Application settings to summarize
-    """
-    logger.info(
-        "Cangjie MCP Server — version=%s, lang=%s, embedding=%s, rerank=%s%s",
-        settings.docs_version,
-        settings.docs_lang,
-        settings.embedding_type,
-        settings.rerank_type,
-        f", rerank_model={settings.rerank_model}" if settings.rerank_type != "none" else "",
-    )
+    build_index(settings, index_info, store, embedding_provider)
+    return index_info

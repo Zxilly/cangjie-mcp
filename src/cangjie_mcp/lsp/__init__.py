@@ -5,7 +5,8 @@ programming language, enabling code intelligence features like go-to-definition,
 find-references, hover information, and diagnostics.
 
 The LSP client communicates with the Cangjie LSP server (LSPServer) bundled
-with the Cangjie SDK via JSON-RPC over stdio.
+with the Cangjie SDK, using sansio-lsp-client for protocol handling and
+asyncio subprocess for I/O.
 """
 
 from __future__ import annotations
@@ -16,18 +17,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cangjie_mcp.lsp.client import CangjieClient
     from cangjie_mcp.lsp.config import LSPSettings
-    from cangjie_mcp.lsp.types import (
-        CompletionItem,
-        Diagnostic,
-        DocumentSymbol,
-        HoverResult,
-        Location,
-    )
 
 logger = logging.getLogger(__name__)
 
 # Global LSP client instance
-_client: CangjieClient | None = None
+_server: CangjieClient | None = None
 _settings: LSPSettings | None = None
 
 
@@ -40,7 +34,7 @@ async def init(settings: LSPSettings) -> bool:
     Returns:
         True if initialization was successful, False otherwise
     """
-    global _client, _settings
+    global _server, _settings
 
     from cangjie_mcp.lsp.client import CangjieClient
     from cangjie_mcp.lsp.config import (
@@ -56,7 +50,6 @@ async def init(settings: LSPSettings) -> bool:
         # Build environment and initialization options
         env = get_platform_env(settings.sdk_path)
         init_options = build_init_options(settings)
-        args = settings.get_lsp_args()
 
         # Add require_path to PATH for C FFI and bin-dependencies
         require_path = get_resolver_require_path()
@@ -65,42 +58,42 @@ async def init(settings: LSPSettings) -> bool:
             existing_path = env.get("PATH", "")
             # require_path already has trailing separator
             env["PATH"] = require_path + existing_path if existing_path else require_path.rstrip(separator)
-            logger.debug(f"Added require_path to PATH: {require_path}")
+            logger.debug("Added require_path to PATH: %s", require_path)
 
         # Create and start client
-        _client = CangjieClient(
-            sdk_path=settings.sdk_path,
-            root_path=settings.workspace_path,
+        _server = CangjieClient(
+            settings=settings,
             init_options=init_options,
             env=env,
-            args=args,
         )
 
-        await _client.start(timeout=settings.init_timeout)
+        await _server.start(timeout=settings.init_timeout)
         logger.info("LSP client initialized successfully")
         return True
 
-    except Exception as e:
-        logger.error(f"Failed to initialize LSP client: {e}")
-        _client = None
+    except Exception:
+        logger.exception("Failed to initialize LSP client")
+        if _server is not None:
+            await _server.shutdown()
+        _server = None
         return False
 
 
 async def shutdown() -> None:
     """Shutdown the LSP client."""
-    global _client
-    if _client is not None:
-        await _client.shutdown()
-        _client = None
+    global _server
+    if _server is not None:
+        await _server.shutdown()
+        _server = None
         logger.info("LSP client shutdown complete")
 
 
 def is_available() -> bool:
     """Check if the LSP client is available and initialized."""
-    return _client is not None and _client.is_initialized
+    return _server is not None and _server.is_initialized
 
 
-def get_client() -> CangjieClient:
+def get_server() -> CangjieClient:
     """Get the LSP client instance.
 
     Returns:
@@ -109,9 +102,9 @@ def get_client() -> CangjieClient:
     Raises:
         RuntimeError: If the client is not initialized
     """
-    if _client is None:
+    if _server is None:
         raise RuntimeError("LSP client not initialized. Call init() first.")
-    return _client
+    return _server
 
 
 def get_settings() -> LSPSettings:
@@ -128,97 +121,10 @@ def get_settings() -> LSPSettings:
     return _settings
 
 
-# LSP operation wrappers for convenience
-async def definition(file_path: str, line: int, character: int) -> list[Location]:
-    """Get definition locations for a symbol.
-
-    Args:
-        file_path: Absolute path to the source file
-        line: Line number (0-based)
-        character: Character position (0-based)
-
-    Returns:
-        List of Location models
-    """
-    return await get_client().definition(file_path, line, character)
-
-
-async def references(file_path: str, line: int, character: int) -> list[Location]:
-    """Find all references to a symbol.
-
-    Args:
-        file_path: Absolute path to the source file
-        line: Line number (0-based)
-        character: Character position (0-based)
-
-    Returns:
-        List of Location models
-    """
-    return await get_client().references(file_path, line, character)
-
-
-async def hover(file_path: str, line: int, character: int) -> HoverResult | None:
-    """Get hover information for a symbol.
-
-    Args:
-        file_path: Absolute path to the source file
-        line: Line number (0-based)
-        character: Character position (0-based)
-
-    Returns:
-        HoverResult or None
-    """
-    return await get_client().hover(file_path, line, character)
-
-
-async def document_symbols(file_path: str) -> list[DocumentSymbol]:
-    """Get document symbols.
-
-    Args:
-        file_path: Absolute path to the source file
-
-    Returns:
-        List of DocumentSymbol models
-    """
-    return await get_client().document_symbol(file_path)
-
-
-async def diagnostics(file_path: str) -> list[Diagnostic]:
-    """Get diagnostics for a file.
-
-    Args:
-        file_path: Absolute path to the source file
-
-    Returns:
-        List of Diagnostic models
-    """
-    return await get_client().get_diagnostics(file_path)
-
-
-async def completion(file_path: str, line: int, character: int) -> list[CompletionItem]:
-    """Get code completion items.
-
-    Args:
-        file_path: Absolute path to the source file
-        line: Line number (0-based)
-        character: Character position (0-based)
-
-    Returns:
-        List of CompletionItem models
-    """
-    return await get_client().completion(file_path, line, character)
-
-
 __all__ = [
-    "completion",
-    "definition",
-    "diagnostics",
-    "document_symbols",
-    "get_client",
+    "get_server",
     "get_settings",
-    "hover",
     "init",
     "is_available",
-    "references",
     "shutdown",
 ]

@@ -6,7 +6,7 @@ get_index, clear, and index_nodes.
 
 from pathlib import Path
 
-from cangjie_mcp.config import Settings
+from cangjie_mcp.config import IndexInfo, Settings
 from cangjie_mcp.indexer.chunker import create_chunker
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
@@ -24,7 +24,7 @@ class TestVectorStoreAdvanced:
     ) -> None:
         """Test get_index returns existing index after indexing."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -59,7 +59,7 @@ class TestVectorStoreAdvanced:
             data_dir=temp_data_dir,
         )
         store = VectorStore(
-            db_path=settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -75,7 +75,7 @@ class TestVectorStoreAdvanced:
     ) -> None:
         """Test clearing the index."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -108,7 +108,7 @@ class TestVectorStoreAdvanced:
     ) -> None:
         """Test indexing nodes using chunker."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -134,7 +134,7 @@ class TestVectorStoreAdvanced:
     ) -> None:
         """Test getting metadata after saving."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -176,7 +176,7 @@ class TestVectorStoreAdvanced:
             data_dir=temp_data_dir,
         )
         store = VectorStore(
-            db_path=settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -192,7 +192,7 @@ class TestVectorStoreAdvanced:
     ) -> None:
         """Test reindexing replaces existing index."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 
@@ -218,7 +218,7 @@ class TestVectorStoreAdvanced:
     ) -> None:
         """Test version_matches with different version."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
 

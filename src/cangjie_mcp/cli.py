@@ -8,7 +8,6 @@ Environment variable naming:
 - OPENAI_* prefix for OpenAI-related options
 """
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -20,17 +19,19 @@ from cangjie_mcp.cli_args import (
     DebugOption,
     DocsVersionOption,
     EmbeddingOption,
+    HostOption,
     LangOption,
     LocalModelOption,
     LogFileOption,
     OpenAIApiKeyOption,
     OpenAIBaseUrlOption,
     OpenAIModelOption,
-    PrebuiltUrlOption,
+    PortOption,
     RerankInitialKOption,
     RerankModelOption,
     RerankOption,
     RerankTopKOption,
+    ServerUrlOption,
     validate_embedding_type,
     validate_lang,
     validate_rerank_type,
@@ -48,9 +49,11 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_MODEL,
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
+    DEFAULT_SERVER_HOST,
+    DEFAULT_SERVER_PORT,
     get_default_data_dir,
 )
-from cangjie_mcp.utils import setup_logging
+from cangjie_mcp.utils import logger, setup_logging
 
 
 def _version_callback(value: bool) -> None:
@@ -66,10 +69,6 @@ app = typer.Typer(
     help="MCP server for Cangjie programming language",
     invoke_without_command=True,
 )
-
-# Prebuilt index management
-prebuilt_app = typer.Typer(help="Prebuilt index management commands")
-app.add_typer(prebuilt_app, name="prebuilt")
 
 
 @app.callback(invoke_without_command=True)
@@ -99,7 +98,7 @@ def main(
     rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
     chunk_max_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
     data_dir: DataDirOption = None,
-    prebuilt_url: PrebuiltUrlOption = None,
+    server_url: ServerUrlOption = None,
     log_file: LogFileOption = None,
     debug: DebugOption = False,
 ) -> None:
@@ -110,6 +109,9 @@ def main(
 
     # Set up logging early
     setup_logging(log_file, debug)
+
+    if server_url:
+        logger.info("Using remote server at %s — local index options are ignored.", server_url)
 
     # Validate and build settings
     settings = Settings(
@@ -126,7 +128,7 @@ def main(
         rerank_initial_k=rerank_initial_k,
         chunk_max_size=chunk_max_size,
         data_dir=data_dir if data_dir else get_default_data_dir(),
-        prebuilt_url=prebuilt_url,
+        server_url=server_url,
     )
     set_settings(settings)
 
@@ -134,230 +136,94 @@ def main(
     from cangjie_mcp.server.factory import create_mcp_server
 
     mcp = create_mcp_server(settings)
-    typer.echo("Starting MCP server...")
+    logger.info("Starting MCP server...")
     mcp.run(transport="stdio")
 
 
-@prebuilt_app.command("download")
-def prebuilt_download(
-    url: Annotated[
-        str | None,
-        typer.Option(
-            "--url",
-            "-u",
-            help="URL to download from",
-            envvar="CANGJIE_PREBUILT_URL",
-        ),
-    ] = None,
-    data_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--data-dir",
-            "-d",
-            help="Data directory path",
-            envvar="CANGJIE_DATA_DIR",
-        ),
-    ] = None,
+@app.command("server")
+def server_command(
+    # Index options (same as main)
+    docs_version: DocsVersionOption = DEFAULT_DOCS_VERSION,
+    lang: LangOption = DEFAULT_DOCS_LANG,
+    embedding: EmbeddingOption = DEFAULT_EMBEDDING_TYPE,
+    local_model: LocalModelOption = DEFAULT_LOCAL_MODEL,
+    openai_api_key: OpenAIApiKeyOption = None,
+    openai_base_url: OpenAIBaseUrlOption = DEFAULT_OPENAI_BASE_URL,
+    openai_model: OpenAIModelOption = DEFAULT_OPENAI_MODEL,
+    rerank: RerankOption = DEFAULT_RERANK_TYPE,
+    rerank_model: RerankModelOption = DEFAULT_RERANK_MODEL,
+    rerank_top_k: RerankTopKOption = DEFAULT_RERANK_TOP_K,
+    rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
+    chunk_max_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
+    data_dir: DataDirOption = None,
+    log_file: LogFileOption = None,
+    debug: DebugOption = False,
+    # Server-specific options
+    host: HostOption = DEFAULT_SERVER_HOST,
+    port: PortOption = DEFAULT_SERVER_PORT,
 ) -> None:
-    """Download and install a prebuilt index."""
-    from cangjie_mcp.prebuilt.manager import PrebuiltManager
+    """Start the HTTP query server.
 
-    if not url:
-        typer.echo("Error: No URL provided. Set CANGJIE_PREBUILT_URL or use --url")
-        raise typer.Exit(1)
-
-    actual_data_dir = data_dir or get_default_data_dir()
-
-    mgr = PrebuiltManager(actual_data_dir)
-    try:
-        archive_path = mgr.download(url)
-        mgr.install(archive_path)
-    except Exception as e:
-        typer.echo(f"Error: Failed to download: {e}")
-        raise typer.Exit(1) from None
-
-
-@prebuilt_app.command("build")
-def prebuilt_build(
-    version: Annotated[
-        str | None,
-        typer.Option(
-            "--version",
-            "-v",
-            help="Documentation version (git tag)",
-            envvar="CANGJIE_DOCS_VERSION",
-        ),
-    ] = None,
-    lang: Annotated[
-        str | None,
-        typer.Option(
-            "--lang",
-            "-l",
-            help="Documentation language (zh/en)",
-            envvar="CANGJIE_DOCS_LANG",
-        ),
-    ] = None,
-    embedding: Annotated[
-        str | None,
-        typer.Option(
-            "--embedding",
-            "-e",
-            help="Embedding type (local/openai)",
-            envvar="CANGJIE_EMBEDDING_TYPE",
-        ),
-    ] = None,
-    local_model: Annotated[
-        str | None,
-        typer.Option(
-            "--local-model",
-            help="Local embedding model name",
-            envvar="CANGJIE_LOCAL_MODEL",
-        ),
-    ] = None,
-    openai_api_key: Annotated[
-        str | None,
-        typer.Option(
-            "--openai-api-key",
-            help="OpenAI API key",
-            envvar="OPENAI_API_KEY",
-        ),
-    ] = None,
-    openai_base_url: Annotated[
-        str | None,
-        typer.Option(
-            "--openai-base-url",
-            help="OpenAI API base URL",
-            envvar="OPENAI_BASE_URL",
-        ),
-    ] = None,
-    openai_model: Annotated[
-        str | None,
-        typer.Option(
-            "--openai-model",
-            help="OpenAI embedding model",
-            envvar="OPENAI_EMBEDDING_MODEL",
-        ),
-    ] = None,
-    chunk_size: Annotated[
-        int | None,
-        typer.Option(
-            "--chunk-size",
-            "-c",
-            help="Max chunk size in characters",
-            envvar="CANGJIE_CHUNK_MAX_SIZE",
-        ),
-    ] = None,
-    data_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--data-dir",
-            "-d",
-            help="Data directory",
-            envvar="CANGJIE_DATA_DIR",
-        ),
-    ] = None,
-    output: Annotated[
-        Path | None,
-        typer.Option("--output", "-o", help="Output directory or file path"),
-    ] = None,
-) -> None:
-    """Build a prebuilt index archive.
-
-    Automatically clones documentation repository and builds the vector index
-    before creating the archive.
+    Loads the embedding model and ChromaDB index, then serves search
+    queries over HTTP. Remote MCP clients can connect using --server-url.
     """
-    from cangjie_mcp.indexer.embeddings import create_embedding_provider
-    from cangjie_mcp.indexer.initializer import build_index
-    from cangjie_mcp.indexer.store import VectorStore
-    from cangjie_mcp.prebuilt.manager import PrebuiltManager
+    setup_logging(log_file, debug)
 
-    # Build settings with optional overrides
-    defaults = Settings()
     settings = Settings(
-        docs_version=version if version else defaults.docs_version,
-        docs_lang=validate_lang(lang) if lang else defaults.docs_lang,  # type: ignore[arg-type]
-        embedding_type=validate_embedding_type(embedding) if embedding else defaults.embedding_type,  # type: ignore[arg-type]
-        local_model=local_model if local_model else defaults.local_model,
+        docs_version=docs_version,
+        docs_lang=validate_lang(lang),  # type: ignore[arg-type]
+        embedding_type=validate_embedding_type(embedding),  # type: ignore[arg-type]
+        local_model=local_model,
         openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url if openai_base_url else defaults.openai_base_url,
-        openai_model=openai_model if openai_model else defaults.openai_model,
-        chunk_max_size=chunk_size if chunk_size else defaults.chunk_max_size,
-        data_dir=data_dir if data_dir else defaults.data_dir,
+        openai_base_url=openai_base_url,
+        openai_model=openai_model,
+        rerank_type=validate_rerank_type(rerank),  # type: ignore[arg-type]
+        rerank_model=rerank_model,
+        rerank_top_k=rerank_top_k,
+        rerank_initial_k=rerank_initial_k,
+        chunk_max_size=chunk_max_size,
+        data_dir=data_dir if data_dir else get_default_data_dir(),
     )
     set_settings(settings)
 
-    typer.echo("Building Prebuilt Index Archive")
-    typer.echo(f"  Version: {settings.docs_version}")
-    typer.echo(f"  Language: {settings.docs_lang}")
-    typer.echo(f"  Embedding: {settings.embedding_type}")
-    typer.echo(f"  Chunk size: {settings.chunk_max_size}")
-    typer.echo(f"  Data dir: {settings.data_dir}")
-    typer.echo()
+    from cangjie_mcp.indexer.search_index import LocalSearchIndex
+    from cangjie_mcp.indexer.store import METADATA_FILE, IndexMetadata
+    from cangjie_mcp.server.http import create_http_app
 
-    # Build the index
-    embedding_provider = create_embedding_provider(settings)
-    store = VectorStore(
-        db_path=settings.chroma_db_dir,
-        embedding_provider=embedding_provider,
-    )
-    build_index(settings, store, embedding_provider)
+    # Initialize the local search index
+    typer.echo(f"Initializing index (version={settings.docs_version}, lang={settings.docs_lang})...")
+    search_index = LocalSearchIndex(settings)
+    index_info = search_index.init()
+    typer.echo(f"Index ready: version={index_info.version}, lang={index_info.lang}")
 
-    # Create archive
-    typer.echo("Creating archive...")
-    mgr = PrebuiltManager(settings.index_dir)
+    # Load index metadata for the /info endpoint
+    metadata_path = index_info.chroma_db_dir / METADATA_FILE
+    index_metadata = IndexMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
 
-    try:
-        archive_path = mgr.build(
-            version=settings.docs_version,
-            lang=settings.docs_lang,
-            embedding_model=embedding_provider.get_model_name(),
-            docs_source_dir=settings.docs_source_dir,
-            output_path=output,
+    # Create document source
+    from cangjie_mcp.indexer.document_source import GitDocumentSource
+    from cangjie_mcp.repo.git_manager import GitManager
+
+    git_mgr = GitManager(settings.docs_repo_dir)
+    if not git_mgr.is_cloned() or git_mgr.repo is None:
+        raise RuntimeError(
+            f"Documentation repository not found at {settings.docs_repo_dir}. "
+            "The index was built but the git repo is missing."
         )
-        typer.echo(f"Archive built: {archive_path}")
-    except Exception as e:
-        typer.echo(f"Error: Failed to build archive: {e}")
-        raise typer.Exit(1) from None
 
+    doc_source = GitDocumentSource(
+        repo=git_mgr.repo,
+        version=index_info.version,
+        lang=index_info.lang,
+    )
 
-@prebuilt_app.command("list")
-def prebuilt_list(
-    data_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--data-dir",
-            "-d",
-            help="Data directory path",
-            envvar="CANGJIE_DATA_DIR",
-        ),
-    ] = None,
-) -> None:
-    """List available prebuilt indexes."""
-    from cangjie_mcp.prebuilt.manager import PrebuiltManager
+    # Create and run HTTP app
+    http_app = create_http_app(search_index, doc_source, index_metadata)
 
-    actual_data_dir = data_dir or get_default_data_dir()
-    mgr = PrebuiltManager(actual_data_dir)
+    typer.echo(f"Starting HTTP server on {host}:{port}...")
+    import uvicorn
 
-    # List local archives
-    local = mgr.list_local()
-
-    if not local:
-        typer.echo("No local prebuilt indexes found.")
-    else:
-        typer.echo("Local Prebuilt Indexes")
-        typer.echo(f"  {'Version':<12} {'Language':<10} {'Embedding':<20} Path")
-        typer.echo(f"  {'-' * 12} {'-' * 10} {'-' * 20} {'-' * 20}")
-        for item in local:
-            typer.echo(f"  {item.version:<12} {item.lang:<10} {item.embedding_model:<20} {item.path}")
-
-    # Show currently installed index
-    installed = mgr.get_installed_metadata()
-    if installed:
-        typer.echo()
-        typer.echo("Currently Installed:")
-        typer.echo(f"  Version: {installed.version}")
-        typer.echo(f"  Language: {installed.lang}")
-        typer.echo(f"  Embedding: {installed.embedding_model}")
+    uvicorn.run(http_app, host=host, port=port)
 
 
 if __name__ == "__main__":

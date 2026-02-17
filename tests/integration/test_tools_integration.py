@@ -4,16 +4,15 @@ These tests verify the tool functions work correctly with
 real document stores and indexed content.
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from mcp.server.fastmcp import Context
 
-from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.document_source import PrebuiltDocumentSource
+from cangjie_mcp.config import IndexInfo, Settings
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
+from tests.integration.conftest import TestDocumentSource, VectorStoreSearchIndex
 
 
 def _mock_ctx(tool_context: tools.ToolContext) -> MagicMock:
@@ -31,7 +30,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_search_docs_tool(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -39,8 +38,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -53,7 +53,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_get_topic_tool(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -61,8 +61,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -76,7 +77,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_get_topic_not_found(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -84,8 +85,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -95,7 +97,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_list_topics_tool(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -103,8 +105,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -119,7 +122,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_list_topics_by_category(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -127,8 +130,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -142,7 +146,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_get_code_examples_tool(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -150,8 +154,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -164,7 +169,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_get_tool_usage_tool(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -172,8 +177,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -187,7 +193,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_search_with_category_filter(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -195,8 +201,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -208,7 +215,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_get_topic_with_category(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -216,8 +223,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -230,7 +238,7 @@ class TestToolsIntegration:
     @pytest.mark.asyncio
     async def test_code_examples_filter_by_language(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -238,8 +246,9 @@ class TestToolsIntegration:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 

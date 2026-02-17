@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from cangjie_mcp.config import (
+    IndexInfo,
     Settings,
     get_settings,
     reset_settings,
@@ -43,25 +44,93 @@ class TestSettings:
         """Test derived path properties."""
         settings = create_test_settings(data_dir=temp_data_dir, docs_lang="zh", docs_version="v1.0.7")
         assert settings.docs_repo_dir == temp_data_dir / "docs_repo"
-        assert settings.index_dir == temp_data_dir / "indexes" / "v1.0.7-zh"
-        assert settings.chroma_db_dir == temp_data_dir / "indexes" / "v1.0.7-zh" / "chroma_db"
-        assert "source_zh_cn" in str(settings.docs_source_dir)
-
-        settings_en = create_test_settings(data_dir=temp_data_dir, docs_lang="en", docs_version="v1.0.7")
-        assert settings_en.index_dir == temp_data_dir / "indexes" / "v1.0.7-en"
-        assert "source_en" in str(settings_en.docs_source_dir)
 
     def test_version_isolation(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
-        """Test that different versions have separate index directories."""
+        """Test that different versions share the same docs_repo."""
         settings_v1 = create_test_settings(data_dir=temp_data_dir, docs_version="v1.0.6", docs_lang="zh")
         settings_v2 = create_test_settings(data_dir=temp_data_dir, docs_version="v1.0.7", docs_lang="zh")
 
-        # Different versions should have different index directories
-        assert settings_v1.index_dir != settings_v2.index_dir
-        assert settings_v1.chroma_db_dir != settings_v2.chroma_db_dir
-
-        # But share the same docs_repo
+        # Both share the same docs_repo
         assert settings_v1.docs_repo_dir == settings_v2.docs_repo_dir
+
+
+class TestIndexInfo:
+    """Tests for IndexInfo frozen dataclass."""
+
+    def test_from_settings(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
+        """Test IndexInfo.from_settings constructs correctly."""
+        settings = create_test_settings(data_dir=temp_data_dir, docs_version="v1.0.7", docs_lang="zh")
+        index_info = IndexInfo.from_settings(settings)
+        assert index_info.version == "v1.0.7"
+        assert index_info.lang == "zh"
+        assert index_info.embedding_model_name == "local:paraphrase-multilingual-MiniLM-L12-v2"
+        assert index_info.data_dir == temp_data_dir
+
+    def test_path_properties(self, temp_data_dir: Path) -> None:
+        """Test derived path properties on IndexInfo."""
+        index_info = IndexInfo(
+            version="v1.0.7",
+            lang="zh",
+            embedding_model_name="local:paraphrase-multilingual-MiniLM-L12-v2",
+            data_dir=temp_data_dir,
+        )
+        assert (
+            index_info.index_dir
+            == temp_data_dir / "indexes" / "v1.0.7" / "zh" / "local--paraphrase-multilingual-MiniLM-L12-v2"
+        )
+        assert (
+            index_info.chroma_db_dir
+            == temp_data_dir
+            / "indexes"
+            / "v1.0.7"
+            / "zh"
+            / "local--paraphrase-multilingual-MiniLM-L12-v2"
+            / "chroma_db"
+        )
+        assert index_info.docs_repo_dir == temp_data_dir / "docs_repo"
+        assert "source_zh_cn" in str(index_info.docs_source_dir)
+
+        # Test English language
+        index_info_en = IndexInfo(
+            version="v1.0.7",
+            lang="en",
+            embedding_model_name="local:paraphrase-multilingual-MiniLM-L12-v2",
+            data_dir=temp_data_dir,
+        )
+        assert (
+            index_info_en.index_dir
+            == temp_data_dir / "indexes" / "v1.0.7" / "en" / "local--paraphrase-multilingual-MiniLM-L12-v2"
+        )
+        assert "source_en" in str(index_info_en.docs_source_dir)
+
+    def test_version_isolation(self, temp_data_dir: Path) -> None:
+        """Test that different versions have separate index directories."""
+        info_v1 = IndexInfo(
+            version="v1.0.6",
+            lang="zh",
+            embedding_model_name="local:test",
+            data_dir=temp_data_dir,
+        )
+        info_v2 = IndexInfo(
+            version="v1.0.7",
+            lang="zh",
+            embedding_model_name="local:test",
+            data_dir=temp_data_dir,
+        )
+        assert info_v1.index_dir != info_v2.index_dir
+        assert info_v1.chroma_db_dir != info_v2.chroma_db_dir
+        assert info_v1.docs_repo_dir == info_v2.docs_repo_dir
+
+    def test_frozen(self, temp_data_dir: Path) -> None:
+        """Test that IndexInfo is immutable."""
+        index_info = IndexInfo(
+            version="v1.0.7",
+            lang="zh",
+            embedding_model_name="local:test",
+            data_dir=temp_data_dir,
+        )
+        with pytest.raises(AttributeError):
+            index_info.version = "v2.0.0"  # type: ignore[misc]
 
 
 class TestOpenAISettings:

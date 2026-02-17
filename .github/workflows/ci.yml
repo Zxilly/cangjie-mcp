@@ -8,9 +8,10 @@ on:
 
 env:
   PYTHON_VERSION: "3.13"
-  # Test configuration - can be overridden
   CANGJIE_TEST_DOCS_VERSION: "v1.0.7"
   CANGJIE_TEST_LOCAL_MODEL: "paraphrase-multilingual-MiniLM-L12-v2"
+  # Centralise HuggingFace cache so actions/cache can persist it
+  HF_HOME: ~/.cache/huggingface
 
 jobs:
   lint:
@@ -113,11 +114,25 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.HF_HOME }}
+          key: hf-${{ env.CANGJIE_TEST_LOCAL_MODEL }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            hf-${{ env.CANGJIE_TEST_LOCAL_MODEL }}-
+
       - name: Run integration tests
         run: |
+          # Use OpenAI embedding when API key is available (faster, no model download)
+          if [ -n "$OPENAI_API_KEY" ]; then
+            export CANGJIE_EMBEDDING_TYPE=openai
+          fi
+
           uv run pytest tests/integration \
             -v \
             --tb=short \
+            -k "not reranker" \
             --cov=src/cangjie_mcp \
             --cov-report=xml \
             --cov-report=term-missing

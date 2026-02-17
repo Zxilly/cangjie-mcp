@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from cangjie_mcp.config import Settings, reset_settings, set_settings
+from cangjie_mcp.config import IndexInfo, Settings, reset_settings, set_settings
 from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
 from cangjie_mcp.indexer.reranker import get_reranker_provider, reset_reranker_provider
 from cangjie_mcp.indexer.store import VectorStore
@@ -48,9 +48,11 @@ def run_evaluation(
     if queries is None:
         queries = load_test_queries()
 
+    index_info = IndexInfo.from_settings(settings)
+
     # Check if index exists
-    if not settings.chroma_db_dir.exists():
-        print(f"Error: Index not found at {settings.chroma_db_dir}", file=sys.stderr)
+    if not index_info.chroma_db_dir.exists():
+        print(f"Error: Index not found at {index_info.chroma_db_dir}", file=sys.stderr)
         print("Please build the index first:", file=sys.stderr)
         print("  uv run cangjie-mcp index --version latest --lang zh", file=sys.stderr)
         sys.exit(1)
@@ -61,13 +63,13 @@ def run_evaluation(
 
     # Create vector store with reranker
     store = VectorStore(
-        db_path=settings.chroma_db_dir,
+        db_path=index_info.chroma_db_dir,
         embedding_provider=embedding_provider,
         reranker=reranker_provider,
     )
 
     print(f"Running evaluation with {len(queries)} queries...")
-    print(f"  Index: {settings.chroma_db_dir}")
+    print(f"  Index: {index_info.chroma_db_dir}")
     print(f"  Top-K: {top_k}")
     print(f"  Embedding: {embedding_provider.get_model_name()}")
     print(f"  Reranker: {reranker_provider.get_model_name()}")

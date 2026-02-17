@@ -1,14 +1,18 @@
 """Markdown document loader for Cangjie documentation."""
 
+from __future__ import annotations
+
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-
-from llama_index.core import Document
+from typing import TYPE_CHECKING
 
 from cangjie_mcp.indexer.api_extractor import extract_stdlib_info
 from cangjie_mcp.utils import logger
+
+if TYPE_CHECKING:
+    from llama_index.core import Document
 
 
 @dataclass
@@ -146,6 +150,8 @@ class DocumentLoader:
         Returns:
             LlamaIndex Document or None if file is empty
         """
+        from llama_index.core import Document
+
         content = file_path.read_text(encoding="utf-8")
         if not content.strip():
             return None

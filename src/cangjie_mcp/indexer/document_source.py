@@ -2,21 +2,16 @@
 
 Provides a unified interface for reading documentation from different sources:
 - GitDocumentSource: Reads files directly from git repository using GitPython
-- PrebuiltDocumentSource: Reads files from extracted prebuilt archive on filesystem
-- NullDocumentSource: Fallback when no docs available
+- RemoteDocumentSource: Reads files from a remote cangjie-mcp HTTP server
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
-
-from llama_index.core import Document
 
 from cangjie_mcp.indexer.loader import (
     extract_code_blocks,
-    extract_metadata_from_path,
     extract_title_from_content,
 )
 from cangjie_mcp.utils import logger
@@ -25,13 +20,14 @@ if TYPE_CHECKING:
     from git import Repo
     from git.objects import Blob, Tree
     from git.objects.base import IndexObjUnion
+    from llama_index.core import Document
 
 
 class DocumentSource(ABC):
     """Abstract base class for document source providers.
 
     Provides a unified interface for reading documentation from different sources,
-    allowing tools to work with either git repositories or prebuilt archives.
+    allowing tools to work with either git repositories or remote servers.
     """
 
     @abstractmethod
@@ -167,6 +163,8 @@ class GitDocumentSource(DocumentSource):
         Returns:
             LlamaIndex Document
         """
+        from llama_index.core import Document
+
         title = extract_title_from_content(content)
         code_blocks = extract_code_blocks(content)
 
@@ -325,148 +323,91 @@ class GitDocumentSource(DocumentSource):
                 self._load_docs_from_tree(item, category, f"{prefix}/{item.name}", documents)
 
 
-class PrebuiltDocumentSource(DocumentSource):
-    """Reads from installed prebuilt docs directory (filesystem).
+class RemoteDocumentSource(DocumentSource):
+    """Reads documentation from a remote cangjie-mcp HTTP server.
 
-    This source reads documentation files from a directory on the filesystem,
-    typically extracted from a prebuilt archive.
+    Uses httpx to call the server's /topics and /topics/{category}/{topic}
+    endpoints. Only supports browsing operations — load_all_documents()
+    raises NotImplementedError since bulk loading is only needed during
+    index building which happens on the server side.
     """
 
-    def __init__(self, docs_dir: Path) -> None:
-        """Initialize prebuilt document source.
+    def __init__(self, server_url: str) -> None:
+        """Initialize remote document source.
 
         Args:
-            docs_dir: Path to the extracted docs directory
+            server_url: Base URL of the remote cangjie-mcp server
         """
-        self.docs_dir = docs_dir
+        import httpx
 
-    @classmethod
-    def from_installed(cls, data_dir: Path, version: str, lang: str) -> PrebuiltDocumentSource | None:
-        """Create a PrebuiltDocumentSource from installed prebuilt docs.
+        self._server_url = server_url.rstrip("/")
+        self._client = httpx.Client(base_url=self._server_url, timeout=30.0)
+        self._categories_cache: dict[str, list[str]] | None = None
 
-        Args:
-            data_dir: Base data directory
-            version: Documentation version
-            lang: Documentation language
+    def _fetch_topics(self) -> dict[str, list[str]]:
+        """Fetch and cache the full topics listing from the server."""
+        if self._categories_cache is not None:
+            return self._categories_cache
 
-        Returns:
-            PrebuiltDocumentSource if docs exist, None otherwise
-        """
-        docs_path = data_dir / "docs" / f"{version}-{lang}"
-        if docs_path.exists():
-            return cls(docs_path)
-        return None
+        resp = self._client.get("/topics")
+        resp.raise_for_status()
+        data = resp.json()
+        categories: dict[str, list[str]] = data.get("categories", {})
+        self._categories_cache = categories
+        return categories
 
     def is_available(self) -> bool:
-        """Check if the docs directory exists and is accessible."""
-        return self.docs_dir.exists() and self.docs_dir.is_dir()
+        """Check if the remote server is reachable."""
+        try:
+            resp = self._client.get("/health")
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     def get_categories(self) -> list[str]:
-        """Get list of available categories."""
-        if not self.is_available():
-            return []
-
-        return sorted(
-            item.name for item in self.docs_dir.iterdir() if item.is_dir() and not item.name.startswith((".", "_"))
-        )
+        """Get list of available categories from the server."""
+        topics = self._fetch_topics()
+        return sorted(topics.keys())
 
     def get_topics_in_category(self, category: str) -> list[str]:
-        """Get list of topics in a category."""
-        category_dir = self.docs_dir / category
-        if not category_dir.exists():
-            return []
-
-        return sorted(file_path.stem for file_path in category_dir.rglob("*.md"))
+        """Get list of topics in a category from the server."""
+        topics = self._fetch_topics()
+        return sorted(topics.get(category, []))
 
     def get_document_by_topic(self, topic: str, category: str | None = None) -> Document | None:
-        """Get a document by its topic name."""
-        if not self.is_available():
+        """Get a document by its topic name from the server."""
+        from llama_index.core import Document
+
+        # If no category given, find it from the topics listing
+        if category is None:
+            topics = self._fetch_topics()
+            for cat, cat_topics in topics.items():
+                if topic in cat_topics:
+                    category = cat
+                    break
+            if category is None:
+                return None
+
+        resp = self._client.get(f"/topics/{category}/{topic}")
+        if resp.status_code == 404:
             return None
-
-        search_dir = self.docs_dir / category if category else self.docs_dir
-
-        for file_path in search_dir.rglob(f"{topic}.md"):
-            return self._load_document(file_path)
-
-        return None
-
-    def _load_document(self, file_path: Path) -> Document | None:
-        """Load a single document from file.
-
-        Args:
-            file_path: Path to markdown file
-
-        Returns:
-            LlamaIndex Document or None if file is empty
-        """
-        content = file_path.read_text(encoding="utf-8")
-        if not content.strip():
-            return None
-
-        metadata = extract_metadata_from_path(file_path, self.docs_dir)
-        metadata.title = extract_title_from_content(content)
-        metadata.code_blocks = extract_code_blocks(content)
+        resp.raise_for_status()
+        data = resp.json()
 
         return Document(
-            text=content,
+            text=data.get("content", ""),
             metadata={
-                "file_path": metadata.file_path,
-                "category": metadata.category,
-                "topic": metadata.topic,
-                "title": metadata.title,
-                "code_block_count": len(metadata.code_blocks),
+                "file_path": data.get("file_path", ""),
+                "category": data.get("category", category),
+                "topic": data.get("topic", topic),
+                "title": data.get("title", ""),
                 "source": "cangjie_docs",
             },
-            doc_id=metadata.file_path,
+            doc_id=data.get("file_path", f"{category}/{topic}"),
         )
 
     def load_all_documents(self) -> list[Document]:
-        """Load all documents from the docs directory."""
-        if not self.is_available():
-            return []
-
-        documents: list[Document] = []
-        md_files = list(self.docs_dir.rglob("*.md"))
-
-        logger.info("Found %d markdown files.", len(md_files))
-
-        for file_path in md_files:
-            try:
-                doc = self._load_document(file_path)
-                if doc:
-                    documents.append(doc)
-            except Exception as e:
-                logger.warning("Failed to load %s: %s", file_path, e)
-
-        logger.info("Loaded %d documents.", len(documents))
-        return documents
-
-
-class NullDocumentSource(DocumentSource):
-    """Fallback when no docs available - returns empty results.
-
-    This source is used when no documentation source is configured or available.
-    It provides safe empty results for all operations.
-    """
-
-    def is_available(self) -> bool:
-        """NullDocumentSource is always 'available' as a fallback."""
-        return True
-
-    def get_categories(self) -> list[str]:
-        """Return empty categories list."""
-        return []
-
-    def get_topics_in_category(self, category: str) -> list[str]:
-        """Return empty topics list."""
-        del category  # Unused but required by interface
-        return []
-
-    def get_document_by_topic(self, topic: str, category: str | None = None) -> Document | None:
-        """Return None for any topic."""
-        del topic, category  # Unused but required by interface
-        return None
-
-    def load_all_documents(self) -> list[Document]:
-        """Return empty documents list."""
-        return []
+        """Not supported for remote sources (only needed during index building)."""
+        raise NotImplementedError(
+            "RemoteDocumentSource does not support load_all_documents. Bulk loading is handled by the server."
+        )

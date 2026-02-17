@@ -28,6 +28,52 @@ from cangjie_mcp.defaults import (
 )
 
 
+def _sanitize_for_path(name: str) -> str:
+    """Sanitize a string for use in file paths."""
+    return name.replace(":", "--").replace("/", "--")
+
+
+@dataclass(frozen=True)
+class IndexInfo:
+    """Identity and paths for the currently loaded index. Immutable after creation."""
+
+    version: str
+    lang: str
+    embedding_model_name: str
+    data_dir: Path
+
+    @property
+    def index_dir(self) -> Path:
+        """Path to version-specific index directory."""
+        return self.data_dir / "indexes" / self.version / self.lang / _sanitize_for_path(self.embedding_model_name)
+
+    @property
+    def chroma_db_dir(self) -> Path:
+        """Path to ChromaDB database (version-specific)."""
+        return self.index_dir / "chroma_db"
+
+    @property
+    def docs_repo_dir(self) -> Path:
+        """Path to cloned documentation repository."""
+        return self.data_dir / "docs_repo"
+
+    @property
+    def docs_source_dir(self) -> Path:
+        """Path to documentation source based on language."""
+        lang_dir = "source_zh_cn" if self.lang == "zh" else "source_en"
+        return self.docs_repo_dir / "docs" / "dev-guide" / lang_dir
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> IndexInfo:
+        """Construct IndexInfo from CLI settings."""
+        return cls(
+            version=settings.docs_version,
+            lang=settings.docs_lang,
+            embedding_model_name=settings.embedding_model_name,
+            data_dir=settings.data_dir,
+        )
+
+
 @dataclass
 class Settings:
     """Application settings.
@@ -58,8 +104,8 @@ class Settings:
     # Data directory (use field with default_factory for mutable default)
     data_dir: Path = field(default_factory=get_default_data_dir)
 
-    # Prebuilt index URL
-    prebuilt_url: str | None = None
+    # Remote server URL (when set, forwards queries to an HTTP server)
+    server_url: str | None = None
 
     # OpenAI-compatible API settings
     openai_api_key: str | None = None
@@ -67,29 +113,16 @@ class Settings:
     openai_model: str = DEFAULT_OPENAI_MODEL
 
     @property
+    def embedding_model_name(self) -> str:
+        """Return a canonical name for the current embedding model."""
+        if self.embedding_type == "local":
+            return f"local:{self.local_model}"
+        return f"openai:{self.openai_model}"
+
+    @property
     def docs_repo_dir(self) -> Path:
         """Path to cloned documentation repository."""
         return self.data_dir / "docs_repo"
-
-    @property
-    def index_dir(self) -> Path:
-        """Path to version-specific index directory.
-
-        Indexes are separated by version and language to prevent pollution.
-        Example: ~/.cangjie-mcp/indexes/v1.0.7-zh/
-        """
-        return self.data_dir / "indexes" / f"{self.docs_version}-{self.docs_lang}"
-
-    @property
-    def chroma_db_dir(self) -> Path:
-        """Path to ChromaDB database (version-specific)."""
-        return self.index_dir / "chroma_db"
-
-    @property
-    def docs_source_dir(self) -> Path:
-        """Path to documentation source based on language."""
-        lang_dir = "source_zh_cn" if self.docs_lang == "zh" else "source_en"
-        return self.docs_repo_dir / "docs" / "dev-guide" / lang_dir
 
 
 # Global settings instance

@@ -6,6 +6,7 @@ with reranking using local cross-encoder models.
 
 from pathlib import Path
 
+from cangjie_mcp.config import IndexInfo
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.reranker import LocalReranker
 from cangjie_mcp.indexer.store import VectorStore
@@ -160,7 +161,7 @@ class TestVectorStoreWithoutReranker:
     ) -> None:
         """Test search when no reranker is configured."""
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
             # No reranker provided
         )

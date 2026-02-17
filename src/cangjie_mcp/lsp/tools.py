@@ -3,47 +3,199 @@
 This module defines the MCP tools that expose LSP functionality
 for code intelligence features. Importing this module registers
 the LSP tools on the shared ``mcp`` instance from ``server.tools``.
+
+LSP tools use the same lazy-loading pattern as documentation tools:
+they wait for ``lsp_ready()`` on the lifespan context before proceeding.
 """
 
-from typing import Annotated
+from __future__ import annotations
 
-from pydantic import Field
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
+from typing import Annotated, Any, TypeVar
 
-from cangjie_mcp.lsp import get_client, is_available
-from cangjie_mcp.lsp.types import (
-    CompletionItem,
-    CompletionOutput,
-    CompletionResult,
-    DefinitionResult,
-    DiagnosticOutput,
-    DiagnosticsResult,
+from mcp.server.fastmcp import Context
+from pydantic import BaseModel, Field
+from sansio_lsp_client.events import Hover as HoverEvent
+from sansio_lsp_client.structs import (
+    CompletionItemKind,
+    DiagnosticSeverity,
     DocumentSymbol,
-    HoverOutput,
-    HoverResult,
     Location,
-    LocationResult,
+    LocationLink,
     MarkedString,
     MarkupContent,
-    ReferencesResult,
-    SymbolOutput,
-    SymbolsResult,
-    completion_kind_name,
-    severity_name,
-    symbol_kind_name,
+    SymbolKind,
 )
+
+from cangjie_mcp.lsp import get_server
 from cangjie_mcp.lsp.utils import uri_to_path
-from cangjie_mcp.server.tools import ANNOTATIONS, mcp
+from cangjie_mcp.server.tools import ANNOTATIONS, LifespanContext, mcp
+
+# =============================================================================
+# MCP Output Types
+# =============================================================================
 
 
-def _normalize_location(loc: Location) -> LocationResult:
-    """Convert LSP Location to MCP format.
+class LocationResult(BaseModel):
+    """A normalized location result."""
+
+    file_path: str = Field(..., description="Absolute file path")
+    line: int = Field(..., description="Line number (1-based)")
+    character: int = Field(..., description="Character position (1-based)")
+    end_line: int | None = Field(None, description="End line number (1-based)")
+    end_character: int | None = Field(None, description="End character position (1-based)")
+
+
+class DefinitionResult(BaseModel):
+    """Result of a definition request."""
+
+    locations: list[LocationResult] = Field(default_factory=lambda: list[LocationResult]())
+    count: int = 0
+
+
+class ReferencesResult(BaseModel):
+    """Result of a references request."""
+
+    locations: list[LocationResult] = Field(default_factory=lambda: list[LocationResult]())
+    count: int = 0
+
+
+class HoverOutput(BaseModel):
+    """Result of a hover request for MCP."""
+
+    content: str = Field(..., description="Hover content (markdown)")
+    range: LocationResult | None = None
+
+
+class SymbolOutput(BaseModel):
+    """A symbol in MCP output format."""
+
+    name: str
+    kind: str
+    line: int
+    character: int
+    end_line: int
+    end_character: int
+    children: list[SymbolOutput] | None = None
+
+
+SymbolOutput.model_rebuild()
+
+
+class SymbolsResult(BaseModel):
+    """Result of a document symbols request."""
+
+    symbols: list[SymbolOutput] = Field(default_factory=lambda: list[SymbolOutput]())
+    count: int = 0
+
+
+class DiagnosticOutput(BaseModel):
+    """A diagnostic in MCP output format."""
+
+    message: str
+    severity: str
+    line: int
+    character: int
+    end_line: int
+    end_character: int
+    code: str | None = None
+    source: str | None = None
+
+
+class DiagnosticsResult(BaseModel):
+    """Result of a diagnostics request."""
+
+    diagnostics: list[DiagnosticOutput] = Field(default_factory=lambda: list[DiagnosticOutput]())
+    error_count: int = 0
+    warning_count: int = 0
+    info_count: int = 0
+    hint_count: int = 0
+
+
+class CompletionOutput(BaseModel):
+    """A completion item in MCP output format."""
+
+    label: str
+    kind: str | None = None
+    detail: str | None = None
+    documentation: str | None = None
+    insert_text: str | None = None
+
+
+class CompletionResult(BaseModel):
+    """Result of a completion request."""
+
+    items: list[CompletionOutput] = Field(default_factory=lambda: list[CompletionOutput]())
+    count: int = 0
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def symbol_kind_name(kind: int) -> str:
+    """Convert symbol kind integer to string name."""
+    try:
+        name = SymbolKind(kind).name.lower()
+        if name == "enummember":
+            return "enum member"
+        if name == "typeparameter":
+            return "type parameter"
+        return name
+    except ValueError:
+        return "unknown"
+
+
+def completion_kind_name(kind: int | CompletionItemKind | None) -> str | None:
+    """Convert completion item kind to string name."""
+    if kind is None:
+        return None
+    try:
+        name = CompletionItemKind(kind).name.lower()
+        if name == "enummember":
+            return "enum member"
+        if name == "typeparameter":
+            return "type parameter"
+        return name
+    except ValueError:
+        return "unknown"
+
+
+def severity_name(severity: int | DiagnosticSeverity | None) -> str:
+    """Convert diagnostic severity to string name."""
+    if severity is None:
+        return "unknown"
+    try:
+        return DiagnosticSeverity(severity).name.lower()
+    except ValueError:
+        return "unknown"
+
+
+# =============================================================================
+# Internal Helpers
+# =============================================================================
+
+
+def _normalize_location(loc: Location | LocationLink) -> LocationResult:
+    """Convert LSP Location or LocationLink to MCP format.
 
     Args:
-        loc: LSP Location model
+        loc: LSP Location or LocationLink model
 
     Returns:
         LocationResult in 1-based format
     """
+    if isinstance(loc, LocationLink):
+        return LocationResult(
+            file_path=str(uri_to_path(loc.targetUri)),
+            line=loc.targetRange.start.line + 1,
+            character=loc.targetRange.start.character + 1,
+            end_line=loc.targetRange.end.line + 1,
+            end_character=loc.targetRange.end.character + 1,
+        )
     return LocationResult(
         file_path=str(uri_to_path(loc.uri)),
         line=loc.range.start.line + 1,
@@ -53,10 +205,42 @@ def _normalize_location(loc: Location) -> LocationResult:
     )
 
 
-def _check_available() -> None:
-    """Check if LSP client is available."""
-    if not is_available():
-        raise RuntimeError("LSP client not initialized. Please ensure the LSP server is running.")
+_LSP_UNAVAILABLE_MSG = "LSP is not available. Ensure CANGJIE_HOME is set and the LSP server can start."
+_LSP_TIMEOUT_MSG = "LSP request timed out after 10 seconds. The LSP server may be unresponsive."
+_LSP_CRASHED_MSG = "LSP server process has stopped unexpectedly. Restart the MCP server to recover."
+_LSP_TIMEOUT = 10.0
+
+logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+
+async def _lsp_call(  # noqa: UP047
+    ctx: Context[Any, LifespanContext, Any],
+    fn: Callable[[], Awaitable[_T]],
+) -> _T | str:
+    """Execute an LSP operation with liveness check and timeout.
+
+    Args:
+        ctx: MCP context with lifespan
+        fn: Async callable that performs the LSP operation
+
+    Returns:
+        The result of fn, or an error message string
+    """
+    if not await ctx.request_context.lifespan_context.lsp_ready():
+        return _LSP_UNAVAILABLE_MSG
+
+    server = get_server()
+    if not server.is_alive:
+        logger.error("LSP server process is not running")
+        return _LSP_CRASHED_MSG
+
+    try:
+        return await asyncio.wait_for(fn(), timeout=_LSP_TIMEOUT)
+    except TimeoutError:
+        logger.warning("LSP request timed out")
+        return _LSP_TIMEOUT_MSG
 
 
 # =============================================================================
@@ -99,6 +283,8 @@ async def lsp_definition(
     file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
     line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
     character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
 ) -> DefinitionResult | str:
     """Jump to the definition of a symbol.
 
@@ -122,14 +308,20 @@ async def lsp_definition(
     if error:
         return error
     try:
-        _check_available()
-        client = get_client()
-        locations = await client.definition(file_path, line - 1, character - 1)
-        result_locations = [_normalize_location(loc) for loc in locations]
-        return DefinitionResult(
-            locations=result_locations,
-            count=len(result_locations),
-        )
+
+        async def _call() -> DefinitionResult:
+            server = get_server()
+            event = await server.definition(file_path, line - 1, character - 1)
+            locations: list[LocationResult] = []
+            result = event.result
+            if result is not None:
+                if isinstance(result, list):
+                    locations = [_normalize_location(loc) for loc in result]
+                else:
+                    locations = [_normalize_location(result)]
+            return DefinitionResult(locations=locations, count=len(locations))
+
+        return await _lsp_call(ctx, _call)
     except Exception as e:
         return f"Error: {e}"
 
@@ -139,6 +331,8 @@ async def lsp_references(
     file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
     line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
     character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
 ) -> ReferencesResult | str:
     """Find all references to a symbol.
 
@@ -162,14 +356,16 @@ async def lsp_references(
     if error:
         return error
     try:
-        _check_available()
-        client = get_client()
-        locations = await client.references(file_path, line - 1, character - 1)
-        result_locations = [_normalize_location(loc) for loc in locations]
-        return ReferencesResult(
-            locations=result_locations,
-            count=len(result_locations),
-        )
+
+        async def _call() -> ReferencesResult:
+            server = get_server()
+            event = await server.references(file_path, line - 1, character - 1)
+            locations: list[LocationResult] = []
+            if event.result:
+                locations = [_normalize_location(loc) for loc in event.result]
+            return ReferencesResult(locations=locations, count=len(locations))
+
+        return await _lsp_call(ctx, _call)
     except Exception as e:
         return f"Error: {e}"
 
@@ -179,6 +375,8 @@ async def lsp_hover(
     file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
     line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
     character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
 ) -> HoverOutput | str:
     """Get hover information for a symbol.
 
@@ -202,46 +400,44 @@ async def lsp_hover(
     if error:
         return error
     try:
-        _check_available()
-        client = get_client()
-        result = await client.hover(file_path, line - 1, character - 1)
 
-        if not result:
-            return "No hover information available"
+        async def _call() -> HoverOutput | str:
+            server = get_server()
+            event = await server.hover(file_path, line - 1, character - 1)
+            if not event.contents:
+                return "No hover information available"
+            content = _extract_hover_content(event)
+            range_result = None
+            if event.range:
+                range_result = LocationResult(
+                    file_path=file_path,
+                    line=event.range.start.line + 1,
+                    character=event.range.start.character + 1,
+                    end_line=event.range.end.line + 1,
+                    end_character=event.range.end.character + 1,
+                )
+            return HoverOutput(content=content, range=range_result)
 
-        content = _extract_hover_content(result)
-
-        # Extract range if available
-        range_result = None
-        if result.range:
-            range_result = LocationResult(
-                file_path=file_path,
-                line=result.range.start.line + 1,
-                character=result.range.start.character + 1,
-                end_line=result.range.end.line + 1,
-                end_character=result.range.end.character + 1,
-            )
-
-        return HoverOutput(content=content, range=range_result)
+        return await _lsp_call(ctx, _call)
     except Exception as e:
         return f"Error: {e}"
 
 
-def _extract_hover_content(result: HoverResult) -> str:
-    """Extract display content from a HoverResult.
+def _extract_hover_content(event: HoverEvent) -> str:
+    """Extract display content from a Hover event.
 
     Args:
-        result: HoverResult model
+        event: Hover event from sansio-lsp-client
 
     Returns:
         Extracted content string
     """
-    contents = result.contents
+    contents = event.contents
     if isinstance(contents, (MarkupContent, MarkedString)):
         return contents.value
     if isinstance(contents, str):
         return contents
-    # list[MarkupContent | MarkedString | str]
+    # list[MarkedString | str]
     parts: list[str] = []
     for item in contents:
         if isinstance(item, (MarkupContent, MarkedString)):
@@ -255,7 +451,7 @@ def _convert_symbol(sym: DocumentSymbol, file_path: str) -> SymbolOutput:
     """Convert LSP DocumentSymbol to MCP format.
 
     Args:
-        sym: DocumentSymbol model
+        sym: DocumentSymbol model from sansio-lsp-client
         file_path: Source file path
 
     Returns:
@@ -279,6 +475,8 @@ def _convert_symbol(sym: DocumentSymbol, file_path: str) -> SymbolOutput:
 @mcp.tool(name="cangjie_lsp_symbols", annotations=ANNOTATIONS)
 async def lsp_symbols(
     file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
 ) -> SymbolsResult | str:
     """Get all symbols in a document.
 
@@ -300,14 +498,18 @@ async def lsp_symbols(
     if error:
         return error
     try:
-        _check_available()
-        client = get_client()
-        symbols = await client.document_symbol(file_path)
-        result_symbols = [_convert_symbol(sym, file_path) for sym in symbols]
-        return SymbolsResult(
-            symbols=result_symbols,
-            count=len(result_symbols),
-        )
+
+        async def _call() -> SymbolsResult:
+            server = get_server()
+            event = await server.document_symbol(file_path)
+            result_symbols: list[SymbolOutput] = []
+            if event.result:
+                for sym in event.result:
+                    if isinstance(sym, DocumentSymbol):
+                        result_symbols.append(_convert_symbol(sym, file_path))
+            return SymbolsResult(symbols=result_symbols, count=len(result_symbols))
+
+        return await _lsp_call(ctx, _call)
     except Exception as e:
         return f"Error: {e}"
 
@@ -315,6 +517,8 @@ async def lsp_symbols(
 @mcp.tool(name="cangjie_lsp_diagnostics", annotations=ANNOTATIONS)
 async def lsp_diagnostics(
     file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
 ) -> DiagnosticsResult | str:
     """Get diagnostics (errors and warnings) for a file.
 
@@ -336,51 +540,47 @@ async def lsp_diagnostics(
     if error:
         return error
     try:
-        _check_available()
-        client = get_client()
-        diagnostics = await client.get_diagnostics(file_path)
 
-        result_diagnostics: list[DiagnosticOutput] = []
-        error_count = 0
-        warning_count = 0
-        info_count = 0
-        hint_count = 0
-
-        for diag in diagnostics:
-            severity_str = severity_name(diag.severity)
-
-            # Count by severity
-            if diag.severity == 1:
-                error_count += 1
-            elif diag.severity == 2:
-                warning_count += 1
-            elif diag.severity == 3:
-                info_count += 1
-            elif diag.severity == 4:
-                hint_count += 1
-
-            code_str = str(diag.code) if diag.code is not None else None
-
-            result_diagnostics.append(
-                DiagnosticOutput(
-                    message=diag.message,
-                    severity=severity_str,
-                    line=diag.range.start.line + 1,
-                    character=diag.range.start.character + 1,
-                    end_line=diag.range.end.line + 1,
-                    end_character=diag.range.end.character + 1,
-                    code=code_str,
-                    source=diag.source,
+        async def _call() -> DiagnosticsResult:
+            server = get_server()
+            diag_list = await server.get_diagnostics(file_path)
+            result_diagnostics: list[DiagnosticOutput] = []
+            error_count = 0
+            warning_count = 0
+            info_count = 0
+            hint_count = 0
+            for diag in diag_list:
+                severity_str = severity_name(diag.severity)
+                if diag.severity == DiagnosticSeverity.ERROR:
+                    error_count += 1
+                elif diag.severity == DiagnosticSeverity.WARNING:
+                    warning_count += 1
+                elif diag.severity == DiagnosticSeverity.INFORMATION:
+                    info_count += 1
+                elif diag.severity == DiagnosticSeverity.HINT:
+                    hint_count += 1
+                code_str = str(diag.code) if diag.code is not None else None
+                result_diagnostics.append(
+                    DiagnosticOutput(
+                        message=diag.message,
+                        severity=severity_str,
+                        line=diag.range.start.line + 1,
+                        character=diag.range.start.character + 1,
+                        end_line=diag.range.end.line + 1,
+                        end_character=diag.range.end.character + 1,
+                        code=code_str,
+                        source=diag.source,
+                    )
                 )
+            return DiagnosticsResult(
+                diagnostics=result_diagnostics,
+                error_count=error_count,
+                warning_count=warning_count,
+                info_count=info_count,
+                hint_count=hint_count,
             )
 
-        return DiagnosticsResult(
-            diagnostics=result_diagnostics,
-            error_count=error_count,
-            warning_count=warning_count,
-            info_count=info_count,
-            hint_count=hint_count,
-        )
+        return await _lsp_call(ctx, _call)
     except Exception as e:
         return f"Error: {e}"
 
@@ -390,6 +590,8 @@ async def lsp_completion(
     file_path: Annotated[str, Field(description="Absolute path to the .cj source file")],
     line: Annotated[int, Field(description="Line number (1-based)", ge=1)],
     character: Annotated[int, Field(description="Character position (1-based)", ge=1)],
+    *,
+    ctx: Context[Any, LifespanContext, Any],
 ) -> CompletionResult | str:
     """Get code completion suggestions.
 
@@ -413,38 +615,35 @@ async def lsp_completion(
     if error:
         return error
     try:
-        _check_available()
-        client = get_client()
-        items = await client.completion(file_path, line - 1, character - 1)
 
-        result_items: list[CompletionOutput] = []
+        async def _call() -> CompletionResult:
+            server = get_server()
+            event = await server.completion(file_path, line - 1, character - 1)
+            result_items: list[CompletionOutput] = []
+            if event.completion_list:
+                for item in event.completion_list.items:
+                    doc_str = _extract_documentation(item)
+                    result_items.append(
+                        CompletionOutput(
+                            label=item.label,
+                            kind=completion_kind_name(item.kind),
+                            detail=item.detail,
+                            documentation=doc_str,
+                            insert_text=item.insertText,
+                        )
+                    )
+            return CompletionResult(items=result_items, count=len(result_items))
 
-        for item in items:
-            doc_str = _extract_documentation(item)
-
-            result_items.append(
-                CompletionOutput(
-                    label=item.label,
-                    kind=completion_kind_name(item.kind),
-                    detail=item.detail,
-                    documentation=doc_str,
-                    insert_text=item.insert_text,
-                )
-            )
-
-        return CompletionResult(
-            items=result_items,
-            count=len(result_items),
-        )
+        return await _lsp_call(ctx, _call)
     except Exception as e:
         return f"Error: {e}"
 
 
-def _extract_documentation(item: CompletionItem) -> str | None:
+def _extract_documentation(item: Any) -> str | None:  # noqa: ANN401
     """Extract documentation string from a CompletionItem.
 
     Args:
-        item: CompletionItem model
+        item: CompletionItem from sansio-lsp-client
 
     Returns:
         Documentation string or None

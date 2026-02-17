@@ -10,12 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 from mcp.server.fastmcp import Context
 
-from cangjie_mcp.config import Settings
-from cangjie_mcp.indexer.document_source import PrebuiltDocumentSource
-from cangjie_mcp.indexer.embeddings import get_embedding_provider, reset_embedding_provider
+from cangjie_mcp.config import IndexInfo, Settings
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 from cangjie_mcp.server import tools
+from tests.integration.conftest import TestDocumentSource, VectorStoreSearchIndex
 
 
 def _mock_ctx(tool_context: tools.ToolContext) -> MagicMock:
@@ -32,30 +31,17 @@ class TestEndToEndWorkflow:
 
     def test_complete_search_workflow(
         self,
-        integration_docs_dir: Path,
-        local_settings: Settings,
+        local_indexed_store: VectorStore,
     ) -> None:
-        """Test complete workflow from fresh start to search results."""
-        reset_embedding_provider()
-        loader = DocumentLoader(integration_docs_dir)
-        documents = loader.load_all_documents()
-        assert len(documents) > 0
-
-        embedding_provider = get_embedding_provider(local_settings)
-        store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
-            embedding_provider=embedding_provider,
-        )
-        store.index_documents(documents)
-
-        results = store.search(query="模式匹配", top_k=3)
+        """Test search workflow using the shared indexed store."""
+        results = local_indexed_store.search(query="模式匹配", top_k=3)
         assert len(results) > 0
         assert any("match" in r.text.lower() or "模式" in r.text for r in results)
 
     @pytest.mark.asyncio
     async def test_tool_workflow_with_mcp_server(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -63,8 +49,9 @@ class TestEndToEndWorkflow:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -84,7 +71,7 @@ class TestEndToEndWorkflow:
     @pytest.mark.asyncio
     async def test_category_based_exploration(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -92,8 +79,9 @@ class TestEndToEndWorkflow:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -111,7 +99,7 @@ class TestEndToEndWorkflow:
     @pytest.mark.asyncio
     async def test_full_document_discovery_workflow(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -119,8 +107,9 @@ class TestEndToEndWorkflow:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -143,7 +132,7 @@ class TestEndToEndWorkflow:
     @pytest.mark.asyncio
     async def test_search_and_retrieve_workflow(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -151,8 +140,9 @@ class TestEndToEndWorkflow:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -173,7 +163,7 @@ class TestEndToEndWorkflow:
     @pytest.mark.asyncio
     async def test_code_examples_workflow(
         self,
-        integration_docs_dir: Path,
+        test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
@@ -181,8 +171,9 @@ class TestEndToEndWorkflow:
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
-                store=local_indexed_store,
-                document_source=PrebuiltDocumentSource(integration_docs_dir),
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
+                document_source=test_doc_source,
             )
         )
 
@@ -219,7 +210,7 @@ class TestEndToEndWorkflow:
 
         # Index and search
         store = VectorStore(
-            db_path=local_settings.chroma_db_dir,
+            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
             embedding_provider=shared_embedding_provider,
         )
         store.index_documents(documents)
@@ -232,7 +223,6 @@ class TestEndToEndWorkflow:
 
     def test_multilingual_search(
         self,
-        integration_docs_dir: Path,
         local_indexed_store: VectorStore,
     ) -> None:
         """Test searching with Chinese and English queries."""

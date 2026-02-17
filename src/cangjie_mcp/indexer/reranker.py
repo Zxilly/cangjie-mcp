@@ -9,11 +9,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from llama_index.core.postprocessor import SentenceTransformerRerank
-
 from cangjie_mcp.utils import SingletonProvider, get_device, logger
 
 if TYPE_CHECKING:
+    from llama_index.core.postprocessor import SentenceTransformerRerank
     from llama_index.core.schema import NodeWithScore
 
     from cangjie_mcp.config import Settings
@@ -95,6 +94,8 @@ class LocalReranker(RerankerProvider):
     def _get_reranker(self, top_n: int) -> SentenceTransformerRerank:
         """Get or create the SentenceTransformerRerank instance."""
         if self._reranker is None:
+            from llama_index.core.postprocessor import SentenceTransformerRerank
+
             logger.info("Loading local reranker model: %s (device=%s)...", self.model_name, self.device)
             self._reranker = SentenceTransformerRerank(
                 model=self.model_name,

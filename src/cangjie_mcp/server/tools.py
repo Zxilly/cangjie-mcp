@@ -12,20 +12,17 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from cangjie_mcp.config import Settings, get_settings
+from cangjie_mcp.config import IndexInfo, Settings, get_settings
 from cangjie_mcp.indexer.document_source import (
     DocumentSource,
     GitDocumentSource,
-    NullDocumentSource,
-    PrebuiltDocumentSource,
+    RemoteDocumentSource,
 )
-from cangjie_mcp.indexer.initializer import initialize_and_index
 from cangjie_mcp.indexer.loader import extract_code_blocks
+from cangjie_mcp.indexer.search_index import LocalSearchIndex, RemoteSearchIndex, SearchIndex
 from cangjie_mcp.indexer.store import SearchResult as StoreSearchResult
-from cangjie_mcp.indexer.store import VectorStore, create_vector_store
-from cangjie_mcp.prebuilt.manager import PrebuiltManager
 from cangjie_mcp.prompts import get_prompt
-from cangjie_mcp.repo.git_manager import GitManager
+from cangjie_mcp.utils import logger
 
 # =============================================================================
 # Output Models (Pydantic)
@@ -127,7 +124,8 @@ class ToolContext:
     """Context for MCP tools."""
 
     settings: Settings
-    store: VectorStore
+    index_info: IndexInfo
+    search_index: SearchIndex
     document_source: DocumentSource
 
 
@@ -138,14 +136,23 @@ class LifespanContext:
     Yielded immediately so the server can accept connections while
     background initialization is still running.  Tools call
     ``await ready()`` to block until the ``ToolContext`` is available.
+    LSP tools call ``await lsp_ready()`` to block until the LSP client
+    is available.
     """
 
     _event: asyncio.Event = field(default_factory=asyncio.Event)
     _tool_ctx: ToolContext | None = field(default=None, init=False)
+    _error: BaseException | None = field(default=None, init=False)
+
+    # LSP lazy loading state
+    _lsp_event: asyncio.Event = field(default_factory=asyncio.Event)
+    lsp_available: bool = field(default=False, init=False)
 
     async def ready(self) -> ToolContext:
         """Block until initialization is complete, then return the ToolContext."""
         await self._event.wait()
+        if self._error is not None:
+            raise RuntimeError(f"Initialization failed: {self._error}") from self._error
         assert self._tool_ctx is not None
         return self._tool_ctx
 
@@ -154,67 +161,49 @@ class LifespanContext:
         self._tool_ctx = tool_ctx
         self._event.set()
 
+    def fail(self, error: BaseException) -> None:
+        """Signal that initialization failed with an error."""
+        self._error = error
+        self._event.set()
 
-def create_tool_context(
-    settings: Settings,
-    store: VectorStore | None = None,
-    document_source: DocumentSource | None = None,
-) -> ToolContext:
-    """Create tool context from settings.
+    async def lsp_ready(self) -> bool:
+        """Block until LSP initialization is complete, then return availability."""
+        await self._lsp_event.wait()
+        return self.lsp_available
 
-    Args:
-        settings: Application settings
-        store: Optional pre-loaded VectorStore. If None, creates a new one.
-        document_source: Optional DocumentSource. If None, auto-detects the best source.
-                        Priority: prebuilt docs > git repo > null source
-
-    Returns:
-        ToolContext with initialized components
-    """
-    if document_source is None:
-        document_source = _create_document_source(settings)
-
-    return ToolContext(
-        settings=settings,
-        store=store if store is not None else create_vector_store(settings),
-        document_source=document_source,
-    )
+    def lsp_complete(self, available: bool) -> None:
+        """Signal that LSP initialization is complete."""
+        self.lsp_available = available
+        self._lsp_event.set()
 
 
-def _create_document_source(settings: Settings) -> DocumentSource:
-    """Create the best available document source.
-
-    Auto-detects the best source in order:
-    1. Prebuilt docs (from installed prebuilt archive)
-    2. Git repository (read directly from git without checkout)
-    3. Null source (fallback when no docs available)
+def _create_document_source(settings: Settings, index_info: IndexInfo) -> DocumentSource:
+    """Create a document source backed by the git repository.
 
     Args:
         settings: Application settings
+        index_info: Index identity and paths
 
     Returns:
-        The best available DocumentSource
+        GitDocumentSource for the indexed repository
+
+    Raises:
+        RuntimeError: If the documentation repository is not available
     """
-    # Try prebuilt docs first
-    prebuilt_mgr = PrebuiltManager(settings.data_dir)
-    installed = prebuilt_mgr.get_installed_metadata()
+    from cangjie_mcp.repo.git_manager import GitManager
 
-    if installed and installed.docs_path:
-        docs_dir = Path(installed.docs_path)
-        if docs_dir.exists():
-            return PrebuiltDocumentSource(docs_dir)
-
-    # Try git source - read directly from git
     git_mgr = GitManager(settings.docs_repo_dir)
-    if git_mgr.is_cloned() and git_mgr.repo is not None:
-        return GitDocumentSource(
-            repo=git_mgr.repo,
-            version=settings.docs_version,
-            lang=settings.docs_lang,
+    if not git_mgr.is_cloned() or git_mgr.repo is None:
+        raise RuntimeError(
+            f"Documentation repository not found at {settings.docs_repo_dir}. "
+            "The index was built but the git repo is missing."
         )
 
-    # Fallback to null source
-    return NullDocumentSource()
+    return GitDocumentSource(
+        repo=git_mgr.repo,
+        version=index_info.version,
+        lang=index_info.lang,
+    )
 
 
 # =============================================================================
@@ -228,15 +217,72 @@ async def _lifespan(_server: FastMCP) -> AsyncIterator[LifespanContext]:
     lifespan_ctx = LifespanContext()
 
     async def _init() -> None:
-        await asyncio.to_thread(initialize_and_index, settings)
-        tool_ctx = await asyncio.to_thread(create_tool_context, settings)
-        lifespan_ctx.complete(tool_ctx)
+        try:
+            if settings.server_url:
+                search_index: SearchIndex = RemoteSearchIndex(settings.server_url)
+            else:
+                search_index = LocalSearchIndex(settings)
+
+            logger.info("Initializing index...")
+            index_info = await asyncio.to_thread(search_index.init)
+            logger.info(
+                "Index resolved: version=%s, lang=%s, embedding=%s",
+                index_info.version,
+                index_info.lang,
+                index_info.embedding_model_name,
+            )
+
+            if settings.server_url:
+                doc_source: DocumentSource = RemoteDocumentSource(settings.server_url)
+            else:
+                doc_source = _create_document_source(settings, index_info)
+
+            tool_ctx = ToolContext(
+                settings=settings,
+                index_info=index_info,
+                search_index=search_index,
+                document_source=doc_source,
+            )
+            lifespan_ctx.complete(tool_ctx)
+            logger.info("Initialization complete — tools are ready.")
+        except BaseException as e:
+            logger.exception("Initialization failed")
+            lifespan_ctx.fail(e)
+            if not isinstance(e, Exception):
+                raise
+
+    async def _init_lsp() -> None:
+        cangjie_home = os.environ.get("CANGJIE_HOME")
+        if not cangjie_home:
+            logger.warning("CANGJIE_HOME not set — LSP tools will not be available.")
+            lifespan_ctx.lsp_complete(False)
+            return
+        try:
+            from cangjie_mcp.lsp import init as lsp_init
+            from cangjie_mcp.lsp.config import LSPSettings
+
+            workspace = os.environ.get("CANGJIE_WORKSPACE", "")
+            lsp_settings = LSPSettings(
+                sdk_path=Path(cangjie_home),
+                workspace_path=Path(workspace) if workspace else Path.cwd(),
+            )
+            success = await lsp_init(lsp_settings)
+            lifespan_ctx.lsp_complete(success)
+        except Exception as e:
+            logger.error(f"Failed to initialize LSP: {e}")
+            lifespan_ctx.lsp_complete(False)
 
     task = asyncio.create_task(_init())
+    lsp_task = asyncio.create_task(_init_lsp())
     try:
         yield lifespan_ctx
     finally:
         await task
+        await lsp_task
+        if lifespan_ctx.lsp_available:
+            from cangjie_mcp.lsp import shutdown as lsp_shutdown
+
+            await lsp_shutdown()
 
 
 ANNOTATIONS = ToolAnnotations(
@@ -321,7 +367,7 @@ async def search_docs(
     tool_ctx = await ctx.request_context.lifespan_context.ready()
     # Request extra results for pagination estimation
     fetch_count = offset + top_k + 1
-    results = tool_ctx.store.search(
+    results = await tool_ctx.search_index.query(
         query=query,
         category=category or None,
         top_k=fetch_count,
@@ -494,7 +540,7 @@ async def get_code_examples(
         - feature="async/await" -> Async programming examples
     """
     tool_ctx = await ctx.request_context.lifespan_context.ready()
-    results = tool_ctx.store.search(query=feature, top_k=top_k)
+    results = await tool_ctx.search_index.query(query=feature, top_k=top_k)
 
     examples: list[CodeExample] = []
     for result in results:
@@ -548,7 +594,7 @@ async def get_tool_usage(
         - tool_name="cjfmt" -> Code formatter usage
     """
     tool_ctx = await ctx.request_context.lifespan_context.ready()
-    results = tool_ctx.store.search(
+    results = await tool_ctx.search_index.query(
         query=f"{tool_name} tool usage command",
         top_k=3,
     )
@@ -645,7 +691,7 @@ async def search_stdlib(
     """
     tool_ctx = await ctx.request_context.lifespan_context.ready()
     # Search with more candidates to allow for filtering
-    results = tool_ctx.store.search(query=query, top_k=top_k * 3)
+    results = await tool_ctx.search_index.query(query=query, top_k=top_k * 3)
 
     # Filter to stdlib docs only (using is_stdlib metadata)
     stdlib_results = [
