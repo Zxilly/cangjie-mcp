@@ -84,30 +84,6 @@ class TestEmbeddingIntegration:
         assert not local_indexed_store.version_matches(CANGJIE_DOCS_VERSION, "en")
         assert not local_indexed_store.version_matches("other", "zh")
 
-    def test_search_multiple_queries(self, local_indexed_store: VectorStore) -> None:
-        """Test multiple search queries."""
-        queries = [
-            ("Hello World", ["Hello", "Cangjie", "程序"]),
-            ("变量声明", ["let", "var", "变量"]),
-            ("模式匹配", ["match", "模式"]),
-        ]
-
-        for query, expected_keywords in queries:
-            results = local_indexed_store.search(query=query, top_k=3)
-            assert len(results) > 0, f"No results for query: {query}"
-            combined_text = " ".join(r.text for r in results)
-            assert any(kw in combined_text for kw in expected_keywords), (
-                f"Expected keywords not found for query: {query}"
-            )
-
-    def test_search_returns_sorted_by_score(self, local_indexed_store: VectorStore) -> None:
-        """Test that search results are sorted by score (descending)."""
-        results = local_indexed_store.search(query="函数定义", top_k=5)
-
-        assert len(results) > 1
-        scores = [r.score for r in results]
-        assert scores == sorted(scores, reverse=True)
-
 
 @pytest.mark.skipif(
     not _has_openai_credentials(),

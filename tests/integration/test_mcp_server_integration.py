@@ -20,9 +20,6 @@ DOCS_TOOLS = [
     "cangjie_search_docs",
     "cangjie_get_topic",
     "cangjie_list_topics",
-    "cangjie_get_code_examples",
-    "cangjie_get_tool_usage",
-    "cangjie_search_stdlib",
 ]
 
 # Expected LSP tool names
@@ -91,7 +88,7 @@ class TestMCPServerWithLSPEnabled:
 
     @pytest.mark.asyncio
     async def test_total_tool_count(self, local_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
-        """All 12 tools (6 docs + 6 LSP) are registered."""
+        """All 9 tools (3 docs + 6 LSP) are registered."""
         monkeypatch.setenv("CANGJIE_HOME", "/fake/sdk")
         mcp = create_mcp_server(local_settings)
         tools_list = await mcp.list_tools()
@@ -273,13 +270,13 @@ class TestToolsUnderDefaultConfig:
         assert "pattern_matching" in result.categories["syntax"]
 
     @pytest.mark.asyncio
-    async def test_get_code_examples(
+    async def test_search_docs_extract_code(
         self,
         test_doc_source: TestDocumentSource,
         local_indexed_store: VectorStore,
         shared_local_settings: Settings,
     ) -> None:
-        """get_code_examples returns code blocks with metadata."""
+        """search_docs with extract_code returns code blocks with metadata."""
         ctx = _mock_ctx(
             tools.ToolContext(
                 settings=shared_local_settings,
@@ -289,152 +286,38 @@ class TestToolsUnderDefaultConfig:
             )
         )
 
-        examples = await tools.get_code_examples(feature="Hello World", ctx=ctx)
-
-        assert len(examples) > 0
-        for ex in examples:
-            assert ex.language in ("cangjie", "bash", "")
-            assert len(ex.code) > 0
-            assert ex.source_topic
-
-    @pytest.mark.asyncio
-    async def test_get_tool_usage(
-        self,
-        test_doc_source: TestDocumentSource,
-        local_indexed_store: VectorStore,
-        shared_local_settings: Settings,
-    ) -> None:
-        """get_tool_usage returns tool info with examples."""
-        ctx = _mock_ctx(
-            tools.ToolContext(
-                settings=shared_local_settings,
-                index_info=IndexInfo.from_settings(shared_local_settings),
-                search_index=VectorStoreSearchIndex(local_indexed_store),
-                document_source=test_doc_source,
-            )
-        )
-
-        result = await tools.get_tool_usage(tool_name="cjpm", ctx=ctx)
-
-        assert result is not None
-        assert result.tool_name == "cjpm"
-        assert len(result.content) > 0
-        assert isinstance(result.examples, list)
-
-    @pytest.mark.asyncio
-    async def test_get_tool_usage_returns_none_for_missing(
-        self,
-        test_doc_source: TestDocumentSource,
-        local_indexed_store: VectorStore,
-        shared_local_settings: Settings,
-    ) -> None:
-        """get_tool_usage returns None for unknown tool."""
-        ctx = _mock_ctx(
-            tools.ToolContext(
-                settings=shared_local_settings,
-                index_info=IndexInfo.from_settings(shared_local_settings),
-                search_index=VectorStoreSearchIndex(local_indexed_store),
-                document_source=test_doc_source,
-            )
-        )
-
-        # A very specific tool name unlikely to match
-        result = await tools.get_tool_usage(tool_name="zzz_nonexistent_tool_xyz", ctx=ctx)
-        # May return None or results depending on vector similarity;
-        # at minimum it should not crash
-        if not isinstance(result, str):
-            assert result.tool_name == "zzz_nonexistent_tool_xyz"
-
-    @pytest.mark.asyncio
-    async def test_search_stdlib(
-        self,
-        test_doc_source: TestDocumentSource,
-        local_indexed_store: VectorStore,
-        shared_local_settings: Settings,
-    ) -> None:
-        """search_stdlib returns results (may be empty for non-stdlib test docs)."""
-        ctx = _mock_ctx(
-            tools.ToolContext(
-                settings=shared_local_settings,
-                index_info=IndexInfo.from_settings(shared_local_settings),
-                search_index=VectorStoreSearchIndex(local_indexed_store),
-                document_source=test_doc_source,
-            )
-        )
-
-        result = await tools.search_stdlib(query="collection", ctx=ctx)
-
-        assert isinstance(result.items, list)
-        assert isinstance(result.count, int)
-        assert isinstance(result.detected_packages, list)
-
-
-class TestToolsWithReranker:
-    """Test tools under local embedding + local reranker configuration."""
-
-    @pytest.mark.asyncio
-    async def test_search_docs_with_reranker(
-        self,
-        test_doc_source: TestDocumentSource,
-        shared_indexed_store_with_reranker: VectorStore,
-        shared_reranker_settings: Settings,
-    ) -> None:
-        """search_docs works with reranker enabled."""
-        ctx = _mock_ctx(
-            tools.ToolContext(
-                settings=shared_reranker_settings,
-                index_info=IndexInfo.from_settings(shared_reranker_settings),
-                search_index=VectorStoreSearchIndex(shared_indexed_store_with_reranker),
-                document_source=test_doc_source,
-            )
-        )
-
-        result = await tools.search_docs(query="模式匹配", top_k=3, ctx=ctx)
+        result = await tools.search_docs(query="Hello World", extract_code=True, ctx=ctx)
 
         assert result.count > 0
-        assert any("match" in r.content.lower() or "模式" in r.content for r in result.items)
+        for item in result.items:
+            assert item.code_examples is not None
+            for ex in item.code_examples:
+                assert ex.language in ("cangjie", "bash", "")
+                assert len(ex.code) > 0
+                assert ex.source_topic
 
     @pytest.mark.asyncio
-    async def test_get_code_examples_with_reranker(
+    async def test_search_docs_without_extract_code(
         self,
         test_doc_source: TestDocumentSource,
-        shared_indexed_store_with_reranker: VectorStore,
-        shared_reranker_settings: Settings,
+        local_indexed_store: VectorStore,
+        shared_local_settings: Settings,
     ) -> None:
-        """get_code_examples works with reranker enabled."""
+        """search_docs without extract_code returns None for code_examples."""
         ctx = _mock_ctx(
             tools.ToolContext(
-                settings=shared_reranker_settings,
-                index_info=IndexInfo.from_settings(shared_reranker_settings),
-                search_index=VectorStoreSearchIndex(shared_indexed_store_with_reranker),
+                settings=shared_local_settings,
+                index_info=IndexInfo.from_settings(shared_local_settings),
+                search_index=VectorStoreSearchIndex(local_indexed_store),
                 document_source=test_doc_source,
             )
         )
 
-        examples = await tools.get_code_examples(feature="函数定义", ctx=ctx)
+        result = await tools.search_docs(query="Hello World", ctx=ctx)
 
-        assert len(examples) > 0
-        assert all(len(e.code) > 0 for e in examples)
-
-    @pytest.mark.asyncio
-    async def test_search_stdlib_with_reranker(
-        self,
-        test_doc_source: TestDocumentSource,
-        shared_indexed_store_with_reranker: VectorStore,
-        shared_reranker_settings: Settings,
-    ) -> None:
-        """search_stdlib works with reranker enabled."""
-        ctx = _mock_ctx(
-            tools.ToolContext(
-                settings=shared_reranker_settings,
-                index_info=IndexInfo.from_settings(shared_reranker_settings),
-                search_index=VectorStoreSearchIndex(shared_indexed_store_with_reranker),
-                document_source=test_doc_source,
-            )
-        )
-
-        result = await tools.search_stdlib(query="ArrayList", ctx=ctx)
-        assert isinstance(result.count, int)
+        assert result.count > 0
+        for item in result.items:
+            assert item.code_examples is None
 
 
 class TestToolsWithSmallChunkSize:

@@ -509,25 +509,14 @@ class A : B { }                   class A <: B { }  // Use <:
 
 ## Available Tools
 
-- `cangjie_search_docs`: Semantic search across documentation
+- `cangjie_search_docs`: Semantic search across documentation (supports code extraction and stdlib package filtering)
 - `cangjie_get_topic`: Get complete documentation for a topic
 - `cangjie_list_topics`: List available topics by category
-- `cangjie_get_code_examples`: Get code examples for a feature
-- `cangjie_get_tool_usage`: Get CLI tool documentation (cjc, cjpm, cjfmt)
-- `cangjie_search_stdlib`: Search standard library APIs with package/type filtering
 
 ## Recommended Workflow
 
 1. `cangjie_list_topics` - discover available categories
 2. `cangjie_search_docs` - search for general concepts
-3. `cangjie_search_stdlib` - search standard library APIs (ArrayList, HashMap, File, etc.)
-4. `cangjie_get_topic` - retrieve full documentation
-5. `cangjie_get_code_examples` - find practical examples
-6. `cangjie_get_tool_usage` - CLI tool help
-
-## Standard Library Search
-
-Use `cangjie_search_stdlib` for standard library API queries:
-- Filter by package: `package="std.collection"`, `package="std.fs"`, `package="std.net"`
-- Filter by type: `type_name="ArrayList"`, `type_name="HashMap"`, `type_name="File"`
-- Packages are automatically detected from `import std.*` statements in documentation
+3. `cangjie_search_docs` with `package` - search standard library APIs (e.g., `package="std.collection"`)
+4. `cangjie_search_docs` with `extract_code=True` - find practical code examples
+5. `cangjie_get_topic` - retrieve full documentation

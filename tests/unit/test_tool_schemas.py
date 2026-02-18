@@ -21,6 +21,8 @@ DOCS_TOOL_SCHEMAS: dict[str, dict[str, str]] = {
         "category": "string",
         "top_k": "integer",
         "offset": "integer",
+        "extract_code": "boolean",
+        "package": "string",
     },
     "cangjie_get_topic": {
         "topic": "string",
@@ -28,20 +30,6 @@ DOCS_TOOL_SCHEMAS: dict[str, dict[str, str]] = {
     },
     "cangjie_list_topics": {
         "category": "string",
-    },
-    "cangjie_get_code_examples": {
-        "feature": "string",
-        "top_k": "integer",
-    },
-    "cangjie_get_tool_usage": {
-        "tool_name": "string",
-    },
-    "cangjie_search_stdlib": {
-        "query": "string",
-        "package": "string",
-        "type_name": "string",
-        "include_examples": "boolean",
-        "top_k": "integer",
     },
 }
 

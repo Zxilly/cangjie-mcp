@@ -4,8 +4,6 @@ from cangjie_mcp.server.tools import (
     CodeExample,
     DocsSearchResult,
     SearchResultItem,
-    ToolExample,
-    ToolUsageResult,
     TopicResult,
 )
 
@@ -119,46 +117,3 @@ class TestCodeExample:
         )
         assert example.language == "bash"
         assert "cjc" in example.code
-
-
-class TestToolExample:
-    """Tests for ToolExample model."""
-
-    def test_create_example(self) -> None:
-        """Test creating ToolExample."""
-        example = ToolExample(
-            code="cjpm build",
-            context="Build the project",
-        )
-        assert example.code == "cjpm build"
-        assert example.context == "Build the project"
-
-
-class TestToolUsageResult:
-    """Tests for ToolUsageResult model."""
-
-    def test_create_result(self) -> None:
-        """Test creating ToolUsageResult."""
-        examples = [
-            ToolExample(code="cjpm build", context="Build"),
-            ToolExample(code="cjpm test", context="Test"),
-        ]
-        result = ToolUsageResult(
-            tool_name="cjpm",
-            content="CJPM is the Cangjie package manager.",
-            examples=examples,
-        )
-        assert result.tool_name == "cjpm"
-        assert "package manager" in result.content
-        assert len(result.examples) == 2
-        assert result.examples[0].code == "cjpm build"
-
-    def test_empty_examples(self) -> None:
-        """Test with no examples."""
-        result = ToolUsageResult(
-            tool_name="cjfmt",
-            content="Code formatter for Cangjie.",
-            examples=[],
-        )
-        assert result.tool_name == "cjfmt"
-        assert result.examples == []
