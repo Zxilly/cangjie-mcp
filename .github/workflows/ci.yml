@@ -52,10 +52,13 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --extra local
 
       - name: Run mypy
         run: uv run mypy src
+
+      - name: Run pyright
+        run: uv run pyright src
 
   unit-tests:
     name: Unit Tests
@@ -112,7 +115,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --extra local
 
       - name: Cache HuggingFace models
         uses: actions/cache@v4

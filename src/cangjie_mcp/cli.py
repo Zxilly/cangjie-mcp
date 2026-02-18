@@ -194,28 +194,18 @@ def server_command(
     typer.echo(f"Initializing index (version={settings.docs_version}, lang={settings.docs_lang})...")
     search_index = LocalSearchIndex(settings)
     index_info = search_index.init()
-    typer.echo(f"Index ready: version={index_info.version}, lang={index_info.lang}")
+    from cangjie_mcp.config import format_startup_info
+
+    typer.echo(format_startup_info(settings, index_info))
 
     # Load index metadata for the /info endpoint
     metadata_path = index_info.chroma_db_dir / METADATA_FILE
     index_metadata = IndexMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
 
     # Create document source
-    from cangjie_mcp.indexer.document_source import GitDocumentSource
-    from cangjie_mcp.repo.git_manager import GitManager
+    from cangjie_mcp.server.tools import create_document_source
 
-    git_mgr = GitManager(settings.docs_repo_dir)
-    if not git_mgr.is_cloned() or git_mgr.repo is None:
-        raise RuntimeError(
-            f"Documentation repository not found at {settings.docs_repo_dir}. "
-            "The index was built but the git repo is missing."
-        )
-
-    doc_source = GitDocumentSource(
-        repo=git_mgr.repo,
-        version=index_info.version,
-        lang=index_info.lang,
-    )
+    doc_source = create_document_source(settings, index_info)
 
     # Create and run HTTP app
     http_app = create_http_app(search_index, doc_source, index_metadata)

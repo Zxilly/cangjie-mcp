@@ -37,6 +37,10 @@ def mock_document_source():
         "basics": ["hello_world", "variables"],
         "stdlib": ["collections"],
     }.get(cat, [])
+    source.get_topic_titles.side_effect = lambda cat: {  # type: ignore[no-untyped-def]
+        "basics": {"hello_world": "Hello World", "variables": "Variables"},
+        "stdlib": {"collections": "Collections"},
+    }.get(cat, {})
 
     mock_doc = MagicMock()
     mock_doc.text = "# Hello World\nSample content"
@@ -112,7 +116,16 @@ class TestTopicsEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "basics" in data["categories"]
-        assert "hello_world" in data["categories"]["basics"]
+        topic_names = [t["name"] for t in data["categories"]["basics"]]
+        assert "hello_world" in topic_names
+
+    def test_topics_returns_topic_titles(self, client):
+        resp = client.get("/topics")
+        data = resp.json()
+        for _cat, topics in data["categories"].items():
+            for topic_info in topics:
+                assert "name" in topic_info
+                assert "title" in topic_info
 
     def test_topics_returns_all_categories(self, client):
         resp = client.get("/topics")

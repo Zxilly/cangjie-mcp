@@ -4,15 +4,9 @@ These tests verify the complete workflow of document search
 with reranking using local cross-encoder models.
 """
 
-from pathlib import Path
-
-from cangjie_mcp.config import IndexInfo
-from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.reranker import LocalReranker
 from cangjie_mcp.indexer.store import VectorStore
-
-# Default local reranker model for testing
-CANGJIE_LOCAL_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+from tests.constants import CANGJIE_RERANKER_MODEL
 
 
 class TestLocalRerankerIntegration:
@@ -20,8 +14,8 @@ class TestLocalRerankerIntegration:
 
     def test_reranker_initialization(self, shared_local_reranker: LocalReranker) -> None:
         """Test that local reranker initializes correctly."""
-        assert shared_local_reranker.model_name == CANGJIE_LOCAL_RERANKER_MODEL
-        assert shared_local_reranker.get_model_name() == f"local:{CANGJIE_LOCAL_RERANKER_MODEL}"
+        assert shared_local_reranker.model_name == CANGJIE_RERANKER_MODEL
+        assert shared_local_reranker.get_model_name() == f"local:{CANGJIE_RERANKER_MODEL}"
 
     def test_search_with_reranker(
         self,
@@ -85,23 +79,11 @@ class TestVectorStoreWithoutReranker:
 
     def test_search_without_reranker_configured(
         self,
-        integration_docs_dir: Path,
-        local_settings,
-        shared_embedding_provider,
+        local_indexed_store: VectorStore,
     ) -> None:
         """Test search when no reranker is configured."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-            # No reranker provided
-        )
-
-        loader = DocumentLoader(integration_docs_dir)
-        documents = loader.load_all_documents()
-        store.index_documents(documents)
-
-        # Search should work without reranker
-        results = store.search(query="函数", top_k=3)
+        # local_indexed_store is created without a reranker
+        results = local_indexed_store.search(query="函数", top_k=3)
 
         assert len(results) > 0
-        assert store.reranker is None
+        assert local_indexed_store.reranker is None

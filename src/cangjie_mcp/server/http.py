@@ -14,6 +14,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from cangjie_mcp.utils import logger
+
 if TYPE_CHECKING:
     from cangjie_mcp.indexer.document_source import DocumentSource
     from cangjie_mcp.indexer.search_index import SearchIndex
@@ -35,6 +37,21 @@ def create_http_app(
     Returns:
         Configured Starlette application.
     """
+    # Pre-compute the topics listing at startup. The git tree is immutable
+    # during the server's lifetime, so this avoids expensive per-request
+    # git traversal that can take tens of seconds on large repos.
+    _topics_cache: dict[str, list[dict[str, str]]] = {}
+    for cat in document_source.get_categories():
+        titles = document_source.get_topic_titles(cat)
+        _topics_cache[cat] = [
+            {"name": t, "title": titles.get(t, "")} for t in document_source.get_topics_in_category(cat)
+        ]
+    _total_topics = sum(len(t) for t in _topics_cache.values())
+    logger.info(
+        "Topics cache built: %d categories, %d topics",
+        len(_topics_cache),
+        _total_topics,
+    )
 
     async def health(_request: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
@@ -77,6 +94,7 @@ def create_http_app(
                             "category": r.metadata.category,
                             "topic": r.metadata.topic,
                             "title": r.metadata.title,
+                            "has_code": r.metadata.has_code,
                         },
                     }
                     for r in results
@@ -85,13 +103,9 @@ def create_http_app(
         )
 
     async def topics(_request: Request) -> JSONResponse:
-        categories = document_source.get_categories()
-        result: dict[str, list[str]] = {}
-        for cat in categories:
-            result[cat] = document_source.get_topics_in_category(cat)
-        return JSONResponse({"categories": result})
+        return JSONResponse({"categories": _topics_cache})
 
-    async def topic_detail(request: Request) -> JSONResponse:
+    def topic_detail(request: Request) -> JSONResponse:
         category = request.path_params["category"]
         topic = request.path_params["topic"]
 

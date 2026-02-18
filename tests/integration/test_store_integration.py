@@ -18,23 +18,12 @@ class TestVectorStoreAdvanced:
 
     def test_get_index_returns_existing_index(
         self,
-        integration_docs_dir: Path,
-        local_settings: Settings,
-        shared_embedding_provider,
+        pre_indexed_store: VectorStore,
     ) -> None:
         """Test get_index returns existing index after indexing."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
-
-        loader = DocumentLoader(integration_docs_dir)
-        documents = loader.load_all_documents()
-        store.index_documents(documents)
-
         # Get index should return the cached index
-        index1 = store.get_index()
-        index2 = store.get_index()
+        index1 = pre_indexed_store.get_index()
+        index2 = pre_indexed_store.get_index()
 
         assert index1 is not None
         assert index2 is not None
@@ -69,19 +58,11 @@ class TestVectorStoreAdvanced:
 
     def test_clear_index(
         self,
-        integration_docs_dir: Path,
-        local_settings: Settings,
-        shared_embedding_provider,
+        pre_indexed_store: VectorStore,
     ) -> None:
         """Test clearing the index."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
+        store = pre_indexed_store
 
-        loader = DocumentLoader(integration_docs_dir)
-        documents = loader.load_all_documents()
-        store.index_documents(documents)
         store.save_metadata(
             version="test",
             lang="zh",
@@ -103,14 +84,11 @@ class TestVectorStoreAdvanced:
     def test_index_nodes_with_chunker(
         self,
         integration_docs_dir: Path,
-        local_settings: Settings,
+        pre_indexed_store: VectorStore,
         shared_embedding_provider,
     ) -> None:
         """Test indexing nodes using chunker."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
+        store = pre_indexed_store
 
         loader = DocumentLoader(integration_docs_dir)
         documents = loader.load_all_documents()
@@ -128,19 +106,10 @@ class TestVectorStoreAdvanced:
 
     def test_get_metadata_after_save(
         self,
-        integration_docs_dir: Path,
-        local_settings: Settings,
-        shared_embedding_provider,
+        pre_indexed_store: VectorStore,
     ) -> None:
         """Test getting metadata after saving."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
-
-        loader = DocumentLoader(integration_docs_dir)
-        documents = loader.load_all_documents()
-        store.index_documents(documents)
+        store = pre_indexed_store
 
         # Save metadata
         store.save_metadata(
@@ -187,21 +156,14 @@ class TestVectorStoreAdvanced:
     def test_reindex_replaces_existing(
         self,
         integration_docs_dir: Path,
-        local_settings: Settings,
-        shared_embedding_provider,
+        pre_indexed_store: VectorStore,
     ) -> None:
         """Test reindexing replaces existing index."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
+        store = pre_indexed_store
+        count1 = store.collection.count()
 
         loader = DocumentLoader(integration_docs_dir)
         documents = loader.load_all_documents()
-
-        # Index first time
-        store.index_documents(documents)
-        count1 = store.collection.count()
 
         # Index again (should replace)
         store.index_documents(documents)
@@ -212,19 +174,11 @@ class TestVectorStoreAdvanced:
 
     def test_version_matches_returns_false_for_different_version(
         self,
-        integration_docs_dir: Path,
-        local_settings: Settings,
-        shared_embedding_provider,
+        pre_indexed_store: VectorStore,
     ) -> None:
         """Test version_matches with different version."""
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
+        store = pre_indexed_store
 
-        loader = DocumentLoader(integration_docs_dir)
-        documents = loader.load_all_documents()
-        store.index_documents(documents)
         store.save_metadata(
             version="v1.0.0",
             lang="zh",

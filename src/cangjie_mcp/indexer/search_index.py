@@ -156,6 +156,7 @@ class RemoteSearchIndex(SearchIndex):
                         category=meta.get("category", ""),
                         topic=meta.get("topic", ""),
                         title=meta.get("title", ""),
+                        has_code=bool(meta.get("has_code", False)),
                     ),
                 )
             )

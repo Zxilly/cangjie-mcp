@@ -266,8 +266,9 @@ class TestToolsUnderDefaultConfig:
 
         assert result.total_categories == 1
         assert "syntax" in result.categories
-        assert "functions" in result.categories["syntax"]
-        assert "pattern_matching" in result.categories["syntax"]
+        topic_names = [t.name for t in result.categories["syntax"]]
+        assert "functions" in topic_names
+        assert "pattern_matching" in topic_names
 
     @pytest.mark.asyncio
     async def test_search_docs_extract_code(

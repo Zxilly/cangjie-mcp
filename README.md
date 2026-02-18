@@ -159,9 +159,6 @@ claude mcp add \
 | `cangjie_search_docs` | 语义搜索仓颉文档 |
 | `cangjie_get_topic` | 获取指定主题的完整内容 |
 | `cangjie_list_topics` | 列出所有可用主题 |
-| `cangjie_get_code_examples` | 获取代码示例 |
-| `cangjie_get_tool_usage` | 获取工具使用说明 |
-| `cangjie_search_stdlib` | 搜索标准库 API |
 
 ### 代码智能
 

@@ -48,6 +48,7 @@ class SearchResultItem(BaseModel):
     category: str
     topic: str
     title: str
+    has_code_examples: bool = False
     code_examples: list[CodeExample] | None = None
 
 
@@ -72,12 +73,21 @@ class TopicResult(BaseModel):
     title: str
 
 
+class TopicInfo(BaseModel):
+    """Topic name with title summary."""
+
+    name: str
+    title: str
+
+
 class TopicsListResult(BaseModel):
     """Topics list result with metadata."""
 
-    categories: dict[str, list[str]]
+    categories: dict[str, list[TopicInfo]]
     total_categories: int
     total_topics: int
+    error: str | None = None
+    available_categories: list[str] | None = None
 
 
 # =============================================================================
@@ -143,7 +153,7 @@ class LifespanContext:
         self._lsp_event.set()
 
 
-def _create_document_source(settings: Settings, index_info: IndexInfo) -> DocumentSource:
+def create_document_source(settings: Settings, index_info: IndexInfo) -> DocumentSource:
     """Create a document source backed by the git repository.
 
     Args:
@@ -191,17 +201,14 @@ async def _lifespan(_server: FastMCP) -> AsyncIterator[LifespanContext]:
 
             logger.info("Initializing index...")
             index_info = await asyncio.to_thread(search_index.init)
-            logger.info(
-                "Index resolved: version=%s, lang=%s, embedding=%s",
-                index_info.version,
-                index_info.lang,
-                index_info.embedding_model_name,
-            )
+            from cangjie_mcp.config import format_startup_info
+
+            logger.info(format_startup_info(settings, index_info))
 
             if settings.server_url:
                 doc_source: DocumentSource = RemoteDocumentSource(settings.server_url)
             else:
-                doc_source = _create_document_source(settings, index_info)
+                doc_source = create_document_source(settings, index_info)
 
             tool_ctx = ToolContext(
                 settings=settings,
@@ -388,6 +395,7 @@ async def search_docs(
                 category=result.metadata.category,
                 topic=result.metadata.topic,
                 title=result.metadata.title,
+                has_code_examples=result.metadata.has_code,
                 code_examples=code_examples,
             )
         )
@@ -445,10 +453,36 @@ async def get_topic(
         - topic="pattern-matching", category="syntax" -> Specific category lookup
     """
     tool_ctx = await ctx.request_context.lifespan_context.ready()
-    doc = tool_ctx.document_source.get_document_by_topic(topic, category or None)
+    try:
+        doc = await asyncio.wait_for(
+            asyncio.to_thread(tool_ctx.document_source.get_document_by_topic, topic, category or None),
+            timeout=60.0,
+        )
+    except TimeoutError:
+        logger.warning("get_topic timed out: topic=%s, category=%s", topic, category)
+        return f"Topic lookup timed out for '{topic}'. The server may be overloaded."
+    except Exception as e:
+        logger.exception("get_topic failed: topic=%s, category=%s", topic, category)
+        return f"Error retrieving topic '{topic}': {e}"
 
     if doc is None:
-        return f"Topic '{topic}' not found"
+        import difflib
+
+        doc_source = tool_ctx.document_source
+        all_topics = await asyncio.to_thread(doc_source.get_all_topic_names)
+        suggestions = difflib.get_close_matches(topic, all_topics, n=5, cutoff=0.4)
+
+        parts = [f"Topic '{topic}' not found."]
+        if suggestions:
+            parts.append(f"Did you mean: {', '.join(suggestions)}?")
+        if category:
+            cat_topics = await asyncio.to_thread(doc_source.get_topics_in_category, category)
+            if cat_topics:
+                parts.append(f"Available in '{category}': {', '.join(cat_topics[:20])}")
+            else:
+                cats = await asyncio.to_thread(doc_source.get_categories)
+                parts.append(f"Category '{category}' not found. Available: {', '.join(cats)}")
+        return "\n".join(parts)
 
     return TopicResult(
         content=doc.text,
@@ -489,8 +523,40 @@ async def list_topics(
         - category="cjpm" -> Returns only cjpm-related topics
     """
     tool_ctx = await ctx.request_context.lifespan_context.ready()
-    cats = [category] if category else tool_ctx.document_source.get_categories()
-    categories = {cat: topics for cat in cats if (topics := tool_ctx.document_source.get_topics_in_category(cat))}
+    doc_source = tool_ctx.document_source
+
+    # Check category existence upfront when a filter is specified
+    if category:
+        all_cats = await asyncio.to_thread(doc_source.get_categories)
+        if category not in all_cats:
+            return TopicsListResult(
+                categories={},
+                total_categories=0,
+                total_topics=0,
+                error=f"Category '{category}' not found.",
+                available_categories=all_cats,
+            )
+
+    def _build_topics_list() -> dict[str, list[TopicInfo]]:
+        cats = [category] if category else doc_source.get_categories()
+        result: dict[str, list[TopicInfo]] = {}
+        for cat in cats:
+            topics = doc_source.get_topics_in_category(cat)
+            if topics:
+                titles = doc_source.get_topic_titles(cat)
+                result[cat] = [TopicInfo(name=t, title=titles.get(t, "")) for t in topics]
+        return result
+
+    categories: dict[str, list[TopicInfo]] = {}
+    try:
+        categories = await asyncio.wait_for(
+            asyncio.to_thread(_build_topics_list),
+            timeout=60.0,
+        )
+    except TimeoutError:
+        logger.warning("list_topics timed out: category=%s", category)
+    except Exception:
+        logger.exception("list_topics failed: category=%s", category)
 
     return TopicsListResult(
         categories=categories,

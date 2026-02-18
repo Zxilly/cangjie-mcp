@@ -40,6 +40,7 @@ class SearchResultMetadata(BaseModel):
     category: str = ""
     topic: str = ""
     title: str = ""
+    has_code: bool = False
 
     @classmethod
     def from_node_metadata(cls, metadata: dict[str, str]) -> SearchResultMetadata:
@@ -56,6 +57,7 @@ class SearchResultMetadata(BaseModel):
             category=str(metadata.get("category", "")),
             topic=str(metadata.get("topic", "")),
             title=str(metadata.get("title", "")),
+            has_code=bool(metadata.get("has_code", False)),
         )
 
 

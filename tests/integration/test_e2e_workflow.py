@@ -7,7 +7,6 @@ multilingual search behavior.
 
 from pathlib import Path
 
-from cangjie_mcp.config import IndexInfo, Settings
 from cangjie_mcp.indexer.loader import DocumentLoader
 from cangjie_mcp.indexer.store import VectorStore
 
@@ -18,8 +17,7 @@ class TestEndToEndWorkflow:
     def test_indexing_preserves_document_structure(
         self,
         integration_docs_dir: Path,
-        local_settings: Settings,
-        shared_embedding_provider,
+        local_indexed_store: VectorStore,
     ) -> None:
         """Test that indexing preserves document metadata correctly."""
         loader = DocumentLoader(integration_docs_dir)
@@ -31,15 +29,9 @@ class TestEndToEndWorkflow:
         assert "syntax" in categories
         assert "tools" in categories
 
-        # Index and search
-        store = VectorStore(
-            db_path=IndexInfo.from_settings(local_settings).chroma_db_dir,
-            embedding_provider=shared_embedding_provider,
-        )
-        store.index_documents(documents)
-
-        # Verify search results maintain metadata
-        results = store.search(query="仓颉", top_k=10)
+        # Verify search results maintain metadata (use session-scoped store
+        # to avoid redundant re-indexing)
+        results = local_indexed_store.search(query="仓颉", top_k=10)
         for result in results:
             assert result.metadata.category in categories
             assert result.metadata.topic != ""

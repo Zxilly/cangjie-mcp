@@ -6,6 +6,8 @@ Version numbers are locked to ensure reproducible test results.
 These constants can be overridden via environment variables:
 - CANGJIE_TEST_DOCS_VERSION: Override docs version
 - CANGJIE_TEST_LOCAL_MODEL: Override local embedding model
+- CANGJIE_TEST_RERANKER_MODEL: Override reranker model (default is large;
+  set to e.g. "cross-encoder/ms-marco-MiniLM-L-2-v2" for faster CI runs)
 """
 
 import os
@@ -19,3 +21,9 @@ CANGJIE_DOCS_VERSION = os.environ.get("CANGJIE_TEST_DOCS_VERSION", "v1.0.7")
 # Local embedding model used for testing
 # This model is used for offline testing without external API calls
 CANGJIE_LOCAL_MODEL = os.environ.get("CANGJIE_TEST_LOCAL_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+
+# Reranker model used for testing
+# Default BAAI/bge-reranker-v2-m3 is ~567 MB and takes ~15 s to load on CPU.
+# For faster test runs, set to a smaller model such as
+# "cross-encoder/ms-marco-MiniLM-L-2-v2" (~24 MB, loads in ~1 s).
+CANGJIE_RERANKER_MODEL = os.environ.get("CANGJIE_TEST_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")

@@ -150,3 +150,43 @@ def reset_settings() -> None:
     """Reset the global settings instance (useful for testing)."""
     global _settings
     _settings = None
+
+
+def format_startup_info(settings: Settings, index_info: IndexInfo) -> str:
+    """Format startup configuration and index info for display.
+
+    Returns a multi-line string with embedding/rerank settings and
+    index metadata, suitable for logging or terminal output.
+    """
+    from cangjie_mcp import __version__
+
+    lines: list[str] = [""]
+    lines.append(f"  Cangjie MCP v{__version__}")
+    lines.append("  ┌─ Configuration ─────────────────────────────")
+
+    if settings.server_url:
+        lines.append(f"  │ Mode       : remote → {settings.server_url}")
+    else:
+        model = settings.local_model if settings.embedding_type == "local" else settings.openai_model
+        lines.append(f"  │ Embedding  : {settings.embedding_type} · {model}")
+
+    if settings.rerank_type == "none":
+        lines.append("  │ Rerank     : disabled")
+    else:
+        lines.append(f"  │ Rerank     : {settings.rerank_type} · {settings.rerank_model}")
+        lines.append(f"  │              top_k={settings.rerank_top_k}  initial_k={settings.rerank_initial_k}")
+
+    lines.append("  ├─ Index ──────────────────────────────────────")
+    lines.append(f"  │ Version    : {index_info.version}")
+    lines.append(f"  │ Language   : {index_info.lang}")
+    lines.append(f"  │ Model      : {index_info.embedding_model_name}")
+
+    if not settings.server_url:
+        lines.append(f"  │ Data Dir   : {index_info.data_dir}")
+        lines.append(f"  │ Index Dir  : {index_info.index_dir}")
+        lines.append(f"  │ ChromaDB   : {index_info.chroma_db_dir}")
+
+    lines.append("  └─────────────────────────────────────────────")
+    lines.append("")
+
+    return "\n".join(lines)
