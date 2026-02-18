@@ -93,27 +93,21 @@ class GitDocumentSource(DocumentSource):
     def __init__(self, repo: Repo, version: str, lang: str) -> None:
         """Initialize git document source.
 
-        Args:
-            repo: GitPython Repo instance
-            version: Git reference (tag, branch, or commit)
-            lang: Documentation language ('zh' or 'en')
+        The caller must ensure the repository HEAD is already at the
+        desired commit (e.g. via ``GitManager.resolve_version``).
 
-        Raises:
-            ValueError: If the specified version cannot be found in the repository
+        Args:
+            repo: GitPython Repo instance with HEAD at the target commit
+            version: Display version string (e.g. ``"dev(a1b2c3d)"``)
+            lang: Documentation language ('zh' or 'en')
         """
         self.repo = repo
         self.version = version
         self.lang = lang
         self._lang_dir = "source_zh_cn" if lang == "zh" else "source_en"
 
-        # Cache the tree at the specified version
-        try:
-            self._commit = repo.commit(version)
-            self._tree = self._commit.tree
-        except Exception as e:
-            raise ValueError(
-                f"Git version '{version}' not found in repository. Please ensure the version/tag exists. Error: {e}"
-            ) from e
+        self._commit = repo.head.commit
+        self._tree = self._commit.tree
 
     def is_available(self) -> bool:
         """Check if the git source is available.

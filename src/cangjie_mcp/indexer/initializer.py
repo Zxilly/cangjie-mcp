@@ -19,10 +19,11 @@ if TYPE_CHECKING:
 def build_index(
     settings: Settings, index_info: IndexInfo, store: VectorStore, embedding_provider: EmbeddingProvider
 ) -> None:
-    """Build the vector index from a git documentation repository.
+    """Build the vector index from documentation already checked-out on disk.
 
-    Ensures the repo is cloned and at the correct version, loads documents,
-    chunks them, indexes into the store, and saves metadata.
+    The caller (``initialize_and_index``) is responsible for cloning the
+    repository and checking out the correct version **before** calling this
+    function.
 
     Args:
         settings: Application settings (CLI configuration like chunk_max_size)
@@ -35,17 +36,6 @@ def build_index(
     """
     from cangjie_mcp.indexer.chunker import create_chunker
     from cangjie_mcp.indexer.loader import DocumentLoader
-    from cangjie_mcp.repo.git_manager import GitManager
-
-    # Ensure repo is ready
-    logger.info("Ensuring documentation repository...")
-    git_mgr = GitManager(index_info.docs_repo_dir)
-    git_mgr.ensure_cloned()
-
-    current_version = git_mgr.get_current_version()
-    if current_version != index_info.version:
-        logger.info("Checking out version %s...", index_info.version)
-        git_mgr.checkout(index_info.version)
 
     # Load documents
     logger.info("Loading documents...")
@@ -97,8 +87,10 @@ def initialize_and_index(settings: Settings) -> IndexInfo:
     """Initialize repository and build index if needed.
 
     This function:
-    1. Checks for an existing index with matching version/lang
-    2. If none exists, clones the repo and builds a new index
+    1. Clones / fetches the documentation repository
+    2. Resolves the requested version (branches become ``branch(hash)``)
+    3. Checks for an existing index with matching resolved version
+    4. Builds a new index if none exists
 
     Args:
         settings: Application settings with paths and configuration
@@ -107,11 +99,22 @@ def initialize_and_index(settings: Settings) -> IndexInfo:
         IndexInfo describing the active index
     """
     from cangjie_mcp.config import IndexInfo as IndexInfoCls
+    from cangjie_mcp.repo.git_manager import GitManager
 
-    index_info = IndexInfoCls.from_settings(settings)
+    # Resolve version (ensures repo is cloned, fetched, and checked out)
+    git_mgr = GitManager(settings.docs_repo_dir)
+    resolved_version = git_mgr.resolve_version(settings.docs_version)
+    logger.info("Resolved version: %s -> %s", settings.docs_version, resolved_version)
 
-    if _index_is_ready(index_info, settings.docs_version, settings.docs_lang):
-        logger.info("Index already exists (version: %s, lang: %s)", settings.docs_version, settings.docs_lang)
+    index_info = IndexInfoCls(
+        version=resolved_version,
+        lang=settings.docs_lang,
+        embedding_model_name=settings.embedding_model_name,
+        data_dir=settings.data_dir,
+    )
+
+    if _index_is_ready(index_info, resolved_version, settings.docs_lang):
+        logger.info("Index already exists (version: %s, lang: %s)", resolved_version, settings.docs_lang)
         return index_info
 
     # Need to build index

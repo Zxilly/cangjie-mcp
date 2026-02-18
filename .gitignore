@@ -31,6 +31,9 @@ coverage.xml
 # Docs repo (cloned documentation)
 docs_repo/
 
+# Test artifacts
+MagicMock/
+
 ref/
 temp/
 

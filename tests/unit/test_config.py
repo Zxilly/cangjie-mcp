@@ -21,7 +21,7 @@ class TestSettings:
         """Test that Settings has sensible defaults."""
         # Settings should be creatable with all defaults
         settings = Settings()
-        assert settings.docs_version == "latest"
+        assert settings.docs_version == "dev"
         assert settings.docs_lang == "zh"
         assert settings.embedding_type == "local"
         assert settings.rerank_type == "none"
@@ -140,8 +140,8 @@ class TestOpenAISettings:
         """Test default OpenAI configuration (optional fields with defaults)."""
         settings = create_test_settings()
         assert settings.openai_api_key is None
-        assert settings.openai_base_url == "https://api.openai.com/v1"
-        assert settings.openai_model == "text-embedding-3-small"
+        assert settings.openai_base_url == "https://api.siliconflow.cn/v1"
+        assert settings.openai_model == "BAAI/bge-m3"
 
     def test_custom_values(self, create_test_settings: Callable[..., Settings]) -> None:
         """Test custom OpenAI configuration."""

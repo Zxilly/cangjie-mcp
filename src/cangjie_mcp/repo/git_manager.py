@@ -81,6 +81,17 @@ class GitManager:
         except GitCommandError as e:
             logger.warning("Failed to fetch from remote: %s", e)
 
+    def _sync_branch(self, repo: Repo) -> None:
+        """If on a tracking branch, hard-reset to its remote counterpart."""
+        if repo.head.is_detached:
+            return
+        try:
+            tracking = repo.active_branch.tracking_branch()
+            if tracking:
+                repo.git.reset("--hard", tracking.name)
+        except GitCommandError as e:
+            logger.warning("Failed to sync branch with remote: %s", e)
+
     def list_tags(self) -> list[str]:
         """List all available tags in the repository.
 
@@ -119,6 +130,8 @@ class GitManager:
     def checkout(self, version: str) -> None:
         """Checkout a specific version (tag or branch).
 
+        For branches, syncs with the remote tracking branch after checkout.
+
         Args:
             version: Tag name or branch name to checkout
         """
@@ -129,6 +142,7 @@ class GitManager:
             for branch in ("main", "master"):
                 try:
                     repo.git.checkout(branch)
+                    self._sync_branch(repo)
                     logger.info("Checked out %s branch.", branch)
                     return
                 except GitCommandError:
@@ -138,9 +152,48 @@ class GitManager:
         # Try to checkout the specified version
         try:
             repo.git.checkout(version)
-            logger.info("Checked out version %s.", version)
         except GitCommandError as e:
             raise ValueError(f"Failed to checkout version '{version}': {e}") from e
+
+        self._sync_branch(repo)
+        logger.info("Checked out version %s.", version)
+
+    def resolve_version(self, version: str) -> str:
+        """Resolve a version string to its canonical form.
+
+        After this call the repository HEAD is at the resolved commit.
+
+        - Tags are returned as-is (e.g. ``"v0.53.4"``).
+        - Branches are returned as ``"branch(short_hash)"``
+          (e.g. ``"dev(a1b2c3d)"``).
+        - Detached commits are returned as their short hash.
+
+        Args:
+            version: A tag name, branch name, or ``"latest"``
+
+        Returns:
+            Canonical version string
+        """
+        self.checkout(version)
+
+        repo = self.repo
+        assert repo is not None  # checkout guarantees repo exists
+
+        head = repo.head
+        commit = head.commit
+
+        # Branch → branch(short_hash)
+        if not head.is_detached:
+            short_hash = commit.hexsha[:7]
+            return f"{head.reference.name}({short_hash})"
+
+        # Detached HEAD → check if it matches a tag
+        for tag in repo.tags:
+            if tag.commit == commit:
+                return tag.name
+
+        # Plain commit
+        return commit.hexsha[:7]
 
     def fetch(self) -> None:
         """Fetch latest changes from remote."""

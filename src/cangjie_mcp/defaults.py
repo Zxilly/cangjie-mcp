@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 # Documentation settings
-DEFAULT_DOCS_VERSION: str = "latest"
+DEFAULT_DOCS_VERSION: str = "dev"
 DEFAULT_DOCS_LANG: Literal["zh", "en"] = "zh"
 
 # Embedding settings
@@ -26,8 +26,8 @@ DEFAULT_RERANK_INITIAL_K: int = 20
 DEFAULT_CHUNK_MAX_SIZE: int = 6000
 
 # OpenAI-compatible API settings
-DEFAULT_OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-DEFAULT_OPENAI_MODEL: str = "text-embedding-3-small"
+DEFAULT_OPENAI_BASE_URL: str = "https://api.siliconflow.cn/v1"
+DEFAULT_OPENAI_MODEL: str = "BAAI/bge-m3"
 
 # Data directory
 DEFAULT_DATA_DIR_NAME: str = ".cangjie-mcp"

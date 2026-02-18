@@ -13,14 +13,18 @@ runner = CliRunner()
 class TestInitializeAndIndex:
     """Tests for initialize_and_index function."""
 
+    @patch("cangjie_mcp.repo.git_manager.GitManager")
     @patch("cangjie_mcp.indexer.initializer._index_is_ready", return_value=True)
     def test_uses_existing_index(
         self,
         mock_index_is_ready: MagicMock,
+        mock_git_manager_cls: MagicMock,
     ) -> None:
         """Test that existing index is used when version matches."""
         from cangjie_mcp.config import IndexInfo
         from cangjie_mcp.indexer.initializer import initialize_and_index
+
+        mock_git_manager_cls.return_value.resolve_version.return_value = "v1.0.0"
 
         mock_settings = MagicMock()
         mock_settings.docs_version = "v1.0.0"
@@ -30,7 +34,8 @@ class TestInitializeAndIndex:
 
         result = initialize_and_index(mock_settings)
 
-        # Should check existing index via lightweight metadata check
+        # Should resolve version then check existing index
+        mock_git_manager_cls.return_value.resolve_version.assert_called_once_with("v1.0.0")
         mock_index_is_ready.assert_called_once()
         call_args = mock_index_is_ready.call_args
         assert isinstance(call_args[0][0], IndexInfo)
