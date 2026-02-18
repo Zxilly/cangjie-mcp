@@ -35,10 +35,8 @@ dependencies = [
     "mcp[cli]>=1.25.0",
     "typer>=0.21.0",
     "llama-index-core>=0.14.0",
-    "llama-index-embeddings-huggingface>=0.6.0",
     "llama-index-embeddings-openai>=0.5.0",
     "llama-index-vector-stores-chroma>=0.5.0",
-    "sentence-transformers>=5.2.0",
     "chromadb>=1.4.0",
     "pydantic>=2.12.0",
     "pydantic-settings>=2.12.0",
@@ -46,6 +44,12 @@ dependencies = [
     "httpx>=0.28.0",
     "llama-index-embeddings-openai-like>=0.2.2",
     "sansio-lsp-client>=0.13.0",
+]
+
+[project.optional-dependencies]
+local = [
+    "llama-index-embeddings-huggingface>=0.6.0",
+    "sentence-transformers>=5.2.0",
 ]
 
 [project.urls]

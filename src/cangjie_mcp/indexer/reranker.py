@@ -94,7 +94,12 @@ class LocalReranker(RerankerProvider):
     def _get_reranker(self, top_n: int) -> SentenceTransformerRerank:
         """Get or create the SentenceTransformerRerank instance."""
         if self._reranker is None:
-            from llama_index.core.postprocessor import SentenceTransformerRerank
+            try:
+                from llama_index.core.postprocessor import SentenceTransformerRerank
+            except ImportError:
+                raise ImportError(
+                    "Local reranking requires extra dependencies. Install them with: pip install cangjie-mcp[local]"
+                ) from None
 
             logger.info("Loading local reranker model: %s (device=%s)...", self.model_name, self.device)
             self._reranker = SentenceTransformerRerank(

@@ -68,7 +68,12 @@ class LocalEmbedding(EmbeddingProvider):
     def get_embedding_model(self) -> BaseEmbedding:
         """Get the HuggingFace embedding model."""
         if self._model is None:
-            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            try:
+                from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            except ImportError:
+                raise ImportError(
+                    "Local embedding requires extra dependencies. Install them with: pip install cangjie-mcp[local]"
+                ) from None
 
             logger.info("Loading local embedding model: %s (device=%s)...", self.model_name, self.device)
             self._model = HuggingFaceEmbedding(model_name=self.model_name, device=self.device)
