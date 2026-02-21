@@ -211,3 +211,20 @@ class TestCreateChunker:
         chunker = create_chunker(mock_embedding_provider, max_chunk_size=4000)
 
         assert chunker.max_chunk_size == 4000
+
+    def test_create_chunker_no_embedding(self) -> None:
+        """Test creating a chunker without embedding provider."""
+        chunker = create_chunker(None)
+        assert isinstance(chunker, DocumentChunker)
+        assert chunker.embedding_provider is None
+
+    def test_chunk_documents_no_embedding_uses_sentence_splitting(self) -> None:
+        """Test that chunking without embedding provider uses sentence splitting."""
+        chunker = DocumentChunker(embedding_provider=None)
+        docs = [
+            Document(text="This is a test document. It has multiple sentences."),
+        ]
+        nodes = chunker.chunk_documents(docs, use_semantic=True)
+        # Should succeed with sentence splitting even though use_semantic=True
+        assert len(nodes) >= 1
+        assert all(node.get_content() for node in nodes)

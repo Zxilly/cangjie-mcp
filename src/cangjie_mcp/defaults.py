@@ -13,8 +13,11 @@ DEFAULT_DOCS_VERSION: str = "dev"
 DEFAULT_DOCS_LANG: Literal["zh", "en"] = "zh"
 
 # Embedding settings
-DEFAULT_EMBEDDING_TYPE: Literal["local", "openai"] = "local"
+DEFAULT_EMBEDDING_TYPE: Literal["none", "local", "openai"] = "none"
 DEFAULT_LOCAL_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
+
+# RRF (Reciprocal Rank Fusion) settings
+DEFAULT_RRF_K: int = 60
 
 # Rerank settings
 DEFAULT_RERANK_TYPE: Literal["none", "local", "openai"] = "none"

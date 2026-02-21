@@ -63,6 +63,7 @@ def create_http_app(
                 "lang": index_metadata.lang,
                 "embedding_model": index_metadata.embedding_model,
                 "document_count": index_metadata.document_count,
+                "search_mode": index_metadata.search_mode,
             }
         )
 

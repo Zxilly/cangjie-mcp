@@ -23,9 +23,22 @@ class TestSettings:
         settings = Settings()
         assert settings.docs_version == "dev"
         assert settings.docs_lang == "zh"
-        assert settings.embedding_type == "local"
+        assert settings.embedding_type == "none"
         assert settings.rerank_type == "none"
         assert settings.data_dir.name == ".cangjie-mcp"
+        assert settings.rrf_k == 60
+
+    def test_has_embedding_none(self) -> None:
+        """Test has_embedding is False when embedding_type is none."""
+        settings = Settings(embedding_type="none")
+        assert not settings.has_embedding
+        assert settings.embedding_model_name == "none"
+
+    def test_has_embedding_local(self, create_test_settings: Callable[..., Settings]) -> None:
+        """Test has_embedding is True when embedding_type is local."""
+        settings = create_test_settings(embedding_type="local")
+        assert settings.has_embedding
+        assert settings.embedding_model_name.startswith("local:")
 
     def test_all_fields_provided(self, temp_data_dir: Path, create_test_settings: Callable[..., Settings]) -> None:
         """Test Settings with all required fields."""
@@ -87,6 +100,15 @@ class TestIndexInfo:
             / "local--paraphrase-multilingual-MiniLM-L12-v2"
             / "chroma_db"
         )
+        assert (
+            index_info.bm25_index_dir
+            == temp_data_dir
+            / "indexes"
+            / "v1.0.7"
+            / "zh"
+            / "local--paraphrase-multilingual-MiniLM-L12-v2"
+            / "bm25_index"
+        )
         assert index_info.docs_repo_dir == temp_data_dir / "docs_repo"
         assert "source_zh_cn" in str(index_info.docs_source_dir)
 
@@ -102,6 +124,17 @@ class TestIndexInfo:
             == temp_data_dir / "indexes" / "v1.0.7" / "en" / "local--paraphrase-multilingual-MiniLM-L12-v2"
         )
         assert "source_en" in str(index_info_en.docs_source_dir)
+
+    def test_bm25_only_index_dir(self, temp_data_dir: Path) -> None:
+        """Test that embedding_model_name='none' uses 'bm25-only' directory."""
+        index_info = IndexInfo(
+            version="v1.0.7",
+            lang="zh",
+            embedding_model_name="none",
+            data_dir=temp_data_dir,
+        )
+        assert index_info.index_dir == temp_data_dir / "indexes" / "v1.0.7" / "zh" / "bm25-only"
+        assert index_info.bm25_index_dir == temp_data_dir / "indexes" / "v1.0.7" / "zh" / "bm25-only" / "bm25_index"
 
     def test_version_isolation(self, temp_data_dir: Path) -> None:
         """Test that different versions have separate index directories."""

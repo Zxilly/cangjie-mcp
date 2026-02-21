@@ -25,7 +25,6 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
 )
-from cangjie_mcp.utils import create_literal_validator
 
 
 @dataclass
@@ -79,7 +78,7 @@ EmbeddingOption = Annotated[
     typer.Option(
         "--embedding",
         "-e",
-        help="Embedding type (local/openai)",
+        help="Embedding type: none (BM25 only), local, or openai",
         envvar="CANGJIE_EMBEDDING_TYPE",
         show_default=True,
     ),
@@ -175,6 +174,16 @@ ChunkSizeOption = Annotated[
     ),
 ]
 
+RRFKOption = Annotated[
+    int,
+    typer.Option(
+        "--rrf-k",
+        help="RRF constant k for hybrid search fusion",
+        envvar="CANGJIE_RRF_K",
+        show_default=True,
+    ),
+]
+
 DataDirOption = Annotated[
     Path | None,
     typer.Option(
@@ -235,17 +244,32 @@ PortOption = Annotated[
 ]
 
 
-# Pre-defined validators
-validate_lang = create_literal_validator("language", ("zh", "en"))
-validate_embedding_type = create_literal_validator("embedding type", ("local", "openai"))
-validate_rerank_type = create_literal_validator("rerank type", ("none", "local", "openai"))
+def validate_lang(value: str) -> Literal["zh", "en"]:
+    """Validate language value."""
+    if value == "zh" or value == "en":
+        return value
+    raise typer.BadParameter(f"Invalid language: {value}. Must be one of: zh, en.")
+
+
+def validate_embedding_type(value: str) -> Literal["none", "local", "openai"]:
+    """Validate embedding type value."""
+    if value == "none" or value == "local" or value == "openai":
+        return value
+    raise typer.BadParameter(f"Invalid embedding type: {value}. Must be one of: none, local, openai.")
+
+
+def validate_rerank_type(value: str) -> Literal["none", "local", "openai"]:
+    """Validate rerank type value."""
+    if value == "none" or value == "local" or value == "openai":
+        return value
+    raise typer.BadParameter(f"Invalid rerank type: {value}. Must be one of: none, local, openai.")
 
 
 def validate_docs_args(
     args: DocsArgs,
 ) -> tuple[
     Literal["zh", "en"],
-    Literal["local", "openai"],
+    Literal["none", "local", "openai"],
     Literal["none", "local", "openai"],
 ]:
     """Validate and convert DocsArgs to proper literal types.
@@ -259,12 +283,8 @@ def validate_docs_args(
     Raises:
         typer.BadParameter: If any value is invalid
     """
-    validated_lang = validate_lang(args.lang)
-    validated_embedding = validate_embedding_type(args.embedding)
-    validated_rerank = validate_rerank_type(args.rerank)
-
     return (
-        validated_lang,
-        validated_embedding,
-        validated_rerank,
-    )  # type: ignore[return-value]
+        validate_lang(args.lang),
+        validate_embedding_type(args.embedding),
+        validate_rerank_type(args.rerank),
+    )

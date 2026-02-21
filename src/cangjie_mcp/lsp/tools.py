@@ -13,12 +13,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import Context
 from pydantic import BaseModel, Field
 from sansio_lsp_client.events import Hover as HoverEvent
 from sansio_lsp_client.structs import (
+    CompletionItem,
     CompletionItemKind,
     DiagnosticSeverity,
     DocumentSymbol,
@@ -212,13 +213,11 @@ _LSP_TIMEOUT = 10.0
 
 logger = logging.getLogger(__name__)
 
-_T = TypeVar("_T")
 
-
-async def _lsp_call(  # noqa: UP047
+async def _lsp_call[T](
     ctx: Context[Any, LifespanContext, Any],
-    fn: Callable[[], Awaitable[_T]],
-) -> _T | str:
+    fn: Callable[[], Awaitable[T]],
+) -> T | str:
     """Execute an LSP operation with liveness check and timeout.
 
     Args:
@@ -639,7 +638,7 @@ async def lsp_completion(
         return f"Error: {e}"
 
 
-def _extract_documentation(item: Any) -> str | None:  # noqa: ANN401
+def _extract_documentation(item: CompletionItem) -> str | None:
     """Extract documentation string from a CompletionItem.
 
     Args:

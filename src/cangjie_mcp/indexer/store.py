@@ -31,6 +31,7 @@ class IndexMetadata(BaseModel):
     lang: str
     embedding_model: str
     document_count: int
+    search_mode: str = "vector"
 
 
 class SearchResultMetadata(BaseModel):
@@ -270,11 +271,9 @@ class VectorStore:
 
         # Determine how many candidates to retrieve
         should_rerank = use_rerank and self.reranker is not None
-        if should_rerank:  # noqa: SIM108
-            # Retrieve more candidates for reranking
+        retrieve_k = top_k
+        if should_rerank:
             retrieve_k = initial_k if initial_k is not None else max(top_k * 4, 20)
-        else:
-            retrieve_k = top_k
 
         # Build retriever with filters
         filters = None
@@ -326,12 +325,14 @@ def create_vector_store(
     index_info: IndexInfo,
     settings: Settings,
     with_rerank: bool = True,
-) -> VectorStore:
+) -> VectorStore | None:
     """Factory function to create a fully initialized VectorStore.
 
     Creates the ChromaDB client, loads the embedding model matching the
     index, and loads the existing index (if any). The returned store is
     ready for queries.
+
+    Returns None when ``settings.has_embedding`` is False (BM25-only mode).
 
     The embedding provider is derived from ``index_info.embedding_model_name``
     (not from ``settings.embedding_type``) so that the provider always matches
@@ -343,8 +344,11 @@ def create_vector_store(
         with_rerank: Whether to enable reranking
 
     Returns:
-        Fully initialized VectorStore instance
+        Fully initialized VectorStore instance, or None in BM25-only mode
     """
+    if not settings.has_embedding:
+        return None
+
     from cangjie_mcp.indexer.embeddings import create_embedding_provider_for_index
     from cangjie_mcp.indexer.reranker import get_reranker_provider
 

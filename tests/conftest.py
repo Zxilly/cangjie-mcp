@@ -55,6 +55,7 @@ def make_test_settings(**kwargs: object) -> Settings:
         "rerank_model": "BAAI/bge-reranker-v2-m3",
         "rerank_top_k": 5,
         "rerank_initial_k": 20,
+        "rrf_k": 60,
         "chunk_max_size": 6000,
         "data_dir": Path.home() / ".cangjie-mcp-test",
     }

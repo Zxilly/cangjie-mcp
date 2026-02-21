@@ -31,6 +31,7 @@ from cangjie_mcp.cli_args import (
     RerankModelOption,
     RerankOption,
     RerankTopKOption,
+    RRFKOption,
     ServerUrlOption,
     validate_embedding_type,
     validate_lang,
@@ -49,6 +50,7 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_MODEL,
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
+    DEFAULT_RRF_K,
     DEFAULT_SERVER_HOST,
     DEFAULT_SERVER_PORT,
     get_default_data_dir,
@@ -97,6 +99,7 @@ def main(
     rerank_top_k: RerankTopKOption = DEFAULT_RERANK_TOP_K,
     rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
     chunk_max_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
+    rrf_k: RRFKOption = DEFAULT_RRF_K,
     data_dir: DataDirOption = None,
     server_url: ServerUrlOption = None,
     log_file: LogFileOption = None,
@@ -116,16 +119,17 @@ def main(
     # Validate and build settings
     settings = Settings(
         docs_version=docs_version,
-        docs_lang=validate_lang(lang),  # type: ignore[arg-type]
-        embedding_type=validate_embedding_type(embedding),  # type: ignore[arg-type]
+        docs_lang=validate_lang(lang),
+        embedding_type=validate_embedding_type(embedding),
         local_model=local_model,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
-        rerank_type=validate_rerank_type(rerank),  # type: ignore[arg-type]
+        rerank_type=validate_rerank_type(rerank),
         rerank_model=rerank_model,
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
+        rrf_k=rrf_k,
         chunk_max_size=chunk_max_size,
         data_dir=data_dir if data_dir else get_default_data_dir(),
         server_url=server_url,
@@ -155,6 +159,7 @@ def server_command(
     rerank_top_k: RerankTopKOption = DEFAULT_RERANK_TOP_K,
     rerank_initial_k: RerankInitialKOption = DEFAULT_RERANK_INITIAL_K,
     chunk_max_size: ChunkSizeOption = DEFAULT_CHUNK_MAX_SIZE,
+    rrf_k: RRFKOption = DEFAULT_RRF_K,
     data_dir: DataDirOption = None,
     log_file: LogFileOption = None,
     debug: DebugOption = False,
@@ -164,30 +169,31 @@ def server_command(
 ) -> None:
     """Start the HTTP query server.
 
-    Loads the embedding model and ChromaDB index, then serves search
-    queries over HTTP. Remote MCP clients can connect using --server-url.
+    Loads the search index and serves search queries over HTTP.
+    Remote MCP clients can connect using --server-url.
     """
     setup_logging(log_file, debug)
 
     settings = Settings(
         docs_version=docs_version,
-        docs_lang=validate_lang(lang),  # type: ignore[arg-type]
-        embedding_type=validate_embedding_type(embedding),  # type: ignore[arg-type]
+        docs_lang=validate_lang(lang),
+        embedding_type=validate_embedding_type(embedding),
         local_model=local_model,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
-        rerank_type=validate_rerank_type(rerank),  # type: ignore[arg-type]
+        rerank_type=validate_rerank_type(rerank),
         rerank_model=rerank_model,
         rerank_top_k=rerank_top_k,
         rerank_initial_k=rerank_initial_k,
+        rrf_k=rrf_k,
         chunk_max_size=chunk_max_size,
         data_dir=data_dir if data_dir else get_default_data_dir(),
     )
     set_settings(settings)
 
     from cangjie_mcp.indexer.search_index import LocalSearchIndex
-    from cangjie_mcp.indexer.store import METADATA_FILE, IndexMetadata
+    from cangjie_mcp.indexer.store import IndexMetadata
     from cangjie_mcp.server.http import create_http_app
 
     # Initialize the local search index
@@ -199,8 +205,15 @@ def server_command(
     typer.echo(format_startup_info(settings, index_info))
 
     # Load index metadata for the /info endpoint
-    metadata_path = index_info.chroma_db_dir / METADATA_FILE
-    index_metadata = IndexMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+    metadata_path = index_info.index_dir / "index_metadata.json"
+    if metadata_path.exists():
+        index_metadata = IndexMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+    else:
+        # Fallback: try legacy chroma_db location
+        from cangjie_mcp.indexer.store import METADATA_FILE
+
+        legacy_path = index_info.chroma_db_dir / METADATA_FILE
+        index_metadata = IndexMetadata.model_validate_json(legacy_path.read_text(encoding="utf-8"))
 
     # Create document source
     from cangjie_mcp.server.tools import create_document_source

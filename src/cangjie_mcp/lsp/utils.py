@@ -193,8 +193,7 @@ def merge_unique_strings(*arrays: list[str]) -> list[str]:
 
     for arr in arrays:
         for item in arr:
-            # Defensive check for robustness with improperly typed input
-            if item is not None and item not in seen:  # pyright: ignore[reportUnnecessaryComparison]
+            if item not in seen:
                 seen.add(item)
                 result.append(item)
 

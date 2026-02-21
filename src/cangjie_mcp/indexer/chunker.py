@@ -1,7 +1,10 @@
 """Semantic document chunking using LlamaIndex with markdown and code awareness."""
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from llama_index.core import Document
 from llama_index.core.node_parser import (
@@ -13,8 +16,10 @@ from llama_index.core.node_parser import (
 from llama_index.core.schema import BaseNode, TextNode
 
 from cangjie_mcp.defaults import DEFAULT_CHUNK_MAX_SIZE
-from cangjie_mcp.indexer.embeddings import EmbeddingProvider
 from cangjie_mcp.utils import logger
+
+if TYPE_CHECKING:
+    from cangjie_mcp.indexer.embeddings import EmbeddingProvider
 
 # Regex pattern to match fenced code blocks (```language\ncode\n```)
 CODE_BLOCK_PATTERN = re.compile(r"```[\w]*\n.*?```", re.DOTALL)
@@ -40,7 +45,7 @@ class DocumentChunker:
 
     def __init__(
         self,
-        embedding_provider: EmbeddingProvider,
+        embedding_provider: EmbeddingProvider | None = None,
         buffer_size: int = 1,
         breakpoint_percentile_threshold: int = 95,
         max_chunk_size: int = DEFAULT_CHUNK_MAX_SIZE,
@@ -48,7 +53,9 @@ class DocumentChunker:
         """Initialize the document chunker.
 
         Args:
-            embedding_provider: Embedding provider for semantic splitting
+            embedding_provider: Embedding provider for semantic splitting.
+                If None, semantic splitting is unavailable and only sentence
+                splitting will be used.
             buffer_size: Number of sentences to group for comparison
             breakpoint_percentile_threshold: Percentile threshold for splitting
             max_chunk_size: Maximum chunk size in characters to prevent exceeding
@@ -70,8 +77,14 @@ class DocumentChunker:
         return self._markdown_splitter
 
     def _get_semantic_splitter(self) -> SemanticSplitterNodeParser:
-        """Get or create the semantic splitter."""
+        """Get or create the semantic splitter.
+
+        Raises:
+            RuntimeError: If no embedding provider is configured.
+        """
         if self._splitter is None:
+            if self.embedding_provider is None:
+                raise RuntimeError("Semantic splitting requires an embedding provider")
             embed_model = self.embedding_provider.get_embedding_model()
             self._splitter = SemanticSplitterNodeParser(
                 buffer_size=self.buffer_size,
@@ -311,7 +324,7 @@ class DocumentChunker:
 
         # Step 2: Apply semantic or sentence splitting
         splitter: NodeParser
-        if use_semantic:
+        if use_semantic and self.embedding_provider is not None:
             try:
                 splitter = self._get_semantic_splitter()
                 nodes = splitter.get_nodes_from_documents(documents, show_progress=True)
@@ -347,13 +360,14 @@ class DocumentChunker:
 
 
 def create_chunker(
-    embedding_provider: EmbeddingProvider,
+    embedding_provider: EmbeddingProvider | None = None,
     max_chunk_size: int = DEFAULT_CHUNK_MAX_SIZE,
 ) -> DocumentChunker:
     """Factory function to create a document chunker.
 
     Args:
-        embedding_provider: Embedding provider for semantic splitting
+        embedding_provider: Embedding provider for semantic splitting.
+            If None, only sentence-based splitting is available.
         max_chunk_size: Maximum chunk size in characters
 
     Returns:

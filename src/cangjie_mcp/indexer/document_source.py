@@ -34,7 +34,7 @@ class DocData:
     """
 
     text: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict[str, Any])
     doc_id: str = ""
 
 

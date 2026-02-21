@@ -98,38 +98,6 @@ def setup_logging(log_file: Path | None = None, debug: bool = False) -> None:
         logger.debug("Debug mode: stdio tee enabled")
 
 
-def create_literal_validator(
-    name: str,
-    valid_values: tuple[str, ...],
-) -> Callable[[str], str]:
-    """Create a validator for Literal types.
-
-    This factory function generates validator functions that check if a value
-    is one of the allowed values and raise a typer.BadParameter if not.
-
-    Args:
-        name: Human-readable name for the parameter (used in error messages)
-        valid_values: Tuple of valid string values
-
-    Returns:
-        A validator function that takes a string and returns it if valid
-
-    Example:
-        >>> _validate_lang = create_literal_validator("language", ("zh", "en"))
-        >>> _validate_lang("zh")  # Returns "zh"
-        >>> _validate_lang("fr")  # Raises typer.BadParameter
-    """
-
-    def validator(value: str) -> str:
-        if value not in valid_values:
-            import typer
-
-            raise typer.BadParameter(f"Invalid {name}: {value}. Must be one of: {', '.join(valid_values)}.")
-        return value
-
-    return validator
-
-
 def detect_device() -> str:
     """Detect the best available compute device for model inference.
 
@@ -152,7 +120,7 @@ def detect_device() -> str:
 
     # Intel XPU (requires intel_extension_for_pytorch)
     try:
-        import intel_extension_for_pytorch  # type: ignore[import-not-found]  # noqa: F401  # pyright: ignore[reportMissingImports, reportUnusedImport]
+        import intel_extension_for_pytorch  # noqa: F401  # pyright: ignore[reportMissingImports, reportUnusedImport]
         import torch
 
         if hasattr(torch, "xpu") and torch.xpu.is_available():

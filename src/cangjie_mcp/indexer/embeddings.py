@@ -163,6 +163,11 @@ def create_embedding_provider(
         ValueError: If OpenAI is selected but API key is not set
     """
     match settings.embedding_type:
+        case "none":
+            raise ValueError(
+                "Cannot create embedding provider when embedding_type is 'none'. "
+                "Use --embedding local or --embedding openai to enable embeddings."
+            )
         case "local":
             return LocalEmbedding(model_name=model_override or settings.local_model)
         case "openai":
@@ -173,7 +178,7 @@ def create_embedding_provider(
                 model=model_override or settings.openai_model,
                 base_url=settings.openai_base_url,
             )
-        case _:  # pyright: ignore[reportUnnecessaryComparison]
+        case _:
             raise ValueError(f"Unknown embedding type: {settings.embedding_type}")
 
 

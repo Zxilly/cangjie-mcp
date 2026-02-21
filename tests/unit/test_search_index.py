@@ -13,14 +13,17 @@ class TestLocalSearchIndex:
     """Tests for LocalSearchIndex."""
 
     @patch("cangjie_mcp.indexer.store.create_vector_store")
+    @patch("cangjie_mcp.indexer.bm25_store.BM25Store")
     @patch("cangjie_mcp.indexer.initializer.initialize_and_index")
     def test_init_returns_index_info(
         self,
         mock_init_and_index: MagicMock,
+        mock_bm25_class: MagicMock,
         mock_create_store: MagicMock,
     ) -> None:
         """Test that init() returns IndexInfo."""
         mock_settings = MagicMock()
+        mock_settings.has_embedding = True
         expected_info = IndexInfo(
             version="v1.0.0",
             lang="zh",
@@ -29,6 +32,11 @@ class TestLocalSearchIndex:
         )
         mock_init_and_index.return_value = expected_info
 
+        # BM25 store mock
+        mock_bm25 = MagicMock()
+        mock_bm25.load.return_value = True
+        mock_bm25_class.return_value = mock_bm25
+
         index = LocalSearchIndex(mock_settings)
         result = index.init()
 
@@ -36,30 +44,62 @@ class TestLocalSearchIndex:
         mock_init_and_index.assert_called_once_with(mock_settings)
         mock_create_store.assert_called_once()
 
-    @pytest.mark.asyncio
     @patch("cangjie_mcp.indexer.store.create_vector_store")
+    @patch("cangjie_mcp.indexer.bm25_store.BM25Store")
     @patch("cangjie_mcp.indexer.initializer.initialize_and_index")
-    async def test_query_delegates_to_store(
+    def test_init_bm25_only_mode(
         self,
         mock_init_and_index: MagicMock,
+        mock_bm25_class: MagicMock,
         mock_create_store: MagicMock,
     ) -> None:
-        """Test that query() delegates to VectorStore.search()."""
+        """Test that init() in BM25-only mode does not create vector store."""
+        mock_settings = MagicMock()
+        mock_settings.has_embedding = False
+        expected_info = IndexInfo(
+            version="v1.0.0",
+            lang="zh",
+            embedding_model_name="none",
+            data_dir=Path("/test"),
+        )
+        mock_init_and_index.return_value = expected_info
+
+        mock_bm25 = MagicMock()
+        mock_bm25.load.return_value = True
+        mock_bm25_class.return_value = mock_bm25
+
+        index = LocalSearchIndex(mock_settings)
+        result = index.init()
+
+        assert result is expected_info
+        mock_create_store.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("cangjie_mcp.indexer.store.create_vector_store", return_value=None)
+    @patch("cangjie_mcp.indexer.bm25_store.BM25Store")
+    @patch("cangjie_mcp.indexer.initializer.initialize_and_index")
+    async def test_query_bm25_only(
+        self,
+        mock_init_and_index: MagicMock,
+        mock_bm25_class: MagicMock,
+        mock_create_store: MagicMock,
+    ) -> None:
+        """Test query in BM25-only mode delegates to BM25Store."""
         from cangjie_mcp.indexer.store import SearchResult, SearchResultMetadata
 
         mock_settings = MagicMock()
+        mock_settings.has_embedding = False
         mock_init_and_index.return_value = IndexInfo(
             version="v1.0.0",
             lang="zh",
-            embedding_model_name="local:test",
+            embedding_model_name="none",
             data_dir=Path("/test"),
         )
 
-        mock_store = MagicMock()
         expected_results = [
             SearchResult(
-                text="test result",
-                score=0.9,
+                text="bm25 result",
+                score=1.5,
                 metadata=SearchResultMetadata(
                     file_path="test.md",
                     category="test",
@@ -68,15 +108,17 @@ class TestLocalSearchIndex:
                 ),
             ),
         ]
-        mock_store.search.return_value = expected_results
-        mock_create_store.return_value = mock_store
+        mock_bm25 = MagicMock()
+        mock_bm25.load.return_value = True
+        mock_bm25.search.return_value = expected_results
+        mock_bm25_class.return_value = mock_bm25
 
         index = LocalSearchIndex(mock_settings)
         index.init()
 
         results = await index.query("test query", top_k=3)
         assert len(results) == 1
-        assert results[0].text == "test result"
+        assert results[0].text == "bm25 result"
 
     @pytest.mark.asyncio
     async def test_query_returns_empty_without_init(self) -> None:

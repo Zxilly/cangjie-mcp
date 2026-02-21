@@ -109,10 +109,6 @@ class TestMergeUniqueStrings:
         result = merge_unique_strings(["c", "a"], ["b", "a"])
         assert result == ["c", "a", "b"]
 
-    def test_handles_none_values(self) -> None:
-        result = merge_unique_strings(["a", None], ["b"])  # type: ignore
-        assert result == ["a", "b"]
-
 
 class TestLoadTomlSafe:
     """Tests for load_toml_safe function."""

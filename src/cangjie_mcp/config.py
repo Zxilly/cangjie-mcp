@@ -24,6 +24,7 @@ from cangjie_mcp.defaults import (
     DEFAULT_RERANK_MODEL,
     DEFAULT_RERANK_TOP_K,
     DEFAULT_RERANK_TYPE,
+    DEFAULT_RRF_K,
     get_default_data_dir,
 )
 
@@ -45,7 +46,15 @@ class IndexInfo:
     @property
     def index_dir(self) -> Path:
         """Path to version-specific index directory."""
-        return self.data_dir / "indexes" / self.version / self.lang / _sanitize_for_path(self.embedding_model_name)
+        model_dir = (
+            "bm25-only" if self.embedding_model_name == "none" else _sanitize_for_path(self.embedding_model_name)
+        )
+        return self.data_dir / "indexes" / self.version / self.lang / model_dir
+
+    @property
+    def bm25_index_dir(self) -> Path:
+        """Path to BM25 index directory."""
+        return self.index_dir / "bm25_index"
 
     @property
     def chroma_db_dir(self) -> Path:
@@ -89,7 +98,7 @@ class Settings:
     docs_lang: Literal["zh", "en"] = DEFAULT_DOCS_LANG
 
     # Embedding settings
-    embedding_type: Literal["local", "openai"] = DEFAULT_EMBEDDING_TYPE
+    embedding_type: Literal["none", "local", "openai"] = DEFAULT_EMBEDDING_TYPE
     local_model: str = DEFAULT_LOCAL_MODEL
 
     # Rerank settings
@@ -97,6 +106,9 @@ class Settings:
     rerank_model: str = DEFAULT_RERANK_MODEL
     rerank_top_k: int = DEFAULT_RERANK_TOP_K
     rerank_initial_k: int = DEFAULT_RERANK_INITIAL_K
+
+    # RRF settings
+    rrf_k: int = DEFAULT_RRF_K
 
     # Chunking settings
     chunk_max_size: int = DEFAULT_CHUNK_MAX_SIZE
@@ -113,8 +125,15 @@ class Settings:
     openai_model: str = DEFAULT_OPENAI_MODEL
 
     @property
+    def has_embedding(self) -> bool:
+        """Whether an embedding model is configured."""
+        return self.embedding_type != "none"
+
+    @property
     def embedding_model_name(self) -> str:
         """Return a canonical name for the current embedding model."""
+        if self.embedding_type == "none":
+            return "none"
         if self.embedding_type == "local":
             return f"local:{self.local_model}"
         return f"openai:{self.openai_model}"
@@ -167,8 +186,11 @@ def format_startup_info(settings: Settings, index_info: IndexInfo) -> str:
     if settings.server_url:
         lines.append(f"  │ Mode       : remote → {settings.server_url}")
     else:
-        model = settings.local_model if settings.embedding_type == "local" else settings.openai_model
-        lines.append(f"  │ Embedding  : {settings.embedding_type} · {model}")
+        search_mode = "hybrid (BM25 + vector)" if settings.has_embedding else "BM25"
+        lines.append(f"  │ Search     : {search_mode}")
+        if settings.has_embedding:
+            model = settings.local_model if settings.embedding_type == "local" else settings.openai_model
+            lines.append(f"  │ Embedding  : {settings.embedding_type} · {model}")
 
     if settings.rerank_type == "none":
         lines.append("  │ Rerank     : disabled")
@@ -179,12 +201,14 @@ def format_startup_info(settings: Settings, index_info: IndexInfo) -> str:
     lines.append("  ├─ Index ──────────────────────────────────────")
     lines.append(f"  │ Version    : {index_info.version}")
     lines.append(f"  │ Language   : {index_info.lang}")
-    lines.append(f"  │ Model      : {index_info.embedding_model_name}")
+    if settings.has_embedding:
+        lines.append(f"  │ Model      : {index_info.embedding_model_name}")
 
     if not settings.server_url:
         lines.append(f"  │ Data Dir   : {index_info.data_dir}")
         lines.append(f"  │ Index Dir  : {index_info.index_dir}")
-        lines.append(f"  │ ChromaDB   : {index_info.chroma_db_dir}")
+        if settings.has_embedding:
+            lines.append(f"  │ ChromaDB   : {index_info.chroma_db_dir}")
 
     lines.append("  └─────────────────────────────────────────────")
     lines.append("")

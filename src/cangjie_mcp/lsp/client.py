@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 class _CangjieProtocolClient(SansioClient):
     """Subclass that injects initializationOptions and rootPath into initialize."""
 
-    def __init__(  # noqa: ANN204
+    def __init__(
         self,
         *,
         process_id: int | None = None,
@@ -61,7 +61,7 @@ class _CangjieProtocolClient(SansioClient):
         workspace_folders: list[WorkspaceFolder] | None = None,
         initialization_options: dict[str, Any] | None = None,
         trace: str = "off",
-    ):
+    ) -> None:
         # Bypass SansioClient.__init__ to inject custom params
         self._state = ClientState.NOT_INITIALIZED
         self._recv_buf = bytearray()

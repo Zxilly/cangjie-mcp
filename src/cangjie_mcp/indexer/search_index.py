@@ -14,6 +14,7 @@ from cangjie_mcp.utils import logger
 
 if TYPE_CHECKING:
     from cangjie_mcp.config import IndexInfo, Settings
+    from cangjie_mcp.indexer.bm25_store import BM25Store
     from cangjie_mcp.indexer.store import SearchResult, VectorStore
 
 
@@ -52,24 +53,37 @@ class SearchIndex(ABC):
 
 
 class LocalSearchIndex(SearchIndex):
-    """Search index backed by a local ChromaDB store.
+    """Search index backed by BM25 and optionally a ChromaDB vector store.
 
-    Wraps the existing initialize_and_index + VectorStore code behind
-    the SearchIndex interface. Queries are dispatched to a thread to
-    avoid blocking the event loop.
+    When only BM25 is configured (embedding_type="none"), queries use
+    pure BM25 keyword search.  When an embedding model is also configured,
+    BM25 and vector search run in parallel and results are fused via RRF.
     """
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._store: VectorStore | None = None
+        self._bm25_store: BM25Store | None = None
 
     def init(self) -> IndexInfo:
-        """Initialize the local index (clone repo, build if needed, load store)."""
+        """Initialize the local index (clone repo, build if needed, load stores)."""
+        from cangjie_mcp.indexer.bm25_store import BM25Store
         from cangjie_mcp.indexer.initializer import initialize_and_index
         from cangjie_mcp.indexer.store import create_vector_store
 
         index_info = initialize_and_index(self._settings)
-        self._store = create_vector_store(index_info, self._settings)
+
+        # Always load BM25 store
+        bm25 = BM25Store(index_info.bm25_index_dir)
+        if bm25.load():
+            self._bm25_store = bm25
+        else:
+            logger.warning("Failed to load BM25 index from %s", index_info.bm25_index_dir)
+
+        # Load vector store only when embedding is configured
+        if self._settings.has_embedding:
+            self._store = create_vector_store(index_info, self._settings)
+
         return index_info
 
     async def query(
@@ -79,17 +93,84 @@ class LocalSearchIndex(SearchIndex):
         category: str | None = None,
         rerank: bool = True,
     ) -> list[SearchResult]:
-        """Search the local ChromaDB store in a background thread."""
-        if self._store is None:
+        """Search using BM25 and optionally vector search with RRF fusion."""
+        if self._bm25_store is None and self._store is None:
             return []
 
-        return await asyncio.to_thread(
-            self._store.search,
-            query=query,
-            top_k=top_k,
-            category=category,
-            use_rerank=rerank,
+        # Pure BM25 mode
+        if self._store is None:
+            if self._bm25_store is None:
+                return []
+            return await asyncio.to_thread(
+                self._bm25_store.search,
+                query=query,
+                top_k=top_k,
+                category=category,
+            )
+
+        # Hybrid mode: run BM25 and vector search in parallel, then fuse
+        from cangjie_mcp.indexer.fusion import reciprocal_rank_fusion
+
+        store = self._store
+        # Retrieve more candidates for fusion
+        fusion_k = max(top_k * 3, 20)
+
+        async def _bm25_search() -> list[SearchResult]:
+            if self._bm25_store is None:
+                return []
+            return await asyncio.to_thread(
+                self._bm25_store.search,
+                query=query,
+                top_k=fusion_k,
+                category=category,
+            )
+
+        async def _vector_search() -> list[SearchResult]:
+            return await asyncio.to_thread(
+                store.search,
+                query=query,
+                top_k=fusion_k,
+                category=category,
+                use_rerank=False,  # rerank after fusion
+            )
+
+        bm25_results, vector_results = await asyncio.gather(
+            _bm25_search(),
+            _vector_search(),
         )
+
+        reranker = store.reranker
+        fused = reciprocal_rank_fusion(
+            [bm25_results, vector_results],
+            k=self._settings.rrf_k,
+            top_k=top_k if not (rerank and reranker) else max(top_k * 4, 20),
+        )
+
+        # Apply reranking on fused results if enabled
+        if rerank and reranker is not None:
+            from llama_index.core.schema import NodeWithScore, TextNode
+
+            nodes = [
+                NodeWithScore(
+                    node=TextNode(text=r.text, metadata=r.metadata.model_dump()),
+                    score=r.score,
+                )
+                for r in fused
+            ]
+            reranked = reranker.rerank(query=query, nodes=nodes, top_k=top_k)
+
+            from cangjie_mcp.indexer.store import SearchResult, SearchResultMetadata
+
+            return [
+                SearchResult(
+                    text=n.text,
+                    score=n.score if n.score is not None else 0.0,
+                    metadata=SearchResultMetadata.from_node_metadata(n.metadata),
+                )
+                for n in reranked[:top_k]
+            ]
+
+        return fused[:top_k]
 
 
 class RemoteSearchIndex(SearchIndex):
