@@ -1,11 +1,18 @@
 """Tests for CLI module."""
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
 from cangjie_mcp.cli import app
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
 
 runner = CliRunner()
 
@@ -67,7 +74,7 @@ class TestServerUrlOption:
         """Test that --server-url appears in help."""
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "--server-url" in result.output
+        assert "--server-url" in _strip_ansi(result.output)
 
     @patch("cangjie_mcp.server.factory.create_mcp_server")
     def test_server_url_passed_to_settings(
