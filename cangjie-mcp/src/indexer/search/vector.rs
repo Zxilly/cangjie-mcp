@@ -63,7 +63,7 @@ impl VectorStore {
         );
 
         // Drop existing table if any
-        let _ = self.db.drop_table("chunks").await;
+        let _ = self.db.drop_table("chunks", &[]).await;
 
         let schema = Self::schema(self.dim);
         let mut all_batches = Vec::new();
