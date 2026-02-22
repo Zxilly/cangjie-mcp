@@ -18,3 +18,4 @@ temp/
 *.log
 Dockerfile
 .dockerignore
+target/
