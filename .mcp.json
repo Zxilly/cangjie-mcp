@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "cangjie": {
-      "command": "uv",
-      "args": ["run", "cangjie-mcp"],
+      "command": "cargo",
+      "args": ["run", "--release"],
       "env": {
         "CANGJIE_LOG_FILE": "cangjie-mcp.log",
         "CANGJIE_DEBUG": "1"

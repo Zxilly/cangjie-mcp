@@ -1,17 +1,8 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info/
-*.egg
-*.whl
-*.tar.gz
-MANIFEST
+# Rust build artifacts
+target/
 
-# Virtual environments
-.venv
+# Python reference (old implementation)
+py_ref/
 
 # Claude Code
 .claude/
@@ -22,23 +13,33 @@ data/
 # Environment variables (contains secrets)
 .env
 
-# Coverage reports
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-
 # Docs repo (cloned documentation)
 docs_repo/
 
 # Test artifacts
 MagicMock/
 
+# Misc
 ref/
 temp/
+*.log
 
+# Python leftovers
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+*.whl
+*.tar.gz
+MANIFEST
+.venv
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-
-*.log

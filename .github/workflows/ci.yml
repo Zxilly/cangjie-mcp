@@ -7,144 +7,96 @@ on:
     branches: [master, main]
 
 env:
-  PYTHON_VERSION: "3.13"
-  CANGJIE_TEST_DOCS_VERSION: "v1.0.7"
-  CANGJIE_TEST_LOCAL_MODEL: "paraphrase-multilingual-MiniLM-L12-v2"
-  # Centralise HuggingFace cache so actions/cache can persist it
-  HF_HOME: ~/.cache/huggingface
+  CARGO_TERM_COLOR: always
 
 jobs:
-  lint:
-    name: Lint
+  check:
+    name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --dev --extra local
-
-      - name: Run ruff check
-        run: uv run ruff check src tests
-
-      - name: Run ruff format check
-        run: uv run ruff format --check src tests
-
-  type-check:
-    name: Type Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --dev --extra local
-
-      - name: Run pyright
-        run: uv run pyright src
-
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --dev --extra local
-
-      - name: Run unit tests
-        run: |
-          uv run pytest tests/unit \
-            -v \
-            --tb=short \
-            --cov=src/cangjie_mcp \
-            --cov-report=xml \
-            --cov-report=term-missing
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          use_oidc: true
-          files: ./coverage.xml
-          flags: unit
-          fail_ci_if_error: false
-
-  integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --dev --extra local
-
-      - name: Cache HuggingFace models
+      - name: Cache cargo registry & build
         uses: actions/cache@v4
         with:
-          path: ${{ env.HF_HOME }}
-          key: hf-${{ env.CANGJIE_TEST_LOCAL_MODEL }}-${{ hashFiles('uv.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            hf-${{ env.CANGJIE_TEST_LOCAL_MODEL }}-
+            ${{ runner.os }}-cargo-
 
-      - name: Run integration tests
-        run: |
-          # Use OpenAI embedding when API key is available (faster, no model download)
-          if [ -n "$OPENAI_API_KEY" ]; then
-            export CANGJIE_EMBEDDING_TYPE=openai
-          fi
+      - name: cargo check (default features)
+        run: cargo check
 
-          uv run pytest tests/integration \
-            -v \
-            --tb=short \
-            -k "not reranker" \
-            --cov=src/cangjie_mcp \
-            --cov-report=xml \
-            --cov-report=term-missing
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_EMBEDDING_MODEL: ${{ secrets.OPENAI_EMBEDDING_MODEL_NORMAL }}
+      - name: cargo check (local feature)
+        run: cargo check --features local
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          use_oidc: true
-          files: ./coverage.xml
-          flags: integration
-          fail_ci_if_error: false
+          components: clippy
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo clippy (default features)
+        run: cargo clippy -- -W clippy::all -D warnings
+
+      - name: cargo clippy (local feature)
+        run: cargo clippy --features local -- -W clippy::all -D warnings
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      - name: cargo test
+        run: cargo test
