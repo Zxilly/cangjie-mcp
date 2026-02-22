@@ -1,14 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# ---- builder stage: compile Rust binary and pre-build index ----
+# ---- Stage 1: compile CLI + server ----
 FROM rust:1.85-bookworm AS builder
-
-ARG OPENAI_BASE_URL=https://api.siliconflow.cn/v1
-ARG OPENAI_EMBEDDING_MODEL=BAAI/bge-m3
-ARG CANGJIE_DOCS_VERSION=dev
-ARG CANGJIE_DOCS_LANG=zh
-ARG CANGJIE_RERANK_TYPE=openai
-ARG CANGJIE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -19,33 +12,44 @@ WORKDIR /app
 
 # Cache dependency compilation
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && echo "" > src/lib.rs \
- && cargo build --release 2>/dev/null || true \
- && rm -rf src
+COPY cangjie-mcp/Cargo.toml cangjie-mcp/Cargo.toml
+COPY cangjie-mcp-cli/Cargo.toml cangjie-mcp-cli/Cargo.toml
+COPY cangjie-mcp-server/Cargo.toml cangjie-mcp-server/Cargo.toml
+RUN mkdir -p cangjie-mcp/src cangjie-mcp-cli/src cangjie-mcp-server/src \
+ && echo "" > cangjie-mcp/src/lib.rs \
+ && echo "fn main() {}" > cangjie-mcp-cli/src/main.rs \
+ && echo "fn main() {}" > cangjie-mcp-server/src/main.rs \
+ && cargo build --release -p cangjie-mcp-cli -p cangjie-mcp-server 2>/dev/null || true \
+ && rm -rf cangjie-mcp/src cangjie-mcp-cli/src cangjie-mcp-server/src
 
-# Build the actual binary
-COPY src/ src/
-RUN cargo build --release
+COPY cangjie-mcp/ cangjie-mcp/
+COPY cangjie-mcp-cli/ cangjie-mcp-cli/
+COPY cangjie-mcp-server/ cangjie-mcp-server/
+RUN cargo build --release -p cangjie-mcp-cli -p cangjie-mcp-server
 
-# Pre-build the search index
-ENV CANGJIE_EMBEDDING_TYPE=openai \
-    OPENAI_BASE_URL=${OPENAI_BASE_URL} \
-    OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL} \
-    CANGJIE_DOCS_VERSION=${CANGJIE_DOCS_VERSION} \
-    CANGJIE_DOCS_LANG=${CANGJIE_DOCS_LANG} \
-    CANGJIE_RERANK_TYPE=${CANGJIE_RERANK_TYPE} \
-    CANGJIE_RERANK_MODEL=${CANGJIE_RERANK_MODEL} \
-    CANGJIE_DATA_DIR=/data
+# ---- Stage 2: build search index using CLI ----
+FROM debian:bookworm-slim AS indexer
 
-# Pre-build index if OPENAI_API_KEY is provided
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/cangjie-mcp /usr/local/bin/cangjie-mcp
+
+ARG CANGJIE_DOCS_VERSION=dev
+ARG CANGJIE_DOCS_LANG=zh
+ARG CANGJIE_EMBEDDING_TYPE=none
+
 RUN --mount=type=secret,id=OPENAI_API_KEY \
-    if [ -f /run/secrets/OPENAI_API_KEY ]; then \
-      export OPENAI_API_KEY=$(cat /run/secrets/OPENAI_API_KEY) && \
-      ./target/release/cangjie-mcp --help || true; \
-    fi
+    OPENAI_API_KEY=$(if [ -f /run/secrets/OPENAI_API_KEY ]; then cat /run/secrets/OPENAI_API_KEY; fi) \
+    cangjie-mcp \
+      --docs-version "${CANGJIE_DOCS_VERSION}" \
+      --lang "${CANGJIE_DOCS_LANG}" \
+      --embedding "${CANGJIE_EMBEDDING_TYPE}" \
+      --data-dir /data \
+      index
 
-
-# ---- runtime stage: minimal image ----
+# ---- Stage 3: minimal runtime with server binary + pre-built index ----
 FROM debian:bookworm-slim
 
 RUN apt-get update \
@@ -54,30 +58,14 @@ RUN apt-get update \
  && groupadd --system --gid 999 nonroot \
  && useradd --system --gid 999 --uid 999 --create-home nonroot
 
-WORKDIR /app
+COPY --from=builder /app/target/release/cangjie-mcp-server /usr/local/bin/cangjie-mcp-server
+COPY --from=indexer --chown=nonroot:nonroot /data /data
 
-ARG OPENAI_BASE_URL=https://api.siliconflow.cn/v1
-ARG OPENAI_EMBEDDING_MODEL=BAAI/bge-m3
-ARG CANGJIE_DOCS_VERSION=dev
-ARG CANGJIE_DOCS_LANG=zh
-ARG CANGJIE_RERANK_TYPE=openai
-ARG CANGJIE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
-
-ENV CANGJIE_EMBEDDING_TYPE=openai \
-    OPENAI_BASE_URL=${OPENAI_BASE_URL} \
-    OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL} \
-    CANGJIE_DOCS_VERSION=${CANGJIE_DOCS_VERSION} \
-    CANGJIE_DOCS_LANG=${CANGJIE_DOCS_LANG} \
-    CANGJIE_RERANK_TYPE=${CANGJIE_RERANK_TYPE} \
-    CANGJIE_RERANK_MODEL=${CANGJIE_RERANK_MODEL} \
-    CANGJIE_DATA_DIR=/data
-
-# Copy binary and pre-built data
-COPY --from=builder --chown=nonroot:nonroot /app/target/release/cangjie-mcp /usr/local/bin/cangjie-mcp
-COPY --from=builder --chown=nonroot:nonroot /data /data
+ENV CANGJIE_DATA_DIR=/data
 
 USER nonroot
 
 EXPOSE 8765
 
-CMD ["cangjie-mcp", "server", "--host", "0.0.0.0"]
+ENTRYPOINT ["cangjie-mcp-server"]
+CMD ["--host", "0.0.0.0"]

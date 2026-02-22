@@ -634,4 +634,268 @@ mod tests {
         assert_eq!(comp.items[0].kind, Some("variable".to_string()));
         assert_eq!(comp.items[1].kind, Some("class".to_string()));
     }
+
+    #[test]
+    fn test_severity_name_all_variants() {
+        assert_eq!(severity_name(Some(DiagnosticSeverity::ERROR)), "error");
+        assert_eq!(severity_name(Some(DiagnosticSeverity::WARNING)), "warning");
+        assert_eq!(
+            severity_name(Some(DiagnosticSeverity::INFORMATION)),
+            "information"
+        );
+        assert_eq!(severity_name(Some(DiagnosticSeverity::HINT)), "hint");
+        assert_eq!(severity_name(None), "unknown");
+    }
+
+    #[test]
+    fn test_symbol_kind_name_coverage() {
+        assert_eq!(symbol_kind_name(SymbolKind::FILE), "file");
+        assert_eq!(symbol_kind_name(SymbolKind::MODULE), "module");
+        assert_eq!(symbol_kind_name(SymbolKind::NAMESPACE), "namespace");
+        assert_eq!(symbol_kind_name(SymbolKind::PACKAGE), "package");
+        assert_eq!(symbol_kind_name(SymbolKind::CLASS), "class");
+        assert_eq!(symbol_kind_name(SymbolKind::METHOD), "method");
+        assert_eq!(symbol_kind_name(SymbolKind::PROPERTY), "property");
+        assert_eq!(symbol_kind_name(SymbolKind::FIELD), "field");
+        assert_eq!(symbol_kind_name(SymbolKind::CONSTRUCTOR), "constructor");
+        assert_eq!(symbol_kind_name(SymbolKind::ENUM), "enum");
+        assert_eq!(symbol_kind_name(SymbolKind::INTERFACE), "interface");
+        assert_eq!(symbol_kind_name(SymbolKind::FUNCTION), "function");
+        assert_eq!(symbol_kind_name(SymbolKind::VARIABLE), "variable");
+        assert_eq!(symbol_kind_name(SymbolKind::CONSTANT), "constant");
+        assert_eq!(symbol_kind_name(SymbolKind::STRING), "string");
+        assert_eq!(symbol_kind_name(SymbolKind::NUMBER), "number");
+        assert_eq!(symbol_kind_name(SymbolKind::BOOLEAN), "boolean");
+        assert_eq!(symbol_kind_name(SymbolKind::ARRAY), "array");
+        assert_eq!(symbol_kind_name(SymbolKind::OBJECT), "object");
+        assert_eq!(symbol_kind_name(SymbolKind::KEY), "key");
+        assert_eq!(symbol_kind_name(SymbolKind::NULL), "null");
+        assert_eq!(symbol_kind_name(SymbolKind::ENUM_MEMBER), "enum member");
+        assert_eq!(symbol_kind_name(SymbolKind::STRUCT), "struct");
+        assert_eq!(symbol_kind_name(SymbolKind::EVENT), "event");
+        assert_eq!(symbol_kind_name(SymbolKind::OPERATOR), "operator");
+        assert_eq!(
+            symbol_kind_name(SymbolKind::TYPE_PARAMETER),
+            "type parameter"
+        );
+        // SymbolKind is a newtype with private field, so we can't construct
+        // an unknown variant for testing the default branch.
+    }
+
+    #[test]
+    fn test_completion_kind_name_coverage() {
+        assert_eq!(completion_kind_name(CompletionItemKind::TEXT), "text");
+        assert_eq!(completion_kind_name(CompletionItemKind::METHOD), "method");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::FUNCTION),
+            "function"
+        );
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::CONSTRUCTOR),
+            "constructor"
+        );
+        assert_eq!(completion_kind_name(CompletionItemKind::FIELD), "field");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::VARIABLE),
+            "variable"
+        );
+        assert_eq!(completion_kind_name(CompletionItemKind::CLASS), "class");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::INTERFACE),
+            "interface"
+        );
+        assert_eq!(completion_kind_name(CompletionItemKind::MODULE), "module");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::PROPERTY),
+            "property"
+        );
+        assert_eq!(completion_kind_name(CompletionItemKind::UNIT), "unit");
+        assert_eq!(completion_kind_name(CompletionItemKind::VALUE), "value");
+        assert_eq!(completion_kind_name(CompletionItemKind::ENUM), "enum");
+        assert_eq!(completion_kind_name(CompletionItemKind::KEYWORD), "keyword");
+        assert_eq!(completion_kind_name(CompletionItemKind::SNIPPET), "snippet");
+        assert_eq!(completion_kind_name(CompletionItemKind::COLOR), "color");
+        assert_eq!(completion_kind_name(CompletionItemKind::FILE), "file");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::REFERENCE),
+            "reference"
+        );
+        assert_eq!(completion_kind_name(CompletionItemKind::FOLDER), "folder");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::ENUM_MEMBER),
+            "enum member"
+        );
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::CONSTANT),
+            "constant"
+        );
+        assert_eq!(completion_kind_name(CompletionItemKind::STRUCT), "struct");
+        assert_eq!(completion_kind_name(CompletionItemKind::EVENT), "event");
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::OPERATOR),
+            "operator"
+        );
+        assert_eq!(
+            completion_kind_name(CompletionItemKind::TYPE_PARAMETER),
+            "type parameter"
+        );
+        // CompletionItemKind is a newtype with private field, so we can't
+        // construct an unknown variant for testing the default branch.
+    }
+
+    #[test]
+    fn test_validate_file_path_nonexistent() {
+        let result = validate_file_path("/nonexistent/path/file.cj");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("File not found"));
+    }
+
+    #[test]
+    fn test_validate_file_path_not_cj_extension() {
+        // Use a file that exists but isn't .cj
+        let result = validate_file_path(env!("CARGO_MANIFEST_DIR"));
+        assert!(result.is_some());
+        // A directory is "not a file"
+        assert!(result.unwrap().contains("Not a file"));
+    }
+
+    #[test]
+    fn test_process_hover_array_contents() {
+        let result = json!({
+            "contents": [
+                "First part",
+                {"language": "cangjie", "value": "func foo()"}
+            ]
+        });
+        let output = process_hover(&result, "test.cj");
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let content = parsed["content"].as_str().unwrap();
+        assert!(content.contains("First part"));
+        assert!(content.contains("func foo()"));
+    }
+
+    #[test]
+    fn test_process_diagnostics_info_and_hint() {
+        let diags = vec![
+            json!({
+                "message": "Info diagnostic",
+                "severity": 3,
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 0, "character": 5}
+                }
+            }),
+            json!({
+                "message": "Hint diagnostic",
+                "severity": 4,
+                "range": {
+                    "start": {"line": 1, "character": 0},
+                    "end": {"line": 1, "character": 5}
+                }
+            }),
+        ];
+        let result = process_diagnostics(&diags);
+        assert_eq!(result.info_count, 1);
+        assert_eq!(result.hint_count, 1);
+        assert_eq!(result.diagnostics[0].severity, "information");
+        assert_eq!(result.diagnostics[1].severity, "hint");
+    }
+
+    #[test]
+    fn test_process_diagnostics_with_number_code() {
+        let diags = vec![json!({
+            "message": "Error",
+            "severity": 1,
+            "range": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 0, "character": 1}
+            },
+            "code": 42
+        })];
+        let result = process_diagnostics(&diags);
+        assert_eq!(result.diagnostics[0].code, Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_process_references_empty() {
+        let refs = process_references(&json!([]));
+        assert_eq!(refs.count, 0);
+        assert!(refs.locations.is_empty());
+    }
+
+    #[test]
+    fn test_process_completion_empty() {
+        let comp = process_completion(&json!(null));
+        assert_eq!(comp.count, 0);
+        assert!(comp.items.is_empty());
+    }
+
+    #[test]
+    fn test_process_symbols_flat_response() {
+        let result = json!([{
+            "name": "globalVar",
+            "kind": 13,
+            "location": {
+                "uri": "file:///test.cj",
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 0, "character": 10}
+                }
+            }
+        }]);
+        let syms = process_symbols(&result, "test.cj");
+        // SymbolInformation has a `location` field → Flat variant
+        assert_eq!(syms.count, 1);
+        assert_eq!(syms.symbols[0].name, "globalVar");
+        assert_eq!(syms.symbols[0].kind, "variable");
+    }
+
+    #[test]
+    fn test_process_symbols_empty() {
+        let syms = process_symbols(&json!(null), "test.cj");
+        assert_eq!(syms.count, 0);
+    }
+
+    #[test]
+    fn test_process_completion_with_documentation() {
+        let result = json!({
+            "isIncomplete": false,
+            "items": [{
+                "label": "myFunc",
+                "kind": 3,
+                "documentation": {"kind": "markdown", "value": "# My Function\nDoes things."}
+            }]
+        });
+        let comp = process_completion(&result);
+        assert_eq!(comp.count, 1);
+        assert_eq!(
+            comp.items[0].documentation,
+            Some("# My Function\nDoes things.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_process_completion_with_string_documentation() {
+        let result = json!({
+            "isIncomplete": false,
+            "items": [{
+                "label": "myFunc",
+                "kind": 3,
+                "documentation": "Plain text docs"
+            }]
+        });
+        let comp = process_completion(&result);
+        assert_eq!(
+            comp.items[0].documentation,
+            Some("Plain text docs".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_validate_error_delegates() {
+        // get_validate_error is a thin wrapper around validate_file_path
+        let result = get_validate_error("/nonexistent/file.cj");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("File not found"));
+    }
 }

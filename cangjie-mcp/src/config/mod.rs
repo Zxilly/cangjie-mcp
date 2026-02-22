@@ -423,4 +423,74 @@ mod tests {
         assert!(output.contains("remote"));
         assert!(output.contains("http://localhost:8765"));
     }
+
+    #[test]
+    fn test_embedding_type_display() {
+        assert_eq!(format!("{}", EmbeddingType::None), "none");
+        assert_eq!(format!("{}", EmbeddingType::Local), "local");
+        assert_eq!(format!("{}", EmbeddingType::OpenAI), "openai");
+    }
+
+    #[test]
+    fn test_rerank_type_display() {
+        assert_eq!(format!("{}", RerankType::None), "none");
+        assert_eq!(format!("{}", RerankType::Local), "local");
+        assert_eq!(format!("{}", RerankType::OpenAI), "openai");
+    }
+
+    #[test]
+    fn test_doc_lang_display_and_source_dir() {
+        assert_eq!(format!("{}", DocLang::Zh), "zh");
+        assert_eq!(format!("{}", DocLang::En), "en");
+        assert_eq!(DocLang::Zh.source_dir_name(), "source_zh_cn");
+        assert_eq!(DocLang::En.source_dir_name(), "source_en");
+    }
+
+    #[test]
+    fn test_format_startup_info_with_embedding() {
+        let mut s = test_settings();
+        s.embedding_type = EmbeddingType::Local;
+        s.local_model = "test-embed-model".to_string();
+        let info = IndexInfo::from_settings(&s, "0.55.3");
+        let output = format_startup_info(&s, &info);
+        assert!(output.contains("hybrid (BM25 + vector)"));
+        assert!(output.contains("test-embed-model"));
+        assert!(output.contains("Model"));
+    }
+
+    #[test]
+    fn test_format_startup_info_with_reranker() {
+        let mut s = test_settings();
+        s.rerank_type = RerankType::OpenAI;
+        s.rerank_model = "bge-reranker".to_string();
+        s.rerank_top_k = 5;
+        s.rerank_initial_k = 20;
+        let info = IndexInfo::from_settings(&s, "0.55.3");
+        let output = format_startup_info(&s, &info);
+        assert!(output.contains("openai"));
+        assert!(output.contains("bge-reranker"));
+        assert!(output.contains("top_k=5"));
+        assert!(output.contains("initial_k=20"));
+    }
+
+    #[test]
+    fn test_format_startup_info_openai_embedding() {
+        let mut s = test_settings();
+        s.embedding_type = EmbeddingType::OpenAI;
+        s.openai_model = "text-embed-3".to_string();
+        let info = IndexInfo::from_settings(&s, "dev");
+        let output = format_startup_info(&s, &info);
+        assert!(output.contains("text-embed-3"));
+        assert!(output.contains("openai"));
+    }
+
+    #[test]
+    fn test_index_info_from_settings() {
+        let s = test_settings();
+        let info = IndexInfo::from_settings(&s, "resolved-version");
+        assert_eq!(info.version, "resolved-version");
+        assert_eq!(info.lang, DocLang::Zh);
+        assert_eq!(info.embedding_model_name, "none");
+        assert_eq!(info.data_dir, PathBuf::from("/tmp/test-data"));
+    }
 }

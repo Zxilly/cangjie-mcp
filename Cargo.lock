@@ -1166,6 +1166,7 @@ dependencies = [
  "serde_json",
  "strsim",
  "tantivy",
+ "tempfile",
  "text-splitter",
  "thiserror 1.0.69",
  "tokio",
@@ -1175,6 +1176,47 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "cangjie-mcp-cli"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "cangjie-mcp",
+ "clap",
+ "rmcp",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cangjie-mcp-server"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "cangjie-mcp",
+ "clap",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cangjie-mcp-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "cangjie-mcp",
+ "http-body-util",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

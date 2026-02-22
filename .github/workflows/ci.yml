@@ -31,10 +31,10 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: cargo check (default features)
-        run: cargo check
+        run: cargo check --workspace
 
       - name: cargo check (local feature)
-        run: cargo check --features local
+        run: cargo check -p cangjie-mcp --features local
 
   clippy:
     name: Clippy
@@ -59,10 +59,10 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: cargo clippy (default features)
-        run: cargo clippy -- -W clippy::all -D warnings
+        run: cargo clippy --workspace -- -W clippy::all -D warnings
 
       - name: cargo clippy (local feature)
-        run: cargo clippy --features local -- -W clippy::all -D warnings
+        run: cargo clippy -p cangjie-mcp --features local -- -W clippy::all -D warnings
 
   fmt:
     name: Format
@@ -99,4 +99,4 @@ jobs:
             ${{ runner.os }}-cargo-test-
 
       - name: cargo test
-        run: cargo test
+        run: cargo test --workspace

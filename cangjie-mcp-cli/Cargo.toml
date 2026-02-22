@@ -1,0 +1,23 @@
+[package]
+name = "cangjie-mcp-cli"
+version = "0.3.0"
+edition = "2021"
+description = "MCP stdio server CLI for Cangjie programming language"
+license = "MIT"
+
+[[bin]]
+name = "cangjie-mcp"
+path = "src/main.rs"
+
+[features]
+default = []
+local = ["cangjie-mcp/local"]
+
+[dependencies]
+cangjie-mcp = { path = "../cangjie-mcp" }
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["full"] }
+rmcp = { version = "0.16", features = ["server", "transport-io"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

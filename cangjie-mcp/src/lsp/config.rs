@@ -351,4 +351,71 @@ mod tests {
         assert_eq!(json["clangdFileStatus"], true);
         assert_eq!(json["telemetryOption"], false);
     }
+
+    #[test]
+    fn test_get_platform_env_sets_path() {
+        let sdk_path = PathBuf::from("/opt/cangjie-sdk");
+        let env = get_platform_env(&sdk_path);
+        // Regardless of platform, PATH should be set
+        assert!(env.contains_key("PATH"));
+        let path_val = &env["PATH"];
+        // PATH should include SDK's tools/bin
+        assert!(
+            path_val.contains("tools") && path_val.contains("bin"),
+            "PATH should include SDK tools/bin directory, got: {}",
+            path_val
+        );
+    }
+
+    #[test]
+    fn test_get_lsp_args_log_enabled_but_no_path() {
+        let mut settings = test_lsp_settings();
+        settings.log_enabled = true;
+        settings.log_path = None;
+        let args = settings.get_lsp_args();
+        // log_enabled but no log_path → the inner `if let` doesn't match,
+        // so no log flags are added at all
+        assert!(!args.contains(&"--enable-log=false".to_string()));
+        assert!(!args.contains(&"-V".to_string()));
+        assert!(!args.contains(&"--enable-log=true".to_string()));
+    }
+
+    #[test]
+    fn test_validate_with_existing_workspace() {
+        // Use a directory that exists (but SDK won't)
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/nonexistent/sdk"),
+            workspace_path: std::env::current_dir().unwrap(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let errors = settings.validate();
+        // SDK path error should be present, but workspace should not
+        assert!(errors.iter().any(|e| e.contains("SDK path")));
+        assert!(!errors.iter().any(|e| e.contains("Workspace path")));
+    }
+
+    #[test]
+    fn test_lsp_init_options_full_serialization() {
+        let mut mm = HashMap::new();
+        mm.insert(
+            "module1".to_string(),
+            serde_json::json!({"path": "/some/path"}),
+        );
+        let options = LSPInitOptions {
+            multi_module_option: mm,
+            std_lib_path_option: "/std/lib".to_string(),
+            target_lib: "my_target".to_string(),
+            clangd_file_status: true,
+            fallback_flags: vec!["-Wall".to_string()],
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&options).unwrap();
+        assert_eq!(json["stdLibPathOption"], "/std/lib");
+        assert_eq!(json["targetLib"], "my_target");
+        assert!(json["multiModuleOption"]["module1"].is_object());
+        assert_eq!(json["fallbackFlags"][0], "-Wall");
+    }
 }

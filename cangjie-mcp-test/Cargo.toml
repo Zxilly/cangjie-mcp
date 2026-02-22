@@ -1,0 +1,15 @@
+[package]
+name = "cangjie-mcp-test"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cangjie-mcp = { path = "../cangjie-mcp" }
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"
+serde_json = "1"
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+anyhow = "1"

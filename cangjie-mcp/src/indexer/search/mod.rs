@@ -25,6 +25,22 @@ pub struct LocalSearchIndex {
 }
 
 impl LocalSearchIndex {
+    /// Create a `LocalSearchIndex` with an injected BM25 store (for testing).
+    #[doc(hidden)]
+    pub fn with_bm25(settings: Settings, bm25_store: BM25Store) -> Self {
+        let reranker = rerank::create_reranker(&settings).unwrap_or_else(|e| {
+            warn!("Failed to create reranker: {}, using NoOp", e);
+            RerankerKind::NoOp
+        });
+        Self {
+            settings,
+            bm25_store: Some(bm25_store),
+            vector_store: None,
+            embedder: None,
+            reranker,
+        }
+    }
+
     pub fn new(settings: Settings) -> Self {
         let reranker = rerank::create_reranker(&settings).unwrap_or_else(|e| {
             warn!("Failed to create reranker: {}, using NoOp", e);

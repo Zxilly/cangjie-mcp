@@ -375,4 +375,149 @@ path = "../lib"
             _ => panic!("Expected config"),
         }
     }
+
+    #[test]
+    fn test_load_cjpm_toml_nonexistent() {
+        let result = load_cjpm_toml(Path::new("/nonexistent/cjpm.toml"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_cjpm_toml_valid_file() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            r#"
+[package]
+name = "test-project"
+
+[dependencies]
+std = "0.55"
+"#,
+        )
+        .unwrap();
+        let result = load_cjpm_toml(tmp.path());
+        assert!(result.is_some());
+        let toml = result.unwrap();
+        assert_eq!(toml.package.unwrap().name, "test-project");
+    }
+
+    #[test]
+    fn test_load_cjpm_toml_invalid_content() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "not valid toml {{{").unwrap();
+        let result = load_cjpm_toml(tmp.path());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_cjpm_lock_nonexistent() {
+        let result = load_cjpm_lock(Path::new("/nonexistent/cjpm.lock"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_cjpm_lock_valid_file() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            r#"
+[requires.some_dep]
+commitId = "abc123"
+"#,
+        )
+        .unwrap();
+        let result = load_cjpm_lock(tmp.path());
+        assert!(result.is_some());
+        let lock = result.unwrap();
+        assert_eq!(lock.requires["some_dep"].commit_id, "abc123");
+    }
+
+    #[test]
+    fn test_load_cjpm_lock_invalid_content() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "invalid {{{ toml").unwrap();
+        let result = load_cjpm_lock(tmp.path());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_cjpm_config_path_default() {
+        // Without CJPM_CONFIG set, should use home dir
+        std::env::remove_var("CJPM_CONFIG");
+        let path = get_cjpm_config_path("git");
+        assert!(path.to_string_lossy().contains(".cjpm"));
+        assert!(path.to_string_lossy().ends_with("git"));
+    }
+
+    #[test]
+    fn test_get_cjpm_config_path_custom() {
+        std::env::set_var("CJPM_CONFIG", "/custom/config");
+        let path = get_cjpm_config_path("repository");
+        assert_eq!(path, PathBuf::from("/custom/config/repository"));
+        std::env::remove_var("CJPM_CONFIG");
+    }
+
+    #[test]
+    fn test_parse_cjpm_toml_with_git_dep() {
+        let toml_str = r#"
+[dependencies.mylib]
+git = "https://github.com/example/mylib.git"
+"#;
+        let parsed: CjpmToml = toml::from_str(toml_str).unwrap();
+        match &parsed.dependencies["mylib"] {
+            CjpmDepValue::Config(c) => {
+                assert_eq!(
+                    c.git.as_deref(),
+                    Some("https://github.com/example/mylib.git")
+                );
+                assert!(c.path.is_none());
+            }
+            _ => panic!("Expected config with git"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cjpm_toml_with_target_deps() {
+        let toml_str = r#"
+[target.x86_64.dependencies]
+native = "1.0"
+
+[target.x86_64.dev-dependencies]
+test-native = "0.1"
+"#;
+        let parsed: CjpmToml = toml::from_str(toml_str).unwrap();
+        let target = &parsed.target["x86_64"];
+        assert!(target.dependencies.contains_key("native"));
+        assert!(target.dev_dependencies.contains_key("test-native"));
+    }
+
+    #[test]
+    fn test_parse_cjpm_lock_multiple_requires() {
+        let toml_str = r#"
+[requires.dep_a]
+commitId = "aaa111"
+
+[requires.dep_b]
+commitId = "bbb222"
+"#;
+        let parsed: CjpmLock = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.requires.len(), 2);
+        assert_eq!(parsed.requires["dep_a"].commit_id, "aaa111");
+        assert_eq!(parsed.requires["dep_b"].commit_id, "bbb222");
+    }
+
+    #[test]
+    fn test_get_real_path_backslash_normalized() {
+        let result = get_real_path("C:\\Users\\test\\file.cj");
+        assert_eq!(result, "C:/Users/test/file.cj");
+    }
+
+    #[test]
+    fn test_merge_unique_strings_preserves_order() {
+        let a = vec!["c".to_string(), "a".to_string()];
+        let b = vec!["b".to_string(), "a".to_string()];
+        let result = merge_unique_strings(&[&a, &b]);
+        assert_eq!(result, vec!["c", "a", "b"]);
+    }
 }

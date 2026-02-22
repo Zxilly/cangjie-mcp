@@ -2,19 +2,20 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use rmcp::ServiceExt;
 use tracing::info;
 
 use cangjie_mcp::config::{
     self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
     DEFAULT_DOCS_VERSION, DEFAULT_LOCAL_MODEL, DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL,
     DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
-    DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT,
 };
+use cangjie_mcp::indexer::search::LocalSearchIndex;
 
 #[derive(Parser)]
 #[command(
     name = "cangjie-mcp",
-    about = "MCP server for Cangjie programming language",
+    about = "CLI for Cangjie programming language MCP server",
     version
 )]
 struct Cli {
@@ -92,16 +93,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the HTTP query server
-    Server {
-        /// Host to bind the HTTP server to
-        #[arg(long, env = "CANGJIE_SERVER_HOST", default_value = DEFAULT_SERVER_HOST)]
-        host: String,
-
-        /// Port to bind the HTTP server to
-        #[arg(long, short = 'p', env = "CANGJIE_SERVER_PORT", default_value_t = DEFAULT_SERVER_PORT)]
-        port: u16,
-    },
+    /// Build the search index and exit
+    Index,
 }
 
 impl Cli {
@@ -139,7 +132,6 @@ fn setup_logging(log_file: Option<&PathBuf>, debug: bool) {
     };
 
     if let Some(log_path) = log_file {
-        // Log to file
         if let Some(parent) = log_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -155,7 +147,6 @@ fn setup_logging(log_file: Option<&PathBuf>, debug: bool) {
             .with_ansi(false)
             .init();
     } else {
-        // Log to stderr (don't interfere with stdio MCP transport)
         tracing_subscriber::fmt()
             .with_env_filter(filter)
             .with_writer(std::io::stderr)
@@ -171,22 +162,34 @@ async fn main() -> Result<()> {
     let settings = cli.to_settings();
 
     match cli.command {
-        Some(Commands::Server { host, port }) => run_http_server(settings, &host, port).await,
+        Some(Commands::Index) => run_index(settings),
         None => run_mcp_server(settings).await,
     }
 }
 
-async fn run_mcp_server(settings: Settings) -> Result<()> {
-    use rmcp::transport::stdio;
-    use rmcp::ServiceExt;
+fn run_index(settings: Settings) -> Result<()> {
+    eprintln!(
+        "Building index (version={}, lang={})...",
+        settings.docs_version, settings.docs_lang
+    );
 
+    let mut search_index = LocalSearchIndex::new(settings.clone());
+    let index_info = search_index.init()?;
+
+    let startup_info = config::format_startup_info(&settings, &index_info);
+    eprintln!("{startup_info}");
+    eprintln!("Index built successfully.");
+
+    Ok(())
+}
+
+async fn run_mcp_server(settings: Settings) -> Result<()> {
     if settings.server_url.is_some() {
         info!("Using remote server — local index options are ignored.");
     }
 
     let server = cangjie_mcp::server::tools::CangjieServer::new(settings);
 
-    // Start initialization in background
     let server_clone = server.clone();
     tokio::spawn(async move {
         if let Err(e) = server_clone.initialize().await {
@@ -196,44 +199,10 @@ async fn run_mcp_server(settings: Settings) -> Result<()> {
 
     info!("Starting MCP server on stdio...");
     let service = server
-        .serve(stdio())
+        .serve(rmcp::transport::stdio())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {}", e))?;
     service.waiting().await?;
-
-    Ok(())
-}
-
-async fn run_http_server(settings: Settings, host: &str, port: u16) -> Result<()> {
-    use cangjie_mcp::indexer::document::source::GitDocumentSource;
-    use cangjie_mcp::indexer::search::LocalSearchIndex;
-    use cangjie_mcp::server::http::create_http_app;
-
-    eprintln!(
-        "Initializing index (version={}, lang={})...",
-        settings.docs_version, settings.docs_lang
-    );
-
-    let mut search_index = LocalSearchIndex::new(settings.clone());
-    let index_info = search_index.init()?;
-
-    let startup_info = config::format_startup_info(&settings, &index_info);
-    eprintln!("{startup_info}");
-
-    // Load index metadata
-    let metadata_path = index_info.index_dir().join("index_metadata.json");
-    let index_metadata: cangjie_mcp::indexer::IndexMetadata =
-        serde_json::from_str(&std::fs::read_to_string(&metadata_path)?)?;
-
-    // Create document source
-    let doc_source = GitDocumentSource::new(settings.docs_repo_dir(), index_info.lang)?;
-
-    let app = create_http_app(search_index, Box::new(doc_source), index_metadata);
-
-    let bind_addr = format!("{host}:{port}");
-    eprintln!("Starting HTTP server on {bind_addr}...");
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    axum::serve(listener, app).await?;
 
     Ok(())
 }
