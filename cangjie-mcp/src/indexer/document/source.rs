@@ -75,6 +75,32 @@ fn list_md_files(repo_dir: &Path, base_path: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
+fn is_git_not_found_error(err: &anyhow::Error) -> bool {
+    err.chain()
+        .filter_map(|e| e.downcast_ref::<git2::Error>())
+        .any(|e| e.code() == git2::ErrorCode::NotFound)
+}
+
+/// Convert git tree "path not found" into an empty business result while
+/// preserving other infrastructure errors for observability.
+fn default_on_git_not_found<T, F>(result: Result<T>, default: F) -> Result<T>
+where
+    F: FnOnce() -> T,
+{
+    match result {
+        Ok(value) => Ok(value),
+        Err(err) if is_git_not_found_error(&err) => Ok(default()),
+        Err(err) => Err(err),
+    }
+}
+
+fn topic_name_from_md_path(path: &str) -> Option<String> {
+    path.rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".md"))
+        .map(ToString::to_string)
+}
+
 fn collect_md_files_recursive(
     repo: &git2::Repository,
     tree: &git2::Tree,
@@ -107,17 +133,20 @@ fn build_topic_index(repo_dir: &Path, docs_base_path: &str) -> Result<HashMap<St
     let mut mapping = HashMap::new();
     for cat in &categories {
         let path = format!("{docs_base_path}/{cat}");
-        if let Ok(files) = list_md_files(repo_dir, &path) {
-            for f in &files {
-                if let Some(topic) = f
-                    .rsplit('/')
-                    .next()
-                    .and_then(|name| name.strip_suffix(".md"))
-                {
-                    mapping
-                        .entry(topic.to_string())
-                        .or_insert_with(|| cat.clone());
+        match list_md_files(repo_dir, &path) {
+            Ok(files) => {
+                for f in &files {
+                    if let Some(topic) = topic_name_from_md_path(f) {
+                        mapping.entry(topic).or_insert_with(|| cat.clone());
+                    }
                 }
+            }
+            Err(err) if is_git_not_found_error(&err) => {}
+            Err(err) => {
+                warn!(
+                    "Failed to list markdown files for category '{}' at '{}': {}",
+                    cat, path, err
+                );
             }
         }
     }
@@ -171,26 +200,23 @@ impl DocumentSource for GitDocumentSource {
     async fn get_categories(&self) -> Result<Vec<String>> {
         let repo_dir = self.repo_dir.clone();
         let base = self.docs_base_path.clone();
-        tokio::task::spawn_blocking(move || list_dirs(&repo_dir, &base))
+        let categories = tokio::task::spawn_blocking(move || list_dirs(&repo_dir, &base))
             .await
-            .context("get_categories task panicked")?
+            .context("get_categories task panicked")?;
+        default_on_git_not_found(categories, Vec::new)
     }
 
     async fn get_topics_in_category(&self, category: &str) -> Result<Vec<String>> {
         let repo_dir = self.repo_dir.clone();
         let path = format!("{}/{category}", self.docs_base_path);
-        let files = tokio::task::spawn_blocking(move || list_md_files(&repo_dir, &path))
+        let files_result = tokio::task::spawn_blocking(move || list_md_files(&repo_dir, &path))
             .await
-            .context("get_topics_in_category task panicked")??;
+            .context("get_topics_in_category task panicked")?;
+        let files = default_on_git_not_found(files_result, Vec::new)?;
 
         let mut topics: Vec<String> = files
             .iter()
-            .filter_map(|f| {
-                f.rsplit('/')
-                    .next()
-                    .and_then(|name| name.strip_suffix(".md"))
-                    .map(|s| s.to_string())
-            })
+            .filter_map(|f| topic_name_from_md_path(f))
             .collect();
         topics.sort();
         Ok(topics)
@@ -217,7 +243,7 @@ impl DocumentSource for GitDocumentSource {
         tokio::task::spawn_blocking(move || {
             let filename = format!("{topic}.md");
             let path = format!("{base}/{cat}");
-            let files = list_md_files(&repo_dir, &path)?;
+            let files = default_on_git_not_found(list_md_files(&repo_dir, &path), Vec::new)?;
             for file in &files {
                 let file_name = file.rsplit('/').next().unwrap_or("");
                 if file_name == filename {
@@ -249,23 +275,18 @@ impl DocumentSource for GitDocumentSource {
         let base = self.docs_base_path.clone();
 
         tokio::task::spawn_blocking(move || {
-            let categories = list_dirs(&repo_dir, &base)?;
+            let categories = default_on_git_not_found(list_dirs(&repo_dir, &base), Vec::new)?;
             let mut documents = Vec::new();
 
             for category in &categories {
                 let path = format!("{base}/{category}");
-                let files = list_md_files(&repo_dir, &path)?;
+                let files = default_on_git_not_found(list_md_files(&repo_dir, &path), Vec::new)?;
 
                 for file in &files {
                     let full_path = format!("{path}/{file}");
                     match read_file(&repo_dir, &full_path) {
                         Ok(content) => {
-                            let topic = file
-                                .rsplit('/')
-                                .next()
-                                .and_then(|n| n.strip_suffix(".md"))
-                                .unwrap_or("")
-                                .to_string();
+                            let topic = topic_name_from_md_path(file).unwrap_or_default();
                             let relative_path = format!("{category}/{file}");
                             if let Some(doc) = load_document_from_content(
                                 content,
@@ -304,16 +325,11 @@ impl DocumentSource for GitDocumentSource {
 
         tokio::task::spawn_blocking(move || {
             let path = format!("{base}/{category}");
-            let files = list_md_files(&repo_dir, &path)?;
+            let files = default_on_git_not_found(list_md_files(&repo_dir, &path), Vec::new)?;
             let mut titles = HashMap::new();
 
             for file in &files {
-                let topic = file
-                    .rsplit('/')
-                    .next()
-                    .and_then(|n| n.strip_suffix(".md"))
-                    .unwrap_or("")
-                    .to_string();
+                let topic = topic_name_from_md_path(file).unwrap_or_default();
                 let full_path = format!("{path}/{file}");
                 match read_file(&repo_dir, &full_path) {
                     Ok(content) => {
@@ -405,6 +421,27 @@ mod tests {
         (tmp, repo)
     }
 
+    fn create_test_repo_without_docs_base() -> (TempDir, Repository) {
+        let tmp = TempDir::new().unwrap();
+        let repo = Repository::init(tmp.path()).unwrap();
+        std::fs::write(tmp.path().join("README.md"), "# Placeholder").unwrap();
+
+        {
+            let mut index = repo.index().unwrap();
+            index
+                .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+                .unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            let sig = Signature::now("test", "test@test.com").unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
+                .unwrap();
+        }
+
+        (tmp, repo)
+    }
+
     #[test]
     fn test_git_source_new() {
         let tmp = TempDir::new().unwrap();
@@ -459,6 +496,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_git_source_get_categories_without_docs_base_returns_empty() {
+        let (tmp, _repo) = create_test_repo_without_docs_base();
+        let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
+
+        let categories = source.get_categories().await.unwrap();
+        assert!(categories.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_git_source_get_topics_in_category() {
         let (tmp, _repo) = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
@@ -503,6 +549,18 @@ mod tests {
 
         let doc = source
             .get_document_by_topic("nonexistent", Some("syntax"))
+            .await
+            .unwrap();
+        assert!(doc.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_git_source_get_document_not_found_in_nonexistent_category() {
+        let (tmp, _repo) = create_test_repo();
+        let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
+
+        let doc = source
+            .get_document_by_topic("functions", Some("nonexistent_category_xyz"))
             .await
             .unwrap();
         assert!(doc.is_none());

@@ -146,6 +146,18 @@ async fn test_git_source_nonexistent_topic_returns_none() {
 }
 
 #[tokio::test]
+async fn test_git_source_nonexistent_category_get_topic_returns_none() {
+    let (_tmp, repo_dir) = setup_repo().await;
+    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+
+    let doc = source
+        .get_document_by_topic("any_topic_xyz", Some("nonexistent_category_xyz"))
+        .await
+        .unwrap();
+    assert!(doc.is_none());
+}
+
+#[tokio::test]
 async fn test_git_source_nonexistent_category_returns_empty() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();

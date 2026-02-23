@@ -205,6 +205,14 @@ async fn test_real_docs_http_app_search() {
         categories.len() > 2,
         "real docs should have multiple categories"
     );
+
+    // Nonexistent category should return 404 (not internal error)
+    let req = Request::builder()
+        .uri("/topics/nonexistent_category_xyz/any_topic_xyz")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
