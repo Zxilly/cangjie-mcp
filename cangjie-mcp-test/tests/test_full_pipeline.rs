@@ -3,7 +3,7 @@
 //! These tests clone the real cangjie_docs repository, build a BM25 index,
 //! and verify search works correctly against real documentation.
 //!
-//! Run with: `cargo test -p cangjie-mcp-test --test test_full_pipeline -- --ignored`
+//! These tests require network access.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -69,7 +69,6 @@ async fn build_real_index() -> (TempDir, BM25Store, Box<dyn DocumentSource>) {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_real_docs_bm25_search_chinese() {
     let (_tmp, store, _source) = build_real_index().await;
 
@@ -82,7 +81,6 @@ async fn test_real_docs_bm25_search_chinese() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_real_docs_bm25_search_english_keyword() {
     let (_tmp, store, _source) = build_real_index().await;
 
@@ -95,7 +93,6 @@ async fn test_real_docs_bm25_search_english_keyword() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_real_docs_bm25_search_with_category() {
     let (_tmp, store, _source) = build_real_index().await;
 
@@ -114,7 +111,6 @@ async fn test_real_docs_bm25_search_with_category() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_real_docs_search_relevance() {
     let (_tmp, store, _source) = build_real_index().await;
 
@@ -136,7 +132,6 @@ async fn test_real_docs_search_relevance() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_real_docs_local_search_index_query() {
     let tmp = TempDir::new().unwrap();
     let settings = real_settings(tmp.path().to_path_buf());
@@ -162,7 +157,6 @@ async fn test_real_docs_local_search_index_query() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_real_docs_http_app_search() {
     let (_tmp, bm25, doc_source) = build_real_index().await;
 
@@ -214,7 +208,6 @@ async fn test_real_docs_http_app_search() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_initialize_and_index_full_pipeline() {
     let tmp = TempDir::new().unwrap();
     let settings = real_settings(tmp.path().to_path_buf());
@@ -238,7 +231,6 @@ async fn test_initialize_and_index_full_pipeline() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_initialize_and_index_is_idempotent() {
     let tmp = TempDir::new().unwrap();
     let settings = real_settings(tmp.path().to_path_buf());

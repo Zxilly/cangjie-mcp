@@ -1,7 +1,6 @@
 //! Integration tests for `GitDocumentSource` against the real cangjie_docs repository.
 //!
-//! These tests require network access (to clone the repo on first run).
-//! Run with: `cargo test -p cangjie-mcp-test --test test_git_document_source -- --ignored`
+//! These tests require network access.
 
 use cangjie_mcp::config::DocLang;
 use cangjie_mcp::indexer::document::source::{DocumentSource, GitDocumentSource};
@@ -17,7 +16,6 @@ async fn setup_repo() -> (TempDir, std::path::PathBuf) {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_is_available() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -25,7 +23,6 @@ async fn test_git_source_is_available() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_get_categories() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -35,7 +32,6 @@ async fn test_git_source_get_categories() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_get_topics_in_category() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -53,7 +49,6 @@ async fn test_git_source_get_topics_in_category() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_get_document_by_topic() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -80,7 +75,6 @@ async fn test_git_source_get_document_by_topic() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_load_all_documents() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -102,7 +96,6 @@ async fn test_git_source_load_all_documents() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_get_all_topic_names() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -116,7 +109,6 @@ async fn test_git_source_get_all_topic_names() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_get_topic_titles() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -142,7 +134,6 @@ async fn test_git_source_get_topic_titles() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_nonexistent_topic_returns_none() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
@@ -155,7 +146,6 @@ async fn test_git_source_nonexistent_topic_returns_none() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_git_source_nonexistent_category_returns_empty() {
     let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();

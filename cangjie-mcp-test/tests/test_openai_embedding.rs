@@ -62,17 +62,21 @@ fn make_result(text: &str, score: f64) -> SearchResult {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_embedder_creates_successfully() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let embedder = embedding::create_embedder(&settings).await.unwrap();
     assert!(embedder.is_some(), "should create OpenAI embedder");
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_embed_single_text() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let embedder = embedding::create_embedder(&settings)
         .await
         .unwrap()
@@ -95,9 +99,11 @@ async fn test_openai_embed_single_text() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_embed_multiple_texts() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let embedder = embedding::create_embedder(&settings)
         .await
         .unwrap()
@@ -115,9 +121,11 @@ async fn test_openai_embed_multiple_texts() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_embed_chinese_and_english() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let embedder = embedding::create_embedder(&settings)
         .await
         .unwrap()
@@ -145,9 +153,11 @@ async fn test_openai_embed_chinese_and_english() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_embedder_model_name() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let embedder = embedding::create_embedder(&settings)
         .await
         .unwrap()
@@ -159,9 +169,11 @@ async fn test_openai_embedder_model_name() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_reranker() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let reranker = rerank::create_reranker(&settings).await.unwrap();
     assert!(reranker.is_enabled(), "OpenAI reranker should be enabled");
 
@@ -183,9 +195,11 @@ async fn test_openai_reranker() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_openai_reranker_empty_input() {
-    let settings = openai_settings().expect("OPENAI_API_KEY not set");
+    let Some(settings) = openai_settings() else {
+        eprintln!("Skipping: OPENAI_API_KEY not set");
+        return;
+    };
     let reranker = rerank::create_reranker(&settings).await.unwrap();
 
     let reranked = reranker.rerank("query", vec![], 5).await.unwrap();

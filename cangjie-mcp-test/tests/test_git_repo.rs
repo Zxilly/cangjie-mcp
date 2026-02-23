@@ -1,7 +1,6 @@
 //! Integration tests for `repo::GitManager` against the real cangjie_docs repository.
 //!
-//! These tests require network access and are marked `#[ignore]`.
-//! Run with: `cargo test -p cangjie-mcp-test --test test_git_repo -- --ignored`
+//! These tests require network access.
 
 use cangjie_mcp::repo::GitManager;
 use tempfile::TempDir;
@@ -15,7 +14,6 @@ async fn clone_repo() -> (TempDir, GitManager) {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_clone_and_is_cloned() {
     let (_tmp, mgr) = clone_repo().await;
     assert!(mgr.is_cloned());
@@ -23,7 +21,6 @@ async fn test_clone_and_is_cloned() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_resolve_version_latest() {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
@@ -35,7 +32,6 @@ async fn test_resolve_version_latest() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_list_tree_dirs_has_docs() {
     let (_tmp, mgr) = clone_repo().await;
 
@@ -48,7 +44,6 @@ async fn test_list_tree_dirs_has_docs() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_list_tree_dirs_zh_source() {
     let (_tmp, mgr) = clone_repo().await;
 
@@ -63,7 +58,6 @@ async fn test_list_tree_dirs_zh_source() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_list_md_files() {
     let (_tmp, mgr) = clone_repo().await;
 
@@ -82,7 +76,6 @@ async fn test_list_md_files() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_read_file_from_tree() {
     let (_tmp, mgr) = clone_repo().await;
 
@@ -100,7 +93,6 @@ async fn test_read_file_from_tree() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_checkout_nonexistent_version_fails() {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
@@ -114,7 +106,6 @@ async fn test_checkout_nonexistent_version_fails() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_ensure_cloned_twice_is_idempotent() {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
