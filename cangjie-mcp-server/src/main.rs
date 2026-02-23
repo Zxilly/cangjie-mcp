@@ -2,9 +2,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
+use tracing::info;
 
 use cangjie_mcp::config::{
-    self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
+    self, DocLang, EmbeddingType, PrebuiltMode, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
     DEFAULT_DOCS_VERSION, DEFAULT_LOCAL_MODEL, DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL,
     DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
     DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT,
@@ -92,6 +93,10 @@ struct Cli {
     /// Enable debug mode
     #[arg(long, env = "CANGJIE_DEBUG")]
     debug: bool,
+
+    /// Use pre-built index, optionally specifying a version (for Docker runtime)
+    #[arg(long, env = "CANGJIE_PREBUILT", num_args = 0..=1, default_missing_value = "true", value_name = "VERSION")]
+    prebuilt: Option<String>,
 }
 
 impl Cli {
@@ -115,6 +120,11 @@ impl Cli {
             openai_api_key: self.openai_api_key.clone(),
             openai_base_url: self.openai_base_url.clone(),
             openai_model: self.openai_model.clone(),
+            prebuilt: match &self.prebuilt {
+                None => PrebuiltMode::Off,
+                Some(v) if v == "true" || v.is_empty() => PrebuiltMode::Auto,
+                Some(v) => PrebuiltMode::Version(v.clone()),
+            },
         }
     }
 }
@@ -158,7 +168,7 @@ async fn main() -> Result<()> {
 
     let settings = cli.to_settings();
 
-    eprintln!(
+    info!(
         "Initializing index (version={}, lang={})...",
         settings.docs_version, settings.docs_lang
     );
@@ -166,8 +176,7 @@ async fn main() -> Result<()> {
     let mut search_index = LocalSearchIndex::new(settings.clone());
     let index_info = search_index.init()?;
 
-    let startup_info = config::format_startup_info(&settings, &index_info);
-    eprintln!("{startup_info}");
+    config::log_startup_info(&settings, &index_info);
 
     let metadata_path = index_info.index_dir().join("index_metadata.json");
     let index_metadata: IndexMetadata =
@@ -178,7 +187,7 @@ async fn main() -> Result<()> {
     let app = create_http_app(search_index, Box::new(doc_source), index_metadata);
 
     let bind_addr = format!("{}:{}", cli.host, cli.port);
-    eprintln!("Starting HTTP server on {bind_addr}...");
+    info!("Starting HTTP server on {bind_addr}...");
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     axum::serve(listener, app).await?;
 

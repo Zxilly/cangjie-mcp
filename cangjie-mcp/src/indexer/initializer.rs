@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use tracing::info;
 
-use crate::config::{IndexInfo, Settings, DEFAULT_EMBEDDING_DIM, VECTOR_BATCH_SIZE};
+use crate::config::{IndexInfo, PrebuiltMode, Settings, DEFAULT_EMBEDDING_DIM, VECTOR_BATCH_SIZE};
 use crate::indexer::document::chunker::chunk_documents;
 use crate::indexer::document::source::{DocumentSource, GitDocumentSource};
 use crate::indexer::embedding;
@@ -92,8 +92,81 @@ fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> {
     Ok(())
 }
 
+/// Discover all version directories under `data_dir/indexes/` that contain a
+/// valid index matching the current settings (lang + embedding model).
+fn discover_prebuilt_versions(settings: &Settings) -> Result<Vec<String>> {
+    let indexes_dir = settings.data_dir.join("indexes");
+    if !indexes_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut versions = Vec::new();
+    for entry in std::fs::read_dir(&indexes_dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let version = entry.file_name().to_string_lossy().to_string();
+        let index_info = IndexInfo::from_settings(settings, &version);
+        if index_is_ready(&index_info) {
+            versions.push(version);
+        }
+    }
+    versions.sort();
+    Ok(versions)
+}
+
+/// Load a pre-built index without any git operations.
+///
+/// `PrebuiltMode::Auto`: scan and auto-select (exactly one must exist).
+/// `PrebuiltMode::Version(v)`: use that specific version.
+fn load_prebuilt_index(settings: &Settings) -> Result<IndexInfo> {
+    match &settings.prebuilt {
+        PrebuiltMode::Version(version) => {
+            let index_info = IndexInfo::from_settings(settings, version);
+            if !index_is_ready(&index_info) {
+                bail!(
+                    "Pre-built index not found for version={}, lang={}, model={}",
+                    version,
+                    settings.docs_lang,
+                    settings.embedding_model_name()
+                );
+            }
+            info!("Using pre-built index (version: {})", version);
+            Ok(index_info)
+        }
+        PrebuiltMode::Auto => {
+            let versions = discover_prebuilt_versions(settings)?;
+            match versions.len() {
+                0 => bail!(
+                    "No pre-built indexes found in {} (lang={}, model={})",
+                    settings.data_dir.join("indexes").display(),
+                    settings.docs_lang,
+                    settings.embedding_model_name()
+                ),
+                1 => {
+                    let version = &versions[0];
+                    let index_info = IndexInfo::from_settings(settings, version);
+                    info!("Using pre-built index (version: {})", version);
+                    Ok(index_info)
+                }
+                _ => bail!(
+                    "Found {} pre-built indexes: [{}]. Use --prebuilt <VERSION> to specify which one.",
+                    versions.len(),
+                    versions.join(", ")
+                ),
+            }
+        }
+        PrebuiltMode::Off => unreachable!(),
+    }
+}
+
 /// Initialize repository and build index if needed.
 pub fn initialize_and_index(settings: &Settings) -> Result<IndexInfo> {
+    if settings.prebuilt.is_prebuilt() {
+        return load_prebuilt_index(settings);
+    }
+
     use crate::repo::GitManager;
 
     // Resolve version (ensures repo is cloned, fetched, and checked out)
@@ -118,5 +191,6 @@ pub fn initialize_and_index(settings: &Settings) -> Result<IndexInfo> {
 
     // Build index
     build_index(settings, &index_info)?;
+
     Ok(index_info)
 }

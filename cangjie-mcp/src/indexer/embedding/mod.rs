@@ -71,6 +71,7 @@ mod tests {
             openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
+            prebuilt: crate::config::PrebuiltMode::Off,
         }
     }
 

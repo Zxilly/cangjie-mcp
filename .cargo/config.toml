@@ -1,6 +1,0 @@
-# Limit parallel linker jobs on Windows to avoid page file exhaustion.
-# The lancedb dependency chain (aws-sdk, arrow, lance) produces very large
-# rlib artifacts; linking many test binaries simultaneously can exceed the
-# default page file size.
-[build]
-jobs = 4

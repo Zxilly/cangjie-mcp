@@ -118,6 +118,7 @@ impl Cli {
             openai_api_key: self.openai_api_key.clone(),
             openai_base_url: self.openai_base_url.clone(),
             openai_model: self.openai_model.clone(),
+            prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
         }
     }
 }
@@ -168,7 +169,7 @@ async fn main() -> Result<()> {
 }
 
 fn run_index(settings: Settings) -> Result<()> {
-    eprintln!(
+    info!(
         "Building index (version={}, lang={})...",
         settings.docs_version, settings.docs_lang
     );
@@ -176,9 +177,8 @@ fn run_index(settings: Settings) -> Result<()> {
     let mut search_index = LocalSearchIndex::new(settings.clone());
     let index_info = search_index.init()?;
 
-    let startup_info = config::format_startup_info(&settings, &index_info);
-    eprintln!("{startup_info}");
-    eprintln!("Index built successfully.");
+    config::log_startup_info(&settings, &index_info);
+    info!("Index built successfully.");
 
     Ok(())
 }

@@ -26,6 +26,7 @@ pub fn test_settings(data_dir: PathBuf) -> Settings {
         openai_api_key: None,
         openai_base_url: DEFAULT_OPENAI_BASE_URL.to_string(),
         openai_model: String::new(),
+        prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
     }
 }
 

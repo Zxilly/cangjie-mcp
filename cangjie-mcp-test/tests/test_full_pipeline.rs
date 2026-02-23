@@ -36,6 +36,7 @@ fn real_settings(data_dir: std::path::PathBuf) -> Settings {
         openai_api_key: None,
         openai_base_url: "https://api.siliconflow.cn/v1".to_string(),
         openai_model: String::new(),
+        prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
     }
 }
 

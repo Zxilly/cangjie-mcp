@@ -43,6 +43,7 @@ fn openai_settings() -> Option<Settings> {
         openai_api_key: Some(api_key),
         openai_base_url: base_url,
         openai_model: model,
+        prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
     })
 }
 

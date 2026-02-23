@@ -111,6 +111,24 @@ impl fmt::Display for DocLang {
     }
 }
 
+// ── PrebuiltMode ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrebuiltMode {
+    /// Normal mode: clone repo, build index if needed.
+    Off,
+    /// Use pre-built index, auto-discover the version.
+    Auto,
+    /// Use pre-built index with a specific version.
+    Version(String),
+}
+
+impl PrebuiltMode {
+    pub fn is_prebuilt(&self) -> bool {
+        !matches!(self, PrebuiltMode::Off)
+    }
+}
+
 // ── Settings ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -130,6 +148,8 @@ pub struct Settings {
     pub openai_api_key: Option<String>,
     pub openai_base_url: String,
     pub openai_model: String,
+    /// Pre-built index mode. Skips all git operations.
+    pub prebuilt: PrebuiltMode,
 }
 
 impl Settings {
@@ -209,74 +229,50 @@ impl IndexInfo {
 
 // ── Startup Info ────────────────────────────────────────────────────────────
 
-pub fn format_startup_info(settings: &Settings, index_info: &IndexInfo) -> String {
-    let mut lines = Vec::new();
-    lines.push(String::new());
-    lines.push(format!("  Cangjie MCP v{}", crate::VERSION));
-    lines.push("  ┌─ Configuration ─────────────────────────────".to_string());
+pub fn log_startup_info(settings: &Settings, index_info: &IndexInfo) {
+    use tracing::info;
+
+    info!("Cangjie MCP v{}", crate::VERSION);
 
     if let Some(ref url) = settings.server_url {
-        lines.push(format!("  │ Mode       : remote → {url}"));
+        info!("Mode: remote -> {url}");
     } else {
         let search_mode = if settings.has_embedding() {
             "hybrid (BM25 + vector)"
         } else {
             "BM25"
         };
-        lines.push(format!("  │ Search     : {search_mode}"));
+        info!("Search: {search_mode}");
         if settings.has_embedding() {
             let model = match settings.embedding_type {
                 EmbeddingType::Local => &settings.local_model,
                 _ => &settings.openai_model,
             };
-            lines.push(format!(
-                "  │ Embedding  : {} · {model}",
-                settings.embedding_type
-            ));
+            info!("Embedding: {} / {model}", settings.embedding_type);
         }
     }
 
     match settings.rerank_type {
-        RerankType::None => {
-            lines.push("  │ Rerank     : disabled".to_string());
-        }
+        RerankType::None => {}
         _ => {
-            lines.push(format!(
-                "  │ Rerank     : {} · {}",
-                settings.rerank_type, settings.rerank_model
-            ));
-            lines.push(format!(
-                "  │              top_k={}  initial_k={}",
-                settings.rerank_top_k, settings.rerank_initial_k
-            ));
+            info!(
+                "Rerank: {} / {} (top_k={}, initial_k={})",
+                settings.rerank_type,
+                settings.rerank_model,
+                settings.rerank_top_k,
+                settings.rerank_initial_k,
+            );
         }
     }
 
-    lines.push("  ├─ Index ──────────────────────────────────────".to_string());
-    lines.push(format!("  │ Version    : {}", index_info.version));
-    lines.push(format!("  │ Language   : {}", index_info.lang));
+    info!("Version: {}", index_info.version);
+    info!("Language: {}", index_info.lang);
     if settings.has_embedding() {
-        lines.push(format!(
-            "  │ Model      : {}",
-            index_info.embedding_model_name
-        ));
+        info!("Model: {}", index_info.embedding_model_name);
     }
-
     if settings.server_url.is_none() {
-        lines.push(format!(
-            "  │ Data Dir   : {}",
-            index_info.data_dir.display()
-        ));
-        lines.push(format!(
-            "  │ Index Dir  : {}",
-            index_info.index_dir().display()
-        ));
+        info!("Index dir: {}", index_info.index_dir().display());
     }
-
-    lines.push("  └─────────────────────────────────────────────".to_string());
-    lines.push(String::new());
-
-    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -300,6 +296,7 @@ mod tests {
             openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test-model".to_string(),
+            prebuilt: PrebuiltMode::Off,
         }
     }
 
@@ -406,25 +403,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_startup_info_local() {
-        let s = test_settings();
-        let info = IndexInfo::from_settings(&s, "0.55.3");
-        let output = format_startup_info(&s, &info);
-        assert!(output.contains("BM25"));
-        assert!(output.contains("0.55.3"));
-    }
-
-    #[test]
-    fn test_format_startup_info_remote() {
-        let mut s = test_settings();
-        s.server_url = Some("http://localhost:8765".to_string());
-        let info = IndexInfo::from_settings(&s, "0.55.3");
-        let output = format_startup_info(&s, &info);
-        assert!(output.contains("remote"));
-        assert!(output.contains("http://localhost:8765"));
-    }
-
-    #[test]
     fn test_embedding_type_display() {
         assert_eq!(format!("{}", EmbeddingType::None), "none");
         assert_eq!(format!("{}", EmbeddingType::Local), "local");
@@ -444,44 +422,6 @@ mod tests {
         assert_eq!(format!("{}", DocLang::En), "en");
         assert_eq!(DocLang::Zh.source_dir_name(), "source_zh_cn");
         assert_eq!(DocLang::En.source_dir_name(), "source_en");
-    }
-
-    #[test]
-    fn test_format_startup_info_with_embedding() {
-        let mut s = test_settings();
-        s.embedding_type = EmbeddingType::Local;
-        s.local_model = "test-embed-model".to_string();
-        let info = IndexInfo::from_settings(&s, "0.55.3");
-        let output = format_startup_info(&s, &info);
-        assert!(output.contains("hybrid (BM25 + vector)"));
-        assert!(output.contains("test-embed-model"));
-        assert!(output.contains("Model"));
-    }
-
-    #[test]
-    fn test_format_startup_info_with_reranker() {
-        let mut s = test_settings();
-        s.rerank_type = RerankType::OpenAI;
-        s.rerank_model = "bge-reranker".to_string();
-        s.rerank_top_k = 5;
-        s.rerank_initial_k = 20;
-        let info = IndexInfo::from_settings(&s, "0.55.3");
-        let output = format_startup_info(&s, &info);
-        assert!(output.contains("openai"));
-        assert!(output.contains("bge-reranker"));
-        assert!(output.contains("top_k=5"));
-        assert!(output.contains("initial_k=20"));
-    }
-
-    #[test]
-    fn test_format_startup_info_openai_embedding() {
-        let mut s = test_settings();
-        s.embedding_type = EmbeddingType::OpenAI;
-        s.openai_model = "text-embed-3".to_string();
-        let info = IndexInfo::from_settings(&s, "dev");
-        let output = format_startup_info(&s, &info);
-        assert!(output.contains("text-embed-3"));
-        assert!(output.contains("openai"));
     }
 
     #[test]

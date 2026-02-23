@@ -131,8 +131,7 @@ impl CangjieServer {
         })
         .await??;
 
-        let startup_info = crate::config::format_startup_info(&settings, &index_info);
-        info!("{}", startup_info);
+        crate::config::log_startup_info(&settings, &index_info);
 
         let docs: Box<dyn DocumentSource> = if let Some(ref url) = settings.server_url {
             Box::new(RemoteDocumentSource::new(url))

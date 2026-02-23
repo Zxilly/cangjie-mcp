@@ -7,7 +7,7 @@ use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::tokenizer::*;
-use tantivy::{Index, IndexReader, IndexWriter, TantivyDocument};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 use tracing::{info, warn};
 
 use crate::config::{CATEGORY_FILTER_MULTIPLIER, INDEX_WRITER_HEAP_BYTES};
@@ -185,7 +185,12 @@ impl BM25Store {
         }
 
         writer.commit()?;
-        self.reader = Some(index.reader()?);
+        self.reader = Some(
+            index
+                .reader_builder()
+                .reload_policy(ReloadPolicy::Manual)
+                .try_into()?,
+        );
         self.index = Some(index);
 
         info!("BM25 index built and saved to {:?}", self.index_dir);
@@ -199,7 +204,12 @@ impl BM25Store {
 
         let index = Index::open_in_dir(&self.index_dir).context("Failed to open tantivy index")?;
         Self::register_tokenizer(&index);
-        self.reader = Some(index.reader()?);
+        self.reader = Some(
+            index
+                .reader_builder()
+                .reload_policy(ReloadPolicy::Manual)
+                .try_into()?,
+        );
         self.index = Some(index);
 
         info!("BM25 index loaded from {:?}", self.index_dir);

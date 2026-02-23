@@ -106,10 +106,17 @@ impl GitManager {
                     repo.reset(commit.as_object(), git2::ResetType::Hard, None)?;
                     // Try to set HEAD to local branch
                     let local_ref = format!("refs/heads/{branch}");
-                    if repo.find_reference(&local_ref).is_err() {
-                        repo.branch(branch, &commit, true)?;
+                    let head_is_target = repo
+                        .head()
+                        .ok()
+                        .and_then(|h| h.name().map(|n| n == local_ref))
+                        .unwrap_or(false);
+                    if !head_is_target {
+                        if repo.find_reference(&local_ref).is_err() {
+                            repo.branch(branch, &commit, true)?;
+                        }
+                        repo.set_head(&local_ref)?;
                     }
-                    repo.set_head(&local_ref)?;
                     let _ = self.sync_branch();
                     info!("Checked out {} branch.", branch);
                     return Ok(());
@@ -133,10 +140,18 @@ impl GitManager {
         let remote_ref = format!("refs/remotes/origin/{version}");
         if let Ok(oid) = repo.refname_to_id(&remote_ref) {
             let commit = repo.find_commit(oid)?;
-            // Create or update local branch
-            repo.branch(version, &commit, true)?;
             let local_ref = format!("refs/heads/{version}");
-            repo.set_head(&local_ref)?;
+            // Check if HEAD already points to this branch (e.g. default branch after clone)
+            let head_is_target = repo
+                .head()
+                .ok()
+                .and_then(|h| h.name().map(|n| n == local_ref))
+                .unwrap_or(false);
+            if !head_is_target {
+                // Create or update local branch only when it's not the current HEAD
+                repo.branch(version, &commit, true)?;
+                repo.set_head(&local_ref)?;
+            }
             repo.reset(commit.as_object(), git2::ResetType::Hard, None)?;
             let _ = self.sync_branch();
             info!("Checked out branch {}.", version);
