@@ -134,6 +134,7 @@ jobs:
             curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v33.5/protoc-33.5-linux-x86_64.zip
             python3 -m zipfile -e protoc-33.5-linux-x86_64.zip /usr/local
             rm protoc-33.5-linux-x86_64.zip
+            chmod +x /usr/local/bin/protoc
             protoc --version
 
       - name: Test wheel
@@ -165,6 +166,7 @@ jobs:
             curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v33.5/protoc-33.5-linux-aarch_64.zip
             python3 -m zipfile -e protoc-33.5-linux-aarch_64.zip /usr/local
             rm protoc-33.5-linux-aarch_64.zip
+            chmod +x /usr/local/bin/protoc
             protoc --version
 
       - name: Upload wheel
