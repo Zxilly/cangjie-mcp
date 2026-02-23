@@ -35,7 +35,14 @@ tantivy = "0.25"
 jieba-rs = "0.8"
 
 # Git operations
-git2 = "0.20"
+gix = { version = "0.70", default-features = false, features = [
+    "blocking-network-client",
+    "blocking-http-transport-reqwest-rust-tls",
+    "worktree-mutation",
+    "revision",
+    "index",
+    "parallel",
+] }
 
 # Logging
 tracing = "0.1"

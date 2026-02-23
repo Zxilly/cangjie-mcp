@@ -1,14 +1,49 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use git2::{FetchOptions, Repository};
+use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
+use gix::refs::Target;
 use tracing::{info, warn};
 
 const DOCS_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_docs.git";
 
 pub struct GitManager {
     repo_dir: PathBuf,
-    repo: Option<Repository>,
+    repo: Option<gix::Repository>,
+}
+
+/// Helper to create a RefEdit that sets a ref to point at an object (detached).
+fn ref_edit_to_object(name: &str, oid: gix::ObjectId, msg: &str) -> Result<RefEdit> {
+    Ok(RefEdit {
+        change: Change::Update {
+            log: LogChange {
+                mode: RefLog::AndReference,
+                force_create_reflog: false,
+                message: msg.into(),
+            },
+            expected: PreviousValue::Any,
+            new: Target::Object(oid),
+        },
+        name: name.try_into()?,
+        deref: false,
+    })
+}
+
+/// Helper to create a RefEdit that sets a ref to point symbolically at another ref.
+fn ref_edit_symbolic(name: &str, target_ref: &str, msg: &str) -> Result<RefEdit> {
+    Ok(RefEdit {
+        change: Change::Update {
+            log: LogChange {
+                mode: RefLog::AndReference,
+                force_create_reflog: false,
+                message: msg.into(),
+            },
+            expected: PreviousValue::Any,
+            new: Target::Symbolic(target_ref.try_into()?),
+        },
+        name: name.try_into()?,
+        deref: false,
+    })
 }
 
 impl GitManager {
@@ -23,15 +58,19 @@ impl GitManager {
         self.repo_dir.exists() && self.repo_dir.join(".git").exists()
     }
 
-    pub fn repo(&self) -> Option<&Repository> {
+    pub fn repo(&self) -> Option<&gix::Repository> {
         self.repo.as_ref()
     }
 
-    fn open_or_clone(repo_dir: &Path, repo: Option<Repository>, fetch: bool) -> Result<Repository> {
+    fn open_or_clone(
+        repo_dir: &Path,
+        repo: Option<gix::Repository>,
+        fetch: bool,
+    ) -> Result<gix::Repository> {
         if repo_dir.exists() && repo_dir.join(".git").exists() {
             let repo = match repo {
                 Some(r) => r,
-                None => Repository::open(repo_dir).context("Failed to open existing repository")?,
+                None => gix::open(repo_dir).context("Failed to open existing repository")?,
             };
             if fetch {
                 fetch_all(&repo)?;
@@ -42,44 +81,51 @@ impl GitManager {
             if let Some(parent) = repo_dir.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let repo = Repository::clone(DOCS_REPO_URL, repo_dir)
-                .context("Failed to clone documentation repository")?;
+            let (mut checkout, _) = gix::prepare_clone(DOCS_REPO_URL, repo_dir)
+                .context("Failed to prepare clone")?
+                .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
+                .context("Failed to fetch during clone")?;
+            let (repo, _) = checkout
+                .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
+                .context("Failed to checkout worktree during clone")?;
             info!("Repository cloned successfully.");
             Ok(repo)
         }
     }
 
-    fn resolve_after_checkout(repo: &Repository) -> Result<String> {
-        let head = repo.head()?;
-        let commit = head.peel_to_commit()?;
+    fn resolve_after_checkout(repo: &gix::Repository) -> Result<String> {
+        let mut head = repo.head().context("Failed to read HEAD")?;
+        let commit = head
+            .peel_to_commit_in_place()
+            .context("Failed to peel HEAD to commit")?;
         let short_hash = &commit.id().to_string()[..7];
 
-        if repo.head_detached().unwrap_or(true) {
+        if head.is_detached() {
+            // Look for a tag pointing to this commit
+            let commit_id = commit.id().detach();
             let mut tag_name = None;
-            repo.tag_foreach(|oid, name| {
-                if let Ok(tag_obj) = repo.find_object(oid, None) {
-                    if let Ok(peeled) = tag_obj.peel_to_commit() {
-                        if peeled.id() == commit.id() {
-                            if let Ok(name_str) = std::str::from_utf8(name) {
-                                tag_name = Some(
-                                    name_str
-                                        .strip_prefix("refs/tags/")
-                                        .unwrap_or(name_str)
-                                        .to_string(),
-                                );
-                                return false;
+            if let Ok(refs) = repo.references() {
+                if let Ok(tag_refs) = refs.tags() {
+                    for reference in tag_refs.flatten() {
+                        if let Ok(peeled) = reference.clone().into_fully_peeled_id() {
+                            if peeled.detach() == commit_id {
+                                let name = reference.name().shorten().to_string();
+                                tag_name = Some(name);
+                                break;
                             }
                         }
                     }
                 }
-                true
-            })?;
+            }
             if let Some(tag) = tag_name {
                 return Ok(tag);
             }
             Ok(short_hash.to_string())
         } else {
-            let branch = head.shorthand().unwrap_or("unknown").to_string();
+            let branch = head
+                .referent_name()
+                .map(|n| n.shorten().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
             Ok(format!("{branch}({short_hash})"))
         }
     }
@@ -101,7 +147,7 @@ impl GitManager {
         let repo = self.repo.take();
         let version = version.to_string();
 
-        let repo = tokio::task::spawn_blocking(move || -> Result<Repository> {
+        let repo = tokio::task::spawn_blocking(move || -> Result<gix::Repository> {
             let repo = Self::open_or_clone(&repo_dir, repo, true)?;
             checkout(&repo, &version)?;
             Ok(repo)
@@ -119,7 +165,7 @@ impl GitManager {
         let version = version.to_string();
 
         let (repo, resolved) =
-            tokio::task::spawn_blocking(move || -> Result<(Repository, String)> {
+            tokio::task::spawn_blocking(move || -> Result<(gix::Repository, String)> {
                 let repo = Self::open_or_clone(&repo_dir, repo, true)?;
                 checkout(&repo, &version)?;
                 let resolved = Self::resolve_after_checkout(&repo)?;
@@ -157,58 +203,77 @@ impl GitManager {
     }
 }
 
-fn fetch_all(repo: &Repository) -> Result<()> {
+fn fetch_all(repo: &gix::Repository) -> Result<()> {
     info!("Fetching latest tags and commits...");
-    let mut remote = repo.find_remote("origin")?;
-    let mut fo = FetchOptions::new();
-    fo.download_tags(git2::AutotagOption::All);
-    fo.prune(git2::FetchPrune::On);
-    match remote.fetch(&["refs/heads/*:refs/remotes/origin/*"], Some(&mut fo), None) {
-        Ok(()) => {
-            info!("Fetch complete.");
-        }
-        Err(e) => {
-            warn!("Failed to fetch from remote: {}", e);
-        }
+    match do_fetch(repo) {
+        Ok(()) => info!("Fetch complete."),
+        Err(e) => warn!("Failed to fetch from remote: {e}"),
     }
     Ok(())
 }
 
-fn sync_branch(repo: &Repository) -> Result<()> {
-    if repo.head_detached().unwrap_or(true) {
+fn do_fetch(repo: &gix::Repository) -> Result<()> {
+    let remote = repo.find_remote("origin")?;
+    let tagged = remote.with_fetch_tags(gix::remote::fetch::Tags::All);
+    let conn = tagged.connect(gix::remote::Direction::Fetch)?;
+    let prep = conn.prepare_fetch(gix::progress::Discard, Default::default())?;
+    prep.receive(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
+    Ok(())
+}
+
+fn sync_branch(repo: &gix::Repository) -> Result<()> {
+    let head = repo.head().context("Failed to read HEAD")?;
+    if head.is_detached() {
         return Ok(());
     }
-    let head = repo.head()?;
     let branch_name = head
-        .shorthand()
-        .context("Failed to get branch name")?
-        .to_string();
+        .referent_name()
+        .map(|n| n.shorten().to_string())
+        .context("Failed to get branch name")?;
     let remote_ref = format!("refs/remotes/origin/{branch_name}");
-    if let Ok(remote_oid) = repo.refname_to_id(&remote_ref) {
-        let remote_commit = repo.find_commit(remote_oid)?;
-        repo.reset(remote_commit.as_object(), git2::ResetType::Hard, None)?;
+    if let Ok(mut remote_reference) = repo.find_reference(&remote_ref) {
+        let remote_id = remote_reference
+            .peel_to_id_in_place()
+            .context("Failed to peel remote ref")?
+            .detach();
+        // Update local branch ref to match remote
+        let local_ref = format!("refs/heads/{branch_name}");
+        repo.edit_reference(ref_edit_to_object(
+            &local_ref,
+            remote_id,
+            "sync branch to remote",
+        )?)?;
     }
     Ok(())
 }
 
-fn checkout(repo: &Repository, version: &str) -> Result<()> {
+fn checkout(repo: &gix::Repository, version: &str) -> Result<()> {
     if version == "latest" {
         for branch in &["main", "master"] {
             let remote_ref = format!("refs/remotes/origin/{branch}");
-            if let Ok(oid) = repo.refname_to_id(&remote_ref) {
-                let commit = repo.find_commit(oid)?;
-                repo.reset(commit.as_object(), git2::ResetType::Hard, None)?;
+            if let Ok(mut reference) = repo.find_reference(&remote_ref) {
+                let oid = reference
+                    .peel_to_id_in_place()
+                    .context("Failed to peel remote ref")?
+                    .detach();
+
                 let local_ref = format!("refs/heads/{branch}");
                 let head_is_target = repo
                     .head()
                     .ok()
-                    .and_then(|h| h.name().map(|n| n == local_ref))
+                    .and_then(|h| h.referent_name().map(|n| n.as_bstr().to_string()))
+                    .map(|n| n == local_ref)
                     .unwrap_or(false);
+
                 if !head_is_target {
-                    if repo.find_reference(&local_ref).is_err() {
-                        repo.branch(branch, &commit, true)?;
-                    }
-                    repo.set_head(&local_ref)?;
+                    // Create/update local branch ref pointing at oid
+                    repo.edit_reference(ref_edit_to_object(
+                        &local_ref,
+                        oid,
+                        "create local branch from remote",
+                    )?)?;
+                    // Set HEAD to point symbolically to the local branch
+                    repo.edit_reference(ref_edit_symbolic("HEAD", &local_ref, "checkout branch")?)?;
                 }
                 let _ = sync_branch(repo);
                 info!("Checked out {} branch.", branch);
@@ -219,40 +284,54 @@ fn checkout(repo: &Repository, version: &str) -> Result<()> {
 
     // Try as tag first
     let tag_ref = format!("refs/tags/{version}");
-    if let Ok(oid) = repo.refname_to_id(&tag_ref) {
-        let obj = repo.find_object(oid, None)?;
-        let commit = obj.peel_to_commit()?;
-        repo.reset(commit.as_object(), git2::ResetType::Hard, None)?;
-        repo.set_head_detached(commit.id())?;
+    if let Ok(mut reference) = repo.find_reference(&tag_ref) {
+        let oid = reference
+            .peel_to_id_in_place()
+            .context("Failed to peel tag ref")?
+            .detach();
+        // Set HEAD detached to the tag's commit
+        repo.edit_reference(ref_edit_to_object("HEAD", oid, "checkout tag")?)?;
         info!("Checked out tag {}.", version);
         return Ok(());
     }
 
     // Try as remote branch
     let remote_ref = format!("refs/remotes/origin/{version}");
-    if let Ok(oid) = repo.refname_to_id(&remote_ref) {
-        let commit = repo.find_commit(oid)?;
+    if let Ok(mut reference) = repo.find_reference(&remote_ref) {
+        let oid = reference
+            .peel_to_id_in_place()
+            .context("Failed to peel remote ref")?
+            .detach();
         let local_ref = format!("refs/heads/{version}");
         let head_is_target = repo
             .head()
             .ok()
-            .and_then(|h| h.name().map(|n| n == local_ref))
+            .and_then(|h| h.referent_name().map(|n| n.as_bstr().to_string()))
+            .map(|n| n == local_ref)
             .unwrap_or(false);
         if !head_is_target {
-            repo.branch(version, &commit, true)?;
-            repo.set_head(&local_ref)?;
+            repo.edit_reference(ref_edit_to_object(
+                &local_ref,
+                oid,
+                "create local branch from remote",
+            )?)?;
+            repo.edit_reference(ref_edit_symbolic("HEAD", &local_ref, "checkout branch")?)?;
         }
-        repo.reset(commit.as_object(), git2::ResetType::Hard, None)?;
+        // Update local branch to match remote
+        repo.edit_reference(ref_edit_to_object(
+            &local_ref,
+            oid,
+            "sync local branch to remote",
+        )?)?;
         let _ = sync_branch(repo);
         info!("Checked out branch {}.", version);
         return Ok(());
     }
 
     // Try as commit hash
-    if let Ok(oid) = git2::Oid::from_str(version) {
-        if let Ok(commit) = repo.find_commit(oid) {
-            repo.reset(commit.as_object(), git2::ResetType::Hard, None)?;
-            repo.set_head_detached(commit.id())?;
+    if let Ok(oid) = gix::ObjectId::from_hex(version.as_bytes()) {
+        if repo.find_commit(oid).is_ok() {
+            repo.edit_reference(ref_edit_to_object("HEAD", oid, "checkout commit")?)?;
             info!("Checked out commit {}.", version);
             return Ok(());
         }
@@ -262,27 +341,28 @@ fn checkout(repo: &Repository, version: &str) -> Result<()> {
 }
 
 fn read_file(repo_dir: &Path, path: &str) -> Result<String> {
-    let repo = Repository::open(repo_dir).context("Failed to open repository")?;
-    let head = repo.head()?;
-    let tree = head.peel_to_tree()?;
+    let repo = gix::open(repo_dir).context("Failed to open repository")?;
+    let tree = repo.head_commit()?.tree()?;
     let entry = tree
-        .get_path(Path::new(path))
+        .lookup_entry_by_path(path)?
         .with_context(|| format!("Path not found in tree: {path}"))?;
-    let blob = repo.find_blob(entry.id())?;
-    let content = std::str::from_utf8(blob.content()).context("File content is not valid UTF-8")?;
+    let object = repo.find_object(entry.oid())?;
+    let content = std::str::from_utf8(&object.data).context("File content is not valid UTF-8")?;
     Ok(content.to_string())
 }
 
 fn list_tree_dirs(repo_dir: &Path, path: &str) -> Result<Vec<String>> {
-    let repo = Repository::open(repo_dir).context("Failed to open repository")?;
-    let head = repo.head()?;
-    let tree = head.peel_to_tree()?;
-    let entry = tree.get_path(Path::new(path))?;
-    let subtree = repo.find_tree(entry.id())?;
+    let repo = gix::open(repo_dir).context("Failed to open repository")?;
+    let tree = repo.head_commit()?.tree()?;
+    let entry = tree
+        .lookup_entry_by_path(path)?
+        .with_context(|| format!("Path not found in tree: {path}"))?;
+    let subtree = repo.find_object(entry.oid())?.into_tree();
     let mut dirs = Vec::new();
     for item in subtree.iter() {
-        if item.kind() == Some(git2::ObjectType::Tree) {
-            if let Some(name) = item.name() {
+        let item = item?;
+        if item.mode().is_tree() {
+            if let Ok(name) = std::str::from_utf8(item.filename()) {
                 if !name.starts_with('.') && !name.starts_with('_') {
                     dirs.push(name.to_string());
                 }
@@ -294,11 +374,12 @@ fn list_tree_dirs(repo_dir: &Path, path: &str) -> Result<Vec<String>> {
 }
 
 fn list_md_files(repo_dir: &Path, base_path: &str) -> Result<Vec<String>> {
-    let repo = Repository::open(repo_dir).context("Failed to open repository")?;
-    let head = repo.head()?;
-    let root_tree = head.peel_to_tree()?;
-    let entry = root_tree.get_path(Path::new(base_path))?;
-    let subtree = repo.find_tree(entry.id())?;
+    let repo = gix::open(repo_dir).context("Failed to open repository")?;
+    let tree = repo.head_commit()?.tree()?;
+    let entry = tree
+        .lookup_entry_by_path(base_path)?
+        .with_context(|| format!("Path not found in tree: {base_path}"))?;
+    let subtree = repo.find_object(entry.oid())?.into_tree();
     let mut files = Vec::new();
     collect_md_files_recursive(&repo, &subtree, "", &mut files)?;
     files.sort();
@@ -306,29 +387,26 @@ fn list_md_files(repo_dir: &Path, base_path: &str) -> Result<Vec<String>> {
 }
 
 fn collect_md_files_recursive(
-    repo: &Repository,
-    tree: &git2::Tree,
+    repo: &gix::Repository,
+    tree: &gix::Tree,
     prefix: &str,
     files: &mut Vec<String>,
 ) -> Result<()> {
     for item in tree.iter() {
-        let name = item.name().unwrap_or("");
+        let item = item?;
+        let name = std::str::from_utf8(item.filename()).unwrap_or("");
         let path = if prefix.is_empty() {
             name.to_string()
         } else {
             format!("{prefix}/{name}")
         };
-        match item.kind() {
-            Some(git2::ObjectType::Blob) => {
-                if name.ends_with(".md") {
-                    files.push(path);
-                }
+        if item.mode().is_blob() {
+            if name.ends_with(".md") {
+                files.push(path);
             }
-            Some(git2::ObjectType::Tree) => {
-                let subtree = repo.find_tree(item.id())?;
-                collect_md_files_recursive(repo, &subtree, &path, files)?;
-            }
-            _ => {}
+        } else if item.mode().is_tree() {
+            let subtree = repo.find_object(item.oid())?.into_tree();
+            collect_md_files_recursive(repo, &subtree, &path, files)?;
         }
     }
     Ok(())
@@ -337,26 +415,12 @@ fn collect_md_files_recursive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use git2::{Repository, Signature};
+    use std::process::Command;
     use tempfile::TempDir;
 
     /// Create a test git repository with a directory structure containing markdown files.
-    ///
-    /// Structure:
-    ///   docs/dev-guide/source_zh_cn/
-    ///     syntax/
-    ///       functions.md
-    ///       variables.md
-    ///     stdlib/
-    ///       collections.md
-    ///     _hidden/
-    ///       secret.md
-    ///     .dotdir/
-    ///       hidden.md
-    ///     readme.md
-    fn create_test_repo() -> (TempDir, Repository) {
+    fn create_test_repo() -> (TempDir, gix::Repository) {
         let tmp = TempDir::new().unwrap();
-        let repo = Repository::init(tmp.path()).unwrap();
 
         let base = tmp
             .path()
@@ -364,7 +428,6 @@ mod tests {
             .join("dev-guide")
             .join("source_zh_cn");
 
-        // syntax category
         let syntax_dir = base.join("syntax");
         std::fs::create_dir_all(&syntax_dir).unwrap();
         std::fs::write(
@@ -378,7 +441,6 @@ mod tests {
         )
         .unwrap();
 
-        // stdlib category
         let stdlib_dir = base.join("stdlib");
         std::fs::create_dir_all(&stdlib_dir).unwrap();
         std::fs::write(
@@ -387,7 +449,6 @@ mod tests {
         )
         .unwrap();
 
-        // hidden dirs (should be ignored by list_tree_dirs)
         let hidden = base.join("_hidden");
         std::fs::create_dir_all(&hidden).unwrap();
         std::fs::write(hidden.join("secret.md"), "# Secret").unwrap();
@@ -396,35 +457,39 @@ mod tests {
         std::fs::create_dir_all(&dotdir).unwrap();
         std::fs::write(dotdir.join("hidden.md"), "# Hidden").unwrap();
 
-        // A top-level md file directly under source_zh_cn
         std::fs::write(base.join("readme.md"), "# Readme\n\nTop-level readme.").unwrap();
 
-        // Stage and commit everything
-        {
-            let mut index = repo.index().unwrap();
-            index
-                .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
-                .unwrap();
-            index.write().unwrap();
-            let tree_id = index.write_tree().unwrap();
-            let tree = repo.find_tree(tree_id).unwrap();
-            let sig = Signature::now("test", "test@test.com").unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
-                .unwrap();
-        }
+        Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial commit"])
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         (tmp, repo)
     }
 
     #[test]
     fn test_new_and_is_cloned() {
-        // Before creating a repo, is_cloned should be false for a nonexistent path
         let tmp = TempDir::new().unwrap();
         let nonexistent = tmp.path().join("nonexistent");
         let mgr = GitManager::new(nonexistent);
         assert!(!mgr.is_cloned());
 
-        // After creating a repo, is_cloned should be true
         let (tmp2, _repo) = create_test_repo();
         let mgr2 = GitManager::new(tmp2.path().to_path_buf());
         assert!(mgr2.is_cloned());
@@ -471,13 +536,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Should include stdlib and syntax but NOT _hidden or .dotdir
         assert!(dirs.contains(&"stdlib".to_string()));
         assert!(dirs.contains(&"syntax".to_string()));
         assert!(!dirs.contains(&"_hidden".to_string()));
         assert!(!dirs.contains(&".dotdir".to_string()));
 
-        // Should be sorted
         assert_eq!(dirs, {
             let mut sorted = dirs.clone();
             sorted.sort();
@@ -505,19 +568,15 @@ mod tests {
         let (tmp, _repo) = create_test_repo();
         let mgr = GitManager::new(tmp.path().to_path_buf());
 
-        // List all md files from the base path (includes subdirectories)
         let files = mgr
             .list_md_files("docs/dev-guide/source_zh_cn")
             .await
             .unwrap();
 
-        // Should include files from all subdirs (including hidden ones, because
-        // collect_md_files_recursive does NOT filter hidden dirs, only list_tree_dirs does)
         assert!(files.contains(&"syntax/functions.md".to_string()));
         assert!(files.contains(&"syntax/variables.md".to_string()));
         assert!(files.contains(&"stdlib/collections.md".to_string()));
         assert!(files.contains(&"readme.md".to_string()));
-        // Files in hidden dirs are still found by recursive traversal
         assert!(files.contains(&"_hidden/secret.md".to_string()));
         assert!(files.contains(&".dotdir/hidden.md".to_string()));
     }
@@ -525,7 +584,6 @@ mod tests {
     #[test]
     fn test_collect_md_ignores_non_md() {
         let tmp = TempDir::new().unwrap();
-        let repo = Repository::init(tmp.path()).unwrap();
 
         let dir = tmp.path().join("content");
         std::fs::create_dir_all(&dir).unwrap();
@@ -533,21 +591,30 @@ mod tests {
         std::fs::write(dir.join("image.png"), "not-a-real-png").unwrap();
         std::fs::write(dir.join("script.js"), "console.log('hi')").unwrap();
 
-        let mut index = repo.index().unwrap();
-        index
-            .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        index.write().unwrap();
-        let tree_id = index.write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let sig = Signature::now("test", "test@test.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
 
-        let head = repo.head().unwrap();
-        let root_tree = head.peel_to_tree().unwrap();
-        let entry = root_tree.get_path(Path::new("content")).unwrap();
-        let subtree = repo.find_tree(entry.id()).unwrap();
+        let repo = gix::open(tmp.path()).unwrap();
+        let tree = repo.head_commit().unwrap().tree().unwrap();
+        let entry = tree.lookup_entry_by_path("content").unwrap().unwrap();
+        let subtree = repo.find_object(entry.oid()).unwrap().into_tree();
 
         let mut files = Vec::new();
         collect_md_files_recursive(&repo, &subtree, "", &mut files).unwrap();
@@ -581,20 +648,21 @@ mod tests {
 
     #[test]
     fn test_checkout_commit_hash() {
-        let (_tmp, repo) = create_test_repo();
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
+        let (tmp, _repo) = create_test_repo();
+        let repo = gix::open(tmp.path()).unwrap();
+        let commit = repo.head_commit().unwrap();
         let hash = commit.id().to_string();
 
         let result = checkout(&repo, &hash);
         assert!(result.is_ok());
 
-        assert!(repo.head_detached().unwrap());
+        assert!(repo.head().unwrap().is_detached());
     }
 
     #[test]
     fn test_checkout_nonexistent_version() {
-        let (_tmp, repo) = create_test_repo();
+        let (tmp, _repo) = create_test_repo();
+        let repo = gix::open(tmp.path()).unwrap();
 
         let result = checkout(&repo, "nonexistent-tag-or-branch");
         assert!(result.is_err());
@@ -604,7 +672,8 @@ mod tests {
 
     #[test]
     fn test_resolve_after_checkout_branch() {
-        let (_tmp, repo) = create_test_repo();
+        let (tmp, _repo) = create_test_repo();
+        let repo = gix::open(tmp.path()).unwrap();
         let resolved = GitManager::resolve_after_checkout(&repo).unwrap();
         assert!(
             resolved.contains("("),
@@ -612,33 +681,42 @@ mod tests {
             resolved
         );
 
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
+        let commit = repo.head_commit().unwrap();
         let short_hash = &commit.id().to_string()[..7];
         assert!(resolved.contains(short_hash));
     }
 
     #[test]
     fn test_resolve_after_checkout_tag() {
-        let (_tmp, repo) = create_test_repo();
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
-        repo.tag_lightweight("v1.0.0", commit.as_object(), false)
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        repo.set_head_detached(commit.id()).unwrap();
+        Command::new("git")
+            .args(["checkout", "--detach", "HEAD"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         let resolved = GitManager::resolve_after_checkout(&repo).unwrap();
         assert_eq!(resolved, "v1.0.0");
     }
 
     #[test]
     fn test_resolve_after_checkout_detached_no_tag() {
-        let (_tmp, repo) = create_test_repo();
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["checkout", "--detach", "HEAD"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
+        let repo = gix::open(tmp.path()).unwrap();
+        let commit = repo.head_commit().unwrap();
         let short_hash = &commit.id().to_string()[..7];
-        repo.set_head_detached(commit.id()).unwrap();
 
         let resolved = GitManager::resolve_after_checkout(&repo).unwrap();
         assert_eq!(resolved, short_hash);
@@ -679,25 +757,33 @@ mod tests {
         assert_eq!(files, sorted);
     }
 
-    fn create_test_repo_with_remote() -> (TempDir, Repository) {
-        let (tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+    fn create_test_repo_with_remote() -> (TempDir, gix::Repository) {
+        let (tmp, _) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        let commit_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-        repo.reference(
-            "refs/remotes/origin/main",
-            commit_id,
-            true,
-            "create remote ref for main",
-        )
-        .unwrap();
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/main", &commit_hash])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         (tmp, repo)
     }
 
     #[test]
     fn test_checkout_latest_with_remote_main() {
-        let (_tmp, repo) = create_test_repo_with_remote();
+        let (tmp, _repo) = create_test_repo_with_remote();
+        let repo = gix::open(tmp.path()).unwrap();
 
         let result = checkout(&repo, "latest");
         assert!(
@@ -707,7 +793,10 @@ mod tests {
         );
 
         let head = repo.head().unwrap();
-        let head_name = head.name().unwrap_or("");
+        let head_name = head
+            .referent_name()
+            .map(|n| n.as_bstr().to_string())
+            .unwrap_or_default();
         assert!(
             head_name == "refs/heads/main" || head_name.contains("main"),
             "HEAD should point to main branch, got: {head_name}"
@@ -716,18 +805,25 @@ mod tests {
 
     #[test]
     fn test_checkout_latest_with_remote_master() {
-        let (_tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        let commit_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-        repo.reference(
-            "refs/remotes/origin/master",
-            commit_id,
-            true,
-            "create remote ref for master",
-        )
-        .unwrap();
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/master", &commit_hash])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&repo, "latest");
         assert!(
             result.is_ok(),
@@ -736,7 +832,10 @@ mod tests {
         );
 
         let head = repo.head().unwrap();
-        let head_name = head.name().unwrap_or("");
+        let head_name = head
+            .referent_name()
+            .map(|n| n.as_bstr().to_string())
+            .unwrap_or_default();
         assert!(
             head_name == "refs/heads/master" || head_name.contains("master"),
             "HEAD should point to master branch, got: {head_name}"
@@ -745,9 +844,9 @@ mod tests {
 
     #[test]
     fn test_checkout_latest_no_remote_refs() {
-        let (_tmp, repo) = create_test_repo();
-        // No origin remote, no remote refs - "latest" should fall through and fail
-        // (since there are no tags/branches/commits matching "latest")
+        let (tmp, _repo) = create_test_repo();
+        let repo = gix::open(tmp.path()).unwrap();
+
         let result = checkout(&repo, "latest");
         assert!(
             result.is_err(),
@@ -757,18 +856,25 @@ mod tests {
 
     #[test]
     fn test_checkout_remote_branch() {
-        let (_tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        let commit_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-        repo.reference(
-            "refs/remotes/origin/dev",
-            commit_id,
-            true,
-            "create remote ref for dev",
-        )
-        .unwrap();
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/dev", &commit_hash])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&repo, "dev");
         assert!(
             result.is_ok(),
@@ -777,7 +883,10 @@ mod tests {
         );
 
         let head = repo.head().unwrap();
-        let head_name = head.name().unwrap_or("");
+        let head_name = head
+            .referent_name()
+            .map(|n| n.as_bstr().to_string())
+            .unwrap_or_default();
         assert_eq!(
             head_name, "refs/heads/dev",
             "HEAD should point to local 'dev' branch created from remote, got: {head_name}"
@@ -786,23 +895,35 @@ mod tests {
 
     #[test]
     fn test_checkout_remote_branch_already_on_branch() {
-        let (_tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        let commit_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-
-        repo.branch("feature", &repo.find_commit(commit_id).unwrap(), false)
+        Command::new("git")
+            .args(["branch", "feature"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+        Command::new("git")
+            .args(["checkout", "feature"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/feature", &commit_hash])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
-        repo.reference(
-            "refs/remotes/origin/feature",
-            commit_id,
-            true,
-            "create remote ref for feature",
-        )
-        .unwrap();
-
+        let repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&repo, "feature");
         assert!(
             result.is_ok(),
@@ -813,11 +934,14 @@ mod tests {
 
     #[test]
     fn test_checkout_tag() {
-        let (_tmp, repo) = create_test_repo();
-        let commit = repo.head().unwrap().peel_to_commit().unwrap();
-        repo.tag_lightweight("v2.0.0", commit.as_object(), false)
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["tag", "v2.0.0"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&repo, "v2.0.0");
         assert!(
             result.is_ok(),
@@ -825,16 +949,24 @@ mod tests {
             result.err()
         );
 
-        assert!(repo.head_detached().unwrap());
+        assert!(repo.head().unwrap().is_detached());
     }
 
     #[test]
     fn test_sync_branch_with_remote_tracking() {
-        let (_tmp, repo) = create_test_repo_with_remote();
-        let commit = repo.head().unwrap().peel_to_commit().unwrap();
-        repo.branch("main", &commit, true).unwrap();
-        repo.set_head("refs/heads/main").unwrap();
+        let (tmp, _repo) = create_test_repo_with_remote();
+        Command::new("git")
+            .args(["branch", "-f", "main"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         let result = sync_branch(&repo);
         assert!(
             result.is_ok(),
@@ -845,35 +977,45 @@ mod tests {
 
     #[test]
     fn test_sync_branch_detached_head() {
-        let (_tmp, repo) = create_test_repo();
-        let commit = repo.head().unwrap().peel_to_commit().unwrap();
-        repo.set_head_detached(commit.id()).unwrap();
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["checkout", "--detach", "HEAD"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
+        let repo = gix::open(tmp.path()).unwrap();
         let result = sync_branch(&repo);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_sync_branch_no_remote_ref() {
-        let (_tmp, repo) = create_test_repo();
+        let (tmp, _repo) = create_test_repo();
+        let repo = gix::open(tmp.path()).unwrap();
         let result = sync_branch(&repo);
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_checkout_async_with_remote_branch() {
-        let (tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        let commit_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-        repo.reference(
-            "refs/remotes/origin/main",
-            commit_id,
-            true,
-            "create remote ref",
-        )
-        .unwrap();
-        drop(repo);
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/main", &commit_hash])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
         let mut mgr = GitManager::new(tmp.path().to_path_buf());
         let result = mgr.checkout("latest").await;
@@ -890,18 +1032,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_version_async() {
-        let (tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        let commit_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-        repo.reference(
-            "refs/remotes/origin/main",
-            commit_id,
-            true,
-            "create remote ref",
-        )
-        .unwrap();
-        drop(repo);
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/main", &commit_hash])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
         let mut mgr = GitManager::new(tmp.path().to_path_buf());
         let resolved = mgr.resolve_version("latest").await;
@@ -923,16 +1070,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_version_tag() {
-        let (tmp, repo) = create_test_repo();
-        repo.remote("origin", "https://example.com/fake.git")
+        let (tmp, _repo) = create_test_repo();
+        Command::new("git")
+            .args(["remote", "add", "origin", "https://example.com/fake.git"])
+            .current_dir(tmp.path())
+            .status()
             .unwrap();
-        {
-            let commit = repo.head().unwrap().peel_to_commit().unwrap();
-            repo.tag_lightweight("v3.0.0", commit.as_object(), false)
-                .unwrap();
-        }
-
-        drop(repo);
+        Command::new("git")
+            .args(["tag", "v3.0.0"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
         let mut mgr = GitManager::new(tmp.path().to_path_buf());
         let resolved = mgr.resolve_version("v3.0.0").await;

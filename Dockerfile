@@ -5,7 +5,7 @@ FROM rust:1-bookworm AS base
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev cmake git protobuf-compiler libprotobuf-dev mold clang \
+    pkg-config cmake git protobuf-compiler libprotobuf-dev mold clang \
  && rm -rf /var/lib/apt/lists/*
 
 # ---- Stage 1b: install cargo-chef (separate layer) ----

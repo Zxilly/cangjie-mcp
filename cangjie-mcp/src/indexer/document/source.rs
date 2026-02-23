@@ -26,33 +26,35 @@ pub trait DocumentSource: Send + Sync {
     async fn get_topic_titles(&self, category: &str) -> Result<HashMap<String, String>>;
 }
 
-// -- Sync git2 helpers (run inside spawn_blocking) ---------------------------
+// -- Sync gix helpers (run inside spawn_blocking) ----------------------------
 
-fn open_repo(repo_dir: &Path) -> Result<git2::Repository> {
-    git2::Repository::open(repo_dir).context("Failed to open git repository")
+fn open_repo(repo_dir: &Path) -> Result<gix::Repository> {
+    gix::open(repo_dir).context("Failed to open git repository")
 }
 
 fn read_file(repo_dir: &Path, path: &str) -> Result<String> {
     let repo = open_repo(repo_dir)?;
-    let head = repo.head()?;
-    let tree = head.peel_to_tree()?;
+    let tree = repo.head_commit()?.tree()?;
     let entry = tree
-        .get_path(Path::new(path))
+        .lookup_entry_by_path(path)?
         .with_context(|| format!("Path not found: {path}"))?;
-    let blob = repo.find_blob(entry.id())?;
-    Ok(std::str::from_utf8(blob.content())?.to_string())
+    let object = repo.find_object(entry.oid())?;
+    Ok(std::str::from_utf8(&object.data)?.to_string())
 }
 
 fn list_dirs(repo_dir: &Path, path: &str) -> Result<Vec<String>> {
     let repo = open_repo(repo_dir)?;
-    let head = repo.head()?;
-    let tree = head.peel_to_tree()?;
-    let entry = tree.get_path(Path::new(path))?;
-    let subtree = repo.find_tree(entry.id())?;
+    let tree = repo.head_commit()?.tree()?;
+    let entry = match tree.lookup_entry_by_path(path)? {
+        Some(e) => e,
+        None => return Ok(Vec::new()),
+    };
+    let subtree = repo.find_object(entry.oid())?.into_tree();
     let mut dirs = Vec::new();
     for item in subtree.iter() {
-        if item.kind() == Some(git2::ObjectType::Tree) {
-            if let Some(name) = item.name() {
+        let item = item?;
+        if item.mode().is_tree() {
+            if let Ok(name) = std::str::from_utf8(item.filename()) {
                 if !name.starts_with('.') && !name.starts_with('_') {
                     dirs.push(name.to_string());
                 }
@@ -65,33 +67,16 @@ fn list_dirs(repo_dir: &Path, path: &str) -> Result<Vec<String>> {
 
 fn list_md_files(repo_dir: &Path, base_path: &str) -> Result<Vec<String>> {
     let repo = open_repo(repo_dir)?;
-    let head = repo.head()?;
-    let root_tree = head.peel_to_tree()?;
-    let entry = root_tree.get_path(Path::new(base_path))?;
-    let subtree = repo.find_tree(entry.id())?;
+    let tree = repo.head_commit()?.tree()?;
+    let entry = match tree.lookup_entry_by_path(base_path)? {
+        Some(e) => e,
+        None => return Ok(Vec::new()),
+    };
+    let subtree = repo.find_object(entry.oid())?.into_tree();
     let mut files = Vec::new();
     collect_md_files_recursive(&repo, &subtree, "", &mut files)?;
     files.sort();
     Ok(files)
-}
-
-fn is_git_not_found_error(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|e| e.downcast_ref::<git2::Error>())
-        .any(|e| e.code() == git2::ErrorCode::NotFound)
-}
-
-/// Convert git tree "path not found" into an empty business result while
-/// preserving other infrastructure errors for observability.
-fn default_on_git_not_found<T, F>(result: Result<T>, default: F) -> Result<T>
-where
-    F: FnOnce() -> T,
-{
-    match result {
-        Ok(value) => Ok(value),
-        Err(err) if is_git_not_found_error(&err) => Ok(default()),
-        Err(err) => Err(err),
-    }
 }
 
 fn topic_name_from_md_path(path: &str) -> Option<String> {
@@ -102,27 +87,24 @@ fn topic_name_from_md_path(path: &str) -> Option<String> {
 }
 
 fn collect_md_files_recursive(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
+    repo: &gix::Repository,
+    tree: &gix::Tree,
     prefix: &str,
     files: &mut Vec<String>,
 ) -> Result<()> {
     for item in tree.iter() {
-        let name = item.name().unwrap_or("");
+        let item = item?;
+        let name = std::str::from_utf8(item.filename()).unwrap_or("");
         let path = if prefix.is_empty() {
             name.to_string()
         } else {
             format!("{prefix}/{name}")
         };
-        match item.kind() {
-            Some(git2::ObjectType::Blob) if name.ends_with(".md") => {
-                files.push(path);
-            }
-            Some(git2::ObjectType::Tree) => {
-                let subtree = repo.find_tree(item.id())?;
-                collect_md_files_recursive(repo, &subtree, &path, files)?;
-            }
-            _ => {}
+        if item.mode().is_blob() && name.ends_with(".md") {
+            files.push(path);
+        } else if item.mode().is_tree() {
+            let subtree = repo.find_object(item.oid())?.into_tree();
+            collect_md_files_recursive(repo, &subtree, &path, files)?;
         }
     }
     Ok(())
@@ -141,7 +123,6 @@ fn build_topic_index(repo_dir: &Path, docs_base_path: &str) -> Result<HashMap<St
                     }
                 }
             }
-            Err(err) if is_git_not_found_error(&err) => {}
             Err(err) => {
                 warn!(
                     "Failed to list markdown files for category '{}' at '{}': {}",
@@ -200,19 +181,17 @@ impl DocumentSource for GitDocumentSource {
     async fn get_categories(&self) -> Result<Vec<String>> {
         let repo_dir = self.repo_dir.clone();
         let base = self.docs_base_path.clone();
-        let categories = tokio::task::spawn_blocking(move || list_dirs(&repo_dir, &base))
+        tokio::task::spawn_blocking(move || list_dirs(&repo_dir, &base))
             .await
-            .context("get_categories task panicked")?;
-        default_on_git_not_found(categories, Vec::new)
+            .context("get_categories task panicked")?
     }
 
     async fn get_topics_in_category(&self, category: &str) -> Result<Vec<String>> {
         let repo_dir = self.repo_dir.clone();
         let path = format!("{}/{category}", self.docs_base_path);
-        let files_result = tokio::task::spawn_blocking(move || list_md_files(&repo_dir, &path))
+        let files = tokio::task::spawn_blocking(move || list_md_files(&repo_dir, &path))
             .await
-            .context("get_topics_in_category task panicked")?;
-        let files = default_on_git_not_found(files_result, Vec::new)?;
+            .context("get_topics_in_category task panicked")??;
 
         let mut topics: Vec<String> = files
             .iter()
@@ -243,7 +222,7 @@ impl DocumentSource for GitDocumentSource {
         tokio::task::spawn_blocking(move || {
             let filename = format!("{topic}.md");
             let path = format!("{base}/{cat}");
-            let files = default_on_git_not_found(list_md_files(&repo_dir, &path), Vec::new)?;
+            let files = list_md_files(&repo_dir, &path)?;
             for file in &files {
                 let file_name = file.rsplit('/').next().unwrap_or("");
                 if file_name == filename {
@@ -275,12 +254,12 @@ impl DocumentSource for GitDocumentSource {
         let base = self.docs_base_path.clone();
 
         tokio::task::spawn_blocking(move || {
-            let categories = default_on_git_not_found(list_dirs(&repo_dir, &base), Vec::new)?;
+            let categories = list_dirs(&repo_dir, &base)?;
             let mut documents = Vec::new();
 
             for category in &categories {
                 let path = format!("{base}/{category}");
-                let files = default_on_git_not_found(list_md_files(&repo_dir, &path), Vec::new)?;
+                let files = list_md_files(&repo_dir, &path)?;
 
                 for file in &files {
                     let full_path = format!("{path}/{file}");
@@ -325,7 +304,7 @@ impl DocumentSource for GitDocumentSource {
 
         tokio::task::spawn_blocking(move || {
             let path = format!("{base}/{category}");
-            let files = default_on_git_not_found(list_md_files(&repo_dir, &path), Vec::new)?;
+            let files = list_md_files(&repo_dir, &path)?;
             let mut titles = HashMap::new();
 
             for file in &files {
@@ -352,7 +331,7 @@ impl DocumentSource for GitDocumentSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use git2::{Repository, Signature};
+    use std::process::Command;
     use tempfile::TempDir;
 
     /// Create a test git repository with the expected doc structure for GitDocumentSource.
@@ -366,9 +345,8 @@ mod tests {
     ///       collections.md - "# Collections\n\nContent about collections."
     ///     _hidden/
     ///       secret.md      - "# Secret"
-    fn create_test_repo() -> (TempDir, Repository) {
+    fn create_test_repo() -> TempDir {
         let tmp = TempDir::new().unwrap();
-        let repo = Repository::init(tmp.path()).unwrap();
 
         let base = tmp
             .path()
@@ -404,42 +382,55 @@ mod tests {
         std::fs::create_dir_all(&hidden).unwrap();
         std::fs::write(hidden.join("secret.md"), "# Secret").unwrap();
 
-        // Stage and commit
-        {
-            let mut index = repo.index().unwrap();
-            index
-                .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
-                .unwrap();
-            index.write().unwrap();
-            let tree_id = index.write_tree().unwrap();
-            let tree = repo.find_tree(tree_id).unwrap();
-            let sig = Signature::now("test", "test@test.com").unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
-                .unwrap();
-        }
+        // Stage and commit via git CLI
+        Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial commit"])
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
-        (tmp, repo)
+        tmp
     }
 
-    fn create_test_repo_without_docs_base() -> (TempDir, Repository) {
+    fn create_test_repo_without_docs_base() -> TempDir {
         let tmp = TempDir::new().unwrap();
-        let repo = Repository::init(tmp.path()).unwrap();
         std::fs::write(tmp.path().join("README.md"), "# Placeholder").unwrap();
 
-        {
-            let mut index = repo.index().unwrap();
-            index
-                .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
-                .unwrap();
-            index.write().unwrap();
-            let tree_id = index.write_tree().unwrap();
-            let tree = repo.find_tree(tree_id).unwrap();
-            let sig = Signature::now("test", "test@test.com").unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
-                .unwrap();
-        }
+        Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial commit"])
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
 
-        (tmp, repo)
+        tmp
     }
 
     #[test]
@@ -460,7 +451,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_is_available() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
         assert!(source.is_available().await);
     }
@@ -475,7 +466,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_not_available_no_git_dir() {
-        // Directory exists but no .git
         let tmp = TempDir::new().unwrap();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
         assert!(!source.is_available().await);
@@ -483,21 +473,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_categories() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let categories = source.get_categories().await.unwrap();
         assert!(categories.contains(&"stdlib".to_string()));
         assert!(categories.contains(&"syntax".to_string()));
-        // _hidden should be filtered out
         assert!(!categories.contains(&"_hidden".to_string()));
-        // Should be sorted
         assert_eq!(categories, vec!["stdlib", "syntax"]);
     }
 
     #[tokio::test]
     async fn test_git_source_get_categories_without_docs_base_returns_empty() {
-        let (tmp, _repo) = create_test_repo_without_docs_base();
+        let tmp = create_test_repo_without_docs_base();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let categories = source.get_categories().await.unwrap();
@@ -506,7 +494,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topics_in_category() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let topics = source.get_topics_in_category("syntax").await.unwrap();
@@ -517,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topics_in_category_stdlib() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let topics = source.get_topics_in_category("stdlib").await.unwrap();
@@ -526,7 +514,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_by_topic() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -544,7 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_not_found() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -556,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_not_found_in_nonexistent_category() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -568,7 +556,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_not_found_no_category() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -580,12 +568,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_load_all_documents() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let docs = source.load_all_documents().await.unwrap();
-        // Should load docs from categories visible via list_dirs (which filters _hidden).
-        // Categories: stdlib (1 doc), syntax (2 docs) = 3 total
         assert_eq!(docs.len(), 3);
 
         let topics: Vec<&str> = docs.iter().map(|d| d.metadata.topic.as_str()).collect();
@@ -596,14 +582,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_all_topic_names() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let names = source.get_all_topic_names().await.unwrap();
         assert!(names.contains(&"functions".to_string()));
         assert!(names.contains(&"variables".to_string()));
         assert!(names.contains(&"collections".to_string()));
-        // Should be sorted
         assert_eq!(names, {
             let mut sorted = names.clone();
             sorted.sort();
@@ -613,7 +598,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topic_titles() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let titles = source.get_topic_titles("syntax").await.unwrap();
@@ -624,7 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topic_titles_stdlib() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let titles = source.get_topic_titles("stdlib").await.unwrap();
@@ -634,10 +619,9 @@ mod tests {
 
     #[test]
     fn test_build_topic_index() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let index = build_topic_index(tmp.path(), "docs/dev-guide/source_zh_cn").unwrap();
-        // Should map topic -> category
         assert_eq!(index.get("functions").unwrap(), "syntax");
         assert_eq!(index.get("variables").unwrap(), "syntax");
         assert_eq!(index.get("collections").unwrap(), "stdlib");
@@ -646,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_read_file() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let content = read_file(
             tmp.path(),
@@ -659,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_read_file_not_found() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let result = read_file(tmp.path(), "nonexistent/file.md");
         assert!(result.is_err());
@@ -667,19 +651,18 @@ mod tests {
 
     #[test]
     fn test_list_dirs() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let dirs = list_dirs(tmp.path(), "docs/dev-guide/source_zh_cn").unwrap();
         assert!(dirs.contains(&"syntax".to_string()));
         assert!(dirs.contains(&"stdlib".to_string()));
         assert!(!dirs.contains(&"_hidden".to_string()));
-        // Should be sorted
         assert_eq!(dirs, vec!["stdlib", "syntax"]);
     }
 
     #[test]
     fn test_list_md_files() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let files = list_md_files(tmp.path(), "docs/dev-guide/source_zh_cn/syntax").unwrap();
         assert!(files.contains(&"functions.md".to_string()));
@@ -689,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_list_md_files_sorted() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let files = list_md_files(tmp.path(), "docs/dev-guide/source_zh_cn/syntax").unwrap();
         let mut sorted = files.clone();
@@ -699,7 +682,7 @@ mod tests {
 
     #[test]
     fn test_open_repo() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
 
         let result = open_repo(tmp.path());
         assert!(result.is_ok());
@@ -716,14 +699,15 @@ mod tests {
 
     #[test]
     fn test_collect_md_files_recursive_basic() {
-        let (_tmp, repo) = create_test_repo();
+        let tmp = create_test_repo();
+        let repo = gix::open(tmp.path()).unwrap();
 
-        let head = repo.head().unwrap();
-        let root_tree = head.peel_to_tree().unwrap();
-        let entry = root_tree
-            .get_path(Path::new("docs/dev-guide/source_zh_cn/syntax"))
+        let tree = repo.head_commit().unwrap().tree().unwrap();
+        let entry = tree
+            .lookup_entry_by_path("docs/dev-guide/source_zh_cn/syntax")
+            .unwrap()
             .unwrap();
-        let subtree = repo.find_tree(entry.id()).unwrap();
+        let subtree = repo.find_object(entry.oid()).unwrap().into_tree();
 
         let mut files = Vec::new();
         collect_md_files_recursive(&repo, &subtree, "", &mut files).unwrap();
@@ -735,10 +719,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_by_topic_without_category() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
-        // Without specifying a category, it should use the topic index to find it
         let doc = source
             .get_document_by_topic("collections", None)
             .await
@@ -752,7 +735,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_by_topic_without_category_syntax() {
-        let (tmp, _repo) = create_test_repo();
+        let tmp = create_test_repo();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
