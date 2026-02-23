@@ -418,4 +418,277 @@ mod tests {
         assert!(json["multiModuleOption"]["module1"].is_object());
         assert_eq!(json["fallbackFlags"][0], "-Wall");
     }
+
+    #[test]
+    fn test_build_init_options_no_cjpm_toml() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, require_path) = build_init_options(&settings);
+        // No cjpm.toml means no modules found
+        assert!(options.multi_module_option.is_empty() || options.multi_module_option.len() == 1);
+        assert!(require_path.is_empty());
+    }
+
+    #[test]
+    fn test_build_init_options_with_basic_cjpm_toml() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("cjpm.toml"),
+            "[package]\nname = \"test-pkg\"\n",
+        )
+        .unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, require_path) = build_init_options(&settings);
+        // Should have at least one module option
+        assert!(!options.multi_module_option.is_empty());
+        assert!(require_path.is_empty());
+    }
+
+    #[test]
+    fn test_build_init_options_with_target_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("cjpm.toml"),
+            "[package]\nname = \"test-pkg\"\ntarget-dir = \"/custom/target\"\n",
+        )
+        .unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, _require_path) = build_init_options(&settings);
+        assert_eq!(options.std_lib_path_option, "/custom/target");
+    }
+
+    #[test]
+    fn test_validate_all_nonexistent() {
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/nonexistent/sdk"),
+            workspace_path: PathBuf::from("/nonexistent/workspace"),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let errors = settings.validate();
+        // Should have errors for SDK path, LSP server, and workspace path
+        assert!(
+            errors.len() >= 2,
+            "Expected at least 2 errors, got: {:?}",
+            errors
+        );
+        assert!(errors.iter().any(|e| e.contains("SDK path")));
+        assert!(errors.iter().any(|e| e.contains("Workspace path")));
+    }
+
+    #[test]
+    fn test_validate_workspace_exists_sdk_not() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/nonexistent/sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let errors = settings.validate();
+        assert!(errors.iter().any(|e| e.contains("SDK path")));
+        assert!(errors.iter().any(|e| e.contains("LSP server")));
+        assert!(!errors.iter().any(|e| e.contains("Workspace path")));
+    }
+
+    #[test]
+    fn test_get_lsp_args_with_all_options() {
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/sdk"),
+            workspace_path: PathBuf::from("/ws"),
+            log_enabled: true,
+            log_path: Some(PathBuf::from("/var/log/lsp.log")),
+            init_timeout_ms: 60000,
+            disable_auto_import: true,
+        };
+        let args = settings.get_lsp_args();
+        // Should have: "src", "--disableAutoImport", "-V", "--enable-log=true", "--log-path=..."
+        assert_eq!(args[0], "src");
+        assert!(args.contains(&"--disableAutoImport".to_string()));
+        assert!(args.contains(&"-V".to_string()));
+        assert!(args.contains(&"--enable-log=true".to_string()));
+        assert!(args.iter().any(|a| a == "--log-path=/var/log/lsp.log"));
+        // Should NOT contain --enable-log=false when logging is enabled
+        assert!(!args.contains(&"--enable-log=false".to_string()));
+    }
+
+    #[test]
+    fn test_lsp_server_path_includes_tools_bin() {
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/my/custom/sdk"),
+            workspace_path: PathBuf::from("/ws"),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let path = settings.lsp_server_path();
+        assert!(path.starts_with("/my/custom/sdk"));
+        assert!(path.to_string_lossy().contains("tools"));
+        assert!(path.to_string_lossy().contains("bin"));
+        if cfg!(windows) {
+            assert!(path.to_string_lossy().ends_with("LSPServer.exe"));
+        } else {
+            assert!(path.to_string_lossy().ends_with("LSPServer"));
+        }
+    }
+
+    #[test]
+    fn test_build_init_options_cjpm_toml_package_no_target_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("cjpm.toml"),
+            "[package]\nname = \"test-pkg\"\n",
+        )
+        .unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, _) = build_init_options(&settings);
+        // No target-dir means std_lib_path_option should be empty
+        assert!(options.std_lib_path_option.is_empty());
+    }
+
+    #[test]
+    fn test_build_init_options_cjpm_toml_empty_target_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("cjpm.toml"),
+            "[package]\nname = \"test-pkg\"\ntarget-dir = \"\"\n",
+        )
+        .unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, _) = build_init_options(&settings);
+        // Empty target-dir means std_lib_path_option should be empty
+        assert!(options.std_lib_path_option.is_empty());
+    }
+
+    #[test]
+    fn test_build_init_options_cjpm_toml_no_package_section() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        // TOML without [package] section - just dependencies
+        std::fs::write(tmp.path().join("cjpm.toml"), "[dependencies]\n").unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, _) = build_init_options(&settings);
+        // No package section -> std_lib_path_option should be empty
+        assert!(options.std_lib_path_option.is_empty());
+    }
+
+    #[test]
+    fn test_lsp_init_options_condition_compile_serialization() {
+        let mut cco = HashMap::new();
+        cco.insert("feature_x".to_string(), serde_json::json!(true));
+        let options = LSPInitOptions {
+            condition_compile_option: cco,
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&options).unwrap();
+        assert_eq!(json["conditionCompileOption"]["feature_x"], true);
+    }
+
+    #[test]
+    fn test_lsp_init_options_single_condition_compile_serialization() {
+        let mut scco = HashMap::new();
+        scco.insert("single_feature".to_string(), serde_json::json!("value"));
+        let options = LSPInitOptions {
+            single_condition_compile_option: scco,
+            condition_compile_paths: vec!["/path/a".to_string(), "/path/b".to_string()],
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&options).unwrap();
+        assert_eq!(
+            json["singleConditionCompileOption"]["single_feature"],
+            "value"
+        );
+        assert_eq!(json["conditionCompilePaths"][0], "/path/a");
+        assert_eq!(json["conditionCompilePaths"][1], "/path/b");
+    }
+
+    #[test]
+    fn test_lsp_init_options_modules_home_and_extension_path() {
+        let options = LSPInitOptions {
+            modules_home_option: "/home/modules".to_string(),
+            extension_path: "/ext/path".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&options).unwrap();
+        assert_eq!(json["modulesHomeOption"], "/home/modules");
+        assert_eq!(json["extensionPath"], "/ext/path");
+    }
+
+    #[test]
+    fn test_get_platform_env_contains_system_vars() {
+        let sdk_path = PathBuf::from("/opt/cangjie-sdk");
+        let env = get_platform_env(&sdk_path);
+        // Should contain at least PATH (on any platform)
+        assert!(env.contains_key("PATH"));
+        // The env should also contain regular system environment variables
+        // (since it starts from std::env::vars())
+        assert!(
+            env.len() > 1,
+            "Platform env should contain multiple variables"
+        );
+    }
+
+    #[test]
+    fn test_build_init_options_sets_clangd_file_status() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
+            workspace_path: tmp.path().to_path_buf(),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let (options, _) = build_init_options(&settings);
+        assert!(
+            options.clangd_file_status,
+            "clangd_file_status should be set to true"
+        );
+    }
 }

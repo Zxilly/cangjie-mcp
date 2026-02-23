@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::info;
 
@@ -8,7 +9,7 @@ pub struct OpenAIEmbedder {
     api_key: String,
     model: String,
     base_url: String,
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
 }
 
 impl OpenAIEmbedder {
@@ -17,7 +18,7 @@ impl OpenAIEmbedder {
             api_key: api_key.to_string(),
             model: model.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
-            client: reqwest::blocking::Client::builder()
+            client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .context("Failed to build HTTP client")?,
@@ -25,8 +26,9 @@ impl OpenAIEmbedder {
     }
 }
 
+#[async_trait]
 impl Embedder for OpenAIEmbedder {
-    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         let url = format!("{}/embeddings", self.base_url);
         info!(
             "Getting embeddings for {} texts via {}",
@@ -43,9 +45,10 @@ impl Embedder for OpenAIEmbedder {
                 "model": self.model,
                 "input": texts,
             }))
-            .send()?;
+            .send()
+            .await?;
 
-        let body: EmbeddingsResponse = response.json()?;
+        let body: EmbeddingsResponse = response.json().await?;
         Ok(body.data.into_iter().map(|d| d.embedding).collect())
     }
 

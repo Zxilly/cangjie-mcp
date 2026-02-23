@@ -52,11 +52,32 @@ pub fn get_real_path(path_str: &str) -> String {
 pub fn normalize_path(path_str: &str, base_path: &Path) -> PathBuf {
     let resolved = get_real_path(path_str);
     let path = PathBuf::from(&resolved);
-    if path.is_absolute() {
+    let joined = if path.is_absolute() {
         path
     } else {
         base_path.join(path)
+    };
+    clean_path_components(&joined)
+}
+
+/// Normalize a path by resolving `.` and `..` components without filesystem access.
+fn clean_path_components(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut parts: Vec<Component<'_>> = Vec::new();
+    for c in path.components() {
+        match c {
+            Component::ParentDir => {
+                if matches!(parts.last(), Some(Component::Normal(_))) {
+                    parts.pop();
+                } else {
+                    parts.push(c);
+                }
+            }
+            Component::CurDir => {}
+            _ => parts.push(c),
+        }
     }
+    parts.iter().collect()
 }
 
 pub fn get_path_separator() -> &'static str {

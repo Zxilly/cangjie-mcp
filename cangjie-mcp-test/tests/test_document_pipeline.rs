@@ -47,27 +47,28 @@ fn test_chunk_preserves_code_detection() {
     );
 }
 
-#[test]
-fn test_mock_document_source() {
+#[tokio::test]
+async fn test_mock_document_source() {
     let docs = sample_documents();
     let source = MockDocumentSource::from_docs(&docs);
 
-    assert!(source.is_available());
+    assert!(source.is_available().await);
 
     // Categories
-    let categories = source.get_categories().unwrap();
+    let categories = source.get_categories().await.unwrap();
     assert!(categories.contains(&"syntax".to_string()));
     assert!(categories.contains(&"stdlib".to_string()));
     assert!(categories.contains(&"cjpm".to_string()));
 
     // Topics in category
-    let syntax_topics = source.get_topics_in_category("syntax").unwrap();
+    let syntax_topics = source.get_topics_in_category("syntax").await.unwrap();
     assert!(syntax_topics.contains(&"functions".to_string()));
     assert!(syntax_topics.contains(&"variables".to_string()));
 
     // Get document by topic
     let doc = source
         .get_document_by_topic("functions", Some("syntax"))
+        .await
         .unwrap();
     assert!(doc.is_some());
     let doc = doc.unwrap();
@@ -75,37 +76,43 @@ fn test_mock_document_source() {
     assert!(doc.text.contains("函数"));
 
     // Get document without specifying category
-    let doc2 = source.get_document_by_topic("collections", None).unwrap();
+    let doc2 = source
+        .get_document_by_topic("collections", None)
+        .await
+        .unwrap();
     assert!(doc2.is_some());
     assert_eq!(doc2.unwrap().metadata.category, "stdlib");
 
     // Non-existent topic
-    let missing = source.get_document_by_topic("nonexistent", None).unwrap();
+    let missing = source
+        .get_document_by_topic("nonexistent", None)
+        .await
+        .unwrap();
     assert!(missing.is_none());
 
     // All topic names
-    let all_topics = source.get_all_topic_names().unwrap();
+    let all_topics = source.get_all_topic_names().await.unwrap();
     assert!(all_topics.len() >= 4);
 
     // Topic titles
-    let titles = source.get_topic_titles("syntax").unwrap();
+    let titles = source.get_topic_titles("syntax").await.unwrap();
     assert_eq!(titles.get("functions").unwrap(), "函数定义");
 
     // Load all
-    let all_docs = source.load_all_documents().unwrap();
+    let all_docs = source.load_all_documents().await.unwrap();
     assert_eq!(all_docs.len(), docs.len());
 }
 
 /// Empty or nonexistent category should return empty topic list, not error.
-#[test]
-fn test_mock_source_empty_category() {
+#[tokio::test]
+async fn test_mock_source_empty_category() {
     let docs = sample_documents();
     let source = MockDocumentSource::from_docs(&docs);
 
-    let topics = source.get_topics_in_category("nonexistent").unwrap();
+    let topics = source.get_topics_in_category("nonexistent").await.unwrap();
     assert!(topics.is_empty());
 
-    let titles = source.get_topic_titles("nonexistent").unwrap();
+    let titles = source.get_topic_titles("nonexistent").await.unwrap();
     assert!(titles.is_empty());
 }
 
@@ -163,10 +170,10 @@ fn test_chunk_content_completeness() {
 }
 
 /// chunk_documents with mixed code/no-code docs should correctly detect per-chunk.
-#[test]
-fn test_chunk_documents_mixed_code_detection() {
+#[tokio::test]
+async fn test_chunk_documents_mixed_code_detection() {
     let docs = sample_documents();
-    let chunks = chunk_documents(&docs, 6000);
+    let chunks = chunk_documents(docs, 6000).await;
 
     let code_chunks: Vec<_> = chunks.iter().filter(|c| c.metadata.has_code).collect();
     let no_code_chunks: Vec<_> = chunks.iter().filter(|c| !c.metadata.has_code).collect();

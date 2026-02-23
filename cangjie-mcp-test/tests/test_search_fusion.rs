@@ -18,16 +18,16 @@ fn make_result(text: &str, score: f64, file: &str, category: &str) -> SearchResu
     }
 }
 
-#[test]
-fn test_bm25_search_and_fusion() {
+#[tokio::test]
+async fn test_bm25_search_and_fusion() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_fusion");
     let mut store = BM25Store::new(bm25_dir);
-    store.build_from_chunks(&sample_chunks()).unwrap();
+    store.build_from_chunks(&sample_chunks()).await.unwrap();
 
     // Two different queries
-    let results_a = store.search("函数定义", 5, None).unwrap();
-    let results_b = store.search("集合类型", 5, None).unwrap();
+    let results_a = store.search("函数定义", 5, None).await.unwrap();
+    let results_b = store.search("集合类型", 5, None).await.unwrap();
 
     assert!(!results_a.is_empty());
     assert!(!results_b.is_empty());
@@ -174,15 +174,15 @@ fn test_fusion_single_empty_list() {
 }
 
 /// BM25 search for English keywords should also work (not just Chinese).
-#[test]
-fn test_bm25_english_search() {
+#[tokio::test]
+async fn test_bm25_english_search() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_english");
     let mut store = BM25Store::new(bm25_dir);
-    store.build_from_chunks(&sample_chunks()).unwrap();
+    store.build_from_chunks(&sample_chunks()).await.unwrap();
 
     // sample_chunks contains "Array", "HashMap", "CJPM", "Result" etc.
-    let results = store.search("Array HashMap", 5, None).unwrap();
+    let results = store.search("Array HashMap", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "English keywords should find results in mixed content"
@@ -190,13 +190,13 @@ fn test_bm25_english_search() {
 }
 
 /// BM25 search with top_k=1 should return exactly one result.
-#[test]
-fn test_bm25_top_k_one() {
+#[tokio::test]
+async fn test_bm25_top_k_one() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_topk1");
     let mut store = BM25Store::new(bm25_dir);
-    store.build_from_chunks(&sample_chunks()).unwrap();
+    store.build_from_chunks(&sample_chunks()).await.unwrap();
 
-    let results = store.search("函数", 1, None).unwrap();
+    let results = store.search("函数", 1, None).await.unwrap();
     assert_eq!(results.len(), 1, "top_k=1 should return exactly 1 result");
 }

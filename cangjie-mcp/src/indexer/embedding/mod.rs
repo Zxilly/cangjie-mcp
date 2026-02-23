@@ -1,16 +1,16 @@
 pub mod openai;
 
 use anyhow::Result;
+use async_trait::async_trait;
 
 use crate::config::{EmbeddingType, Settings};
 
 // -- Embedder trait ----------------------------------------------------------
 
-/// Synchronous embedding trait.
-///
-/// fastembed is CPU synchronous; OpenAI uses blocking Client.
+/// Async embedding trait.
+#[async_trait]
 pub trait Embedder: Send + Sync {
-    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
+    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
     fn model_name(&self) -> &str;
 }
 
@@ -19,7 +19,7 @@ pub trait Embedder: Send + Sync {
 /// Create an embedder based on settings.
 ///
 /// Returns `None` if embedding is disabled (`EmbeddingType::None`).
-pub fn create_embedder(settings: &Settings) -> Result<Option<Box<dyn Embedder>>> {
+pub async fn create_embedder(settings: &Settings) -> Result<Option<Box<dyn Embedder>>> {
     match settings.embedding_type {
         EmbeddingType::None => Ok(None),
         EmbeddingType::OpenAI => {
@@ -36,7 +36,7 @@ pub fn create_embedder(settings: &Settings) -> Result<Option<Box<dyn Embedder>>>
         EmbeddingType::Local => {
             #[cfg(feature = "local")]
             {
-                let embedder = local::LocalEmbedder::new(&settings.local_model)?;
+                let embedder = local::LocalEmbedder::new(&settings.local_model).await?;
                 Ok(Some(Box::new(embedder)))
             }
             #[cfg(not(feature = "local"))]
@@ -75,17 +75,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_create_embedder_none() {
+    #[tokio::test]
+    async fn test_create_embedder_none() {
         let settings = test_settings(EmbeddingType::None);
-        let embedder = create_embedder(&settings).unwrap();
+        let embedder = create_embedder(&settings).await.unwrap();
         assert!(embedder.is_none());
     }
 
-    #[test]
-    fn test_create_embedder_openai_no_key() {
+    #[tokio::test]
+    async fn test_create_embedder_openai_no_key() {
         let settings = test_settings(EmbeddingType::OpenAI);
-        let result = create_embedder(&settings);
+        let result = create_embedder(&settings).await;
         assert!(result.is_err());
     }
 }

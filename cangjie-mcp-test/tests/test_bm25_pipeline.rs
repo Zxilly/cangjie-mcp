@@ -3,20 +3,20 @@ use cangjie_mcp::indexer::search::LocalSearchIndex;
 use cangjie_mcp_test::{sample_chunks, test_settings};
 use tempfile::TempDir;
 
-fn build_index_in_tempdir() -> (TempDir, BM25Store) {
+async fn build_index_in_tempdir() -> (TempDir, BM25Store) {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_index");
     let mut store = BM25Store::new(bm25_dir);
     let chunks = sample_chunks();
-    store.build_from_chunks(&chunks).unwrap();
+    store.build_from_chunks(&chunks).await.unwrap();
     (tmp, store)
 }
 
-#[test]
-fn test_build_and_search() {
-    let (_tmp, store) = build_index_in_tempdir();
+#[tokio::test]
+async fn test_build_and_search() {
+    let (_tmp, store) = build_index_in_tempdir().await;
 
-    let results = store.search("函数", 5, None).unwrap();
+    let results = store.search("函数", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "search should return results for '函数'"
@@ -25,11 +25,11 @@ fn test_build_and_search() {
     assert!(!results[0].metadata.file_path.is_empty());
 }
 
-#[test]
-fn test_search_chinese_query() {
-    let (_tmp, store) = build_index_in_tempdir();
+#[tokio::test]
+async fn test_search_chinese_query() {
+    let (_tmp, store) = build_index_in_tempdir().await;
 
-    let results = store.search("变量声明", 5, None).unwrap();
+    let results = store.search("变量声明", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "Chinese query '变量声明' should find results"
@@ -42,11 +42,11 @@ fn test_search_chinese_query() {
     assert!(has_variable_result, "should find variable-related document");
 }
 
-#[test]
-fn test_search_category_filter() {
-    let (_tmp, store) = build_index_in_tempdir();
+#[tokio::test]
+async fn test_search_category_filter() {
+    let (_tmp, store) = build_index_in_tempdir().await;
 
-    let results = store.search("函数", 10, Some("syntax")).unwrap();
+    let results = store.search("函数", 10, Some("syntax")).await.unwrap();
     for r in &results {
         assert_eq!(
             r.metadata.category, "syntax",
@@ -55,25 +55,28 @@ fn test_search_category_filter() {
     }
 }
 
-#[test]
-fn test_search_no_results() {
-    let (_tmp, store) = build_index_in_tempdir();
+#[tokio::test]
+async fn test_search_no_results() {
+    let (_tmp, store) = build_index_in_tempdir().await;
 
-    let results = store.search("xyznonexistent12345qwerty", 5, None).unwrap();
+    let results = store
+        .search("xyznonexistent12345qwerty", 5, None)
+        .await
+        .unwrap();
     assert!(results.is_empty(), "random string should yield no results");
 }
 
-#[test]
-fn test_build_empty_chunks() {
+#[tokio::test]
+async fn test_build_empty_chunks() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_empty");
     let mut store = BM25Store::new(bm25_dir);
     // Building from empty chunks should not error
-    store.build_from_chunks(&[]).unwrap();
+    store.build_from_chunks(&[]).await.unwrap();
 }
 
-#[test]
-fn test_load_existing_index() {
+#[tokio::test]
+async fn test_load_existing_index() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_reload");
 
@@ -81,15 +84,15 @@ fn test_load_existing_index() {
     {
         let mut store = BM25Store::new(bm25_dir.clone());
         let chunks = sample_chunks();
-        store.build_from_chunks(&chunks).unwrap();
+        store.build_from_chunks(&chunks).await.unwrap();
     }
 
     // Reload
     let mut store2 = BM25Store::new(bm25_dir);
-    let loaded = store2.load().unwrap();
+    let loaded = store2.load().await.unwrap();
     assert!(loaded, "index should be loadable after build");
 
-    let results = store2.search("函数", 5, None).unwrap();
+    let results = store2.search("函数", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "reloaded index should return search results"
@@ -109,14 +112,14 @@ fn test_search_with_settings_integration() {
 
 /// BM25 query parser should handle special regex characters gracefully
 /// instead of panicking or returning errors.
-#[test]
-fn test_search_special_characters_query() {
-    let (_tmp, store) = build_index_in_tempdir();
+#[tokio::test]
+async fn test_search_special_characters_query() {
+    let (_tmp, store) = build_index_in_tempdir().await;
 
     // These contain regex metacharacters that could break the tantivy query parser.
     // The BM25Store should fall back to AllQuery rather than error.
     for query in &["func()", "a+b", "x.*y", "[array]", "a && b", "a || b"] {
-        let result = store.search(query, 5, None);
+        let result = store.search(query, 5, None).await;
         assert!(
             result.is_ok(),
             "search with special characters '{query}' should not error"
@@ -125,12 +128,13 @@ fn test_search_special_characters_query() {
 }
 
 /// Searching a nonexistent category should return empty results, not error.
-#[test]
-fn test_search_nonexistent_category() {
-    let (_tmp, store) = build_index_in_tempdir();
+#[tokio::test]
+async fn test_search_nonexistent_category() {
+    let (_tmp, store) = build_index_in_tempdir().await;
 
     let results = store
         .search("函数", 10, Some("nonexistent_category"))
+        .await
         .unwrap();
     assert!(
         results.is_empty(),
@@ -139,8 +143,8 @@ fn test_search_nonexistent_category() {
 }
 
 /// is_indexed() should reflect whether an index has been built on disk.
-#[test]
-fn test_is_indexed_lifecycle() {
+#[tokio::test]
+async fn test_is_indexed_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_lifecycle");
 
@@ -148,17 +152,17 @@ fn test_is_indexed_lifecycle() {
     assert!(!store.is_indexed(), "new store should not be indexed yet");
 
     let mut store = BM25Store::new(bm25_dir.clone());
-    store.build_from_chunks(&sample_chunks()).unwrap();
+    store.build_from_chunks(&sample_chunks()).await.unwrap();
     assert!(store.is_indexed(), "store should be indexed after build");
 }
 
 /// load() on a directory with no index should return false, not error.
-#[test]
-fn test_load_nonexistent_index() {
+#[tokio::test]
+async fn test_load_nonexistent_index() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_no_index");
     let mut store = BM25Store::new(bm25_dir);
-    let loaded = store.load().unwrap();
+    let loaded = store.load().await.unwrap();
     assert!(!loaded, "loading from empty dir should return false");
 }
 
@@ -170,10 +174,10 @@ async fn test_local_search_index_query_bm25_only() {
     let bm25_dir = tmp.path().join("bm25_via_index");
 
     let mut bm25 = BM25Store::new(bm25_dir);
-    bm25.build_from_chunks(&sample_chunks()).unwrap();
+    bm25.build_from_chunks(&sample_chunks()).await.unwrap();
 
     let settings = test_settings(tmp.path().to_path_buf());
-    let index = LocalSearchIndex::with_bm25(settings, bm25);
+    let index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
     let results = index.query("函数定义", 5, None, false).await.unwrap();
     assert!(!results.is_empty());
@@ -191,10 +195,10 @@ async fn test_local_search_index_query_with_category() {
     let bm25_dir = tmp.path().join("bm25_cat_query");
 
     let mut bm25 = BM25Store::new(bm25_dir);
-    bm25.build_from_chunks(&sample_chunks()).unwrap();
+    bm25.build_from_chunks(&sample_chunks()).await.unwrap();
 
     let settings = test_settings(tmp.path().to_path_buf());
-    let index = LocalSearchIndex::with_bm25(settings, bm25);
+    let index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
     let results = index.query("函数", 10, Some("cjpm"), false).await.unwrap();
     for r in &results {
@@ -207,7 +211,7 @@ async fn test_local_search_index_query_with_category() {
 async fn test_local_search_index_query_no_stores() {
     let tmp = TempDir::new().unwrap();
     let settings = test_settings(tmp.path().to_path_buf());
-    let index = LocalSearchIndex::new(settings);
+    let index = LocalSearchIndex::new(settings).await;
 
     let results = index.query("anything", 5, None, false).await.unwrap();
     assert!(results.is_empty(), "no stores = empty results");

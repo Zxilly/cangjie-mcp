@@ -61,22 +61,25 @@ fn make_result(text: &str, score: f64) -> SearchResult {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_openai_embedder_creates_successfully() {
+async fn test_openai_embedder_creates_successfully() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let embedder = embedding::create_embedder(&settings).unwrap();
+    let embedder = embedding::create_embedder(&settings).await.unwrap();
     assert!(embedder.is_some(), "should create OpenAI embedder");
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_openai_embed_single_text() {
+async fn test_openai_embed_single_text() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let embedder = embedding::create_embedder(&settings).unwrap().unwrap();
+    let embedder = embedding::create_embedder(&settings)
+        .await
+        .unwrap()
+        .unwrap();
 
     let texts = &["仓颉编程语言函数定义"];
-    let embeddings = embedder.embed(texts).unwrap();
+    let embeddings = embedder.embed(texts).await.unwrap();
 
     assert_eq!(embeddings.len(), 1);
     assert!(
@@ -91,14 +94,17 @@ fn test_openai_embed_single_text() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_openai_embed_multiple_texts() {
+async fn test_openai_embed_multiple_texts() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let embedder = embedding::create_embedder(&settings).unwrap().unwrap();
+    let embedder = embedding::create_embedder(&settings)
+        .await
+        .unwrap()
+        .unwrap();
 
     let texts = &["函数定义", "变量声明", "错误处理"];
-    let embeddings = embedder.embed(texts).unwrap();
+    let embeddings = embedder.embed(texts).await.unwrap();
 
     assert_eq!(embeddings.len(), 3);
     // All should have the same dimension
@@ -108,14 +114,17 @@ fn test_openai_embed_multiple_texts() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_openai_embed_chinese_and_english() {
+async fn test_openai_embed_chinese_and_english() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let embedder = embedding::create_embedder(&settings).unwrap().unwrap();
+    let embedder = embedding::create_embedder(&settings)
+        .await
+        .unwrap()
+        .unwrap();
 
     let texts = &["仓颉语言", "Cangjie programming language"];
-    let embeddings = embedder.embed(texts).unwrap();
+    let embeddings = embedder.embed(texts).await.unwrap();
     assert_eq!(embeddings.len(), 2);
 
     // Compute cosine similarity — semantically related texts should have high similarity
@@ -135,11 +144,14 @@ fn test_openai_embed_chinese_and_english() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_openai_embedder_model_name() {
+async fn test_openai_embedder_model_name() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let embedder = embedding::create_embedder(&settings).unwrap().unwrap();
+    let embedder = embedding::create_embedder(&settings)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(
         !embedder.model_name().is_empty(),
         "model name should not be empty"
@@ -150,7 +162,7 @@ fn test_openai_embedder_model_name() {
 #[ignore]
 async fn test_openai_reranker() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let reranker = rerank::create_reranker(&settings).unwrap();
+    let reranker = rerank::create_reranker(&settings).await.unwrap();
     assert!(reranker.is_enabled(), "OpenAI reranker should be enabled");
 
     let results = vec![
@@ -174,7 +186,7 @@ async fn test_openai_reranker() {
 #[ignore]
 async fn test_openai_reranker_empty_input() {
     let settings = openai_settings().expect("OPENAI_API_KEY not set");
-    let reranker = rerank::create_reranker(&settings).unwrap();
+    let reranker = rerank::create_reranker(&settings).await.unwrap();
 
     let reranked = reranker.rerank("query", vec![], 5).await.unwrap();
     assert!(reranked.is_empty());

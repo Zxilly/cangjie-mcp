@@ -248,22 +248,23 @@ impl MockDocumentSource {
     }
 }
 
+#[async_trait::async_trait]
 impl DocumentSource for MockDocumentSource {
-    fn is_available(&self) -> bool {
+    async fn is_available(&self) -> bool {
         true
     }
 
-    fn get_categories(&self) -> anyhow::Result<Vec<String>> {
+    async fn get_categories(&self) -> anyhow::Result<Vec<String>> {
         let mut cats: Vec<String> = self.categories.keys().cloned().collect();
         cats.sort();
         Ok(cats)
     }
 
-    fn get_topics_in_category(&self, category: &str) -> anyhow::Result<Vec<String>> {
+    async fn get_topics_in_category(&self, category: &str) -> anyhow::Result<Vec<String>> {
         Ok(self.categories.get(category).cloned().unwrap_or_default())
     }
 
-    fn get_document_by_topic(
+    async fn get_document_by_topic(
         &self,
         topic: &str,
         category: Option<&str>,
@@ -282,11 +283,11 @@ impl DocumentSource for MockDocumentSource {
         Ok(None)
     }
 
-    fn load_all_documents(&self) -> anyhow::Result<Vec<DocData>> {
+    async fn load_all_documents(&self) -> anyhow::Result<Vec<DocData>> {
         Ok(self.documents.values().cloned().collect())
     }
 
-    fn get_all_topic_names(&self) -> anyhow::Result<Vec<String>> {
+    async fn get_all_topic_names(&self) -> anyhow::Result<Vec<String>> {
         let mut names: Vec<String> = self
             .categories
             .values()
@@ -297,7 +298,7 @@ impl DocumentSource for MockDocumentSource {
         Ok(names)
     }
 
-    fn get_topic_titles(&self, category: &str) -> anyhow::Result<HashMap<String, String>> {
+    async fn get_topic_titles(&self, category: &str) -> anyhow::Result<HashMap<String, String>> {
         let topics = self.categories.get(category).cloned().unwrap_or_default();
         let mut titles = HashMap::new();
         for topic in &topics {

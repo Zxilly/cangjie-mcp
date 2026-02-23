@@ -25,17 +25,21 @@ pub fn chunk_document(doc: &DocData, max_chunk_size: usize) -> Vec<TextChunk> {
         .collect()
 }
 
-pub fn chunk_documents(docs: &[DocData], max_chunk_size: usize) -> Vec<TextChunk> {
-    let mut all_chunks = Vec::new();
-    for doc in docs {
-        all_chunks.extend(chunk_document(doc, max_chunk_size));
-    }
-    info!(
-        "Created {} chunks from {} documents.",
-        all_chunks.len(),
-        docs.len()
-    );
-    all_chunks
+pub async fn chunk_documents(docs: Vec<DocData>, max_chunk_size: usize) -> Vec<TextChunk> {
+    tokio::task::spawn_blocking(move || {
+        let mut all_chunks = Vec::new();
+        for doc in &docs {
+            all_chunks.extend(chunk_document(doc, max_chunk_size));
+        }
+        info!(
+            "Created {} chunks from {} documents.",
+            all_chunks.len(),
+            docs.len()
+        );
+        all_chunks
+    })
+    .await
+    .expect("chunk_documents task panicked")
 }
 
 #[cfg(test)]
@@ -100,10 +104,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_chunk_documents_multiple() {
+    #[tokio::test]
+    async fn test_chunk_documents_multiple() {
         let docs = vec![make_doc("Doc 1"), make_doc("Doc 2"), make_doc("Doc 3")];
-        let chunks = chunk_documents(&docs, 500);
+        let chunks = chunk_documents(docs, 500).await;
         assert_eq!(chunks.len(), 3);
     }
 }

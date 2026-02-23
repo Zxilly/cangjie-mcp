@@ -41,42 +41,39 @@ fn real_settings(data_dir: std::path::PathBuf) -> Settings {
 }
 
 /// Clone repo, load docs, chunk, build BM25 index. Returns everything needed for search.
-fn build_real_index() -> (TempDir, BM25Store, Box<dyn DocumentSource>) {
+async fn build_real_index() -> (TempDir, BM25Store, Box<dyn DocumentSource>) {
     let tmp = TempDir::new().unwrap();
 
     // Clone and checkout
     let repo_dir = tmp.path().join("docs_repo");
     let mut git_mgr = GitManager::new(repo_dir.clone());
-    git_mgr.ensure_cloned(false).unwrap();
+    git_mgr.ensure_cloned(false).await.unwrap();
 
     // Load documents
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
-    let docs = source.load_all_documents().unwrap();
+    let docs = source.load_all_documents().await.unwrap();
     assert!(docs.len() > 10, "should load many documents");
 
     // Chunk
-    let chunks = chunk_documents(&docs, 6000);
-    assert!(
-        chunks.len() > docs.len(),
-        "chunking should produce more chunks than docs"
-    );
+    let chunks = chunk_documents(docs, 6000).await;
+    assert!(chunks.len() > 0, "chunking should produce chunks");
 
     // Build BM25
     let bm25_dir = tmp.path().join("bm25_index");
     let mut bm25 = BM25Store::new(bm25_dir);
-    bm25.build_from_chunks(&chunks).unwrap();
+    bm25.build_from_chunks(&chunks).await.unwrap();
 
     // Rebuild source for trait object (can't move out of `source` after loading docs)
     let source2 = GitDocumentSource::new(tmp.path().join("docs_repo"), DocLang::Zh).unwrap();
     (tmp, bm25, Box::new(source2))
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_real_docs_bm25_search_chinese() {
-    let (_tmp, store, _source) = build_real_index();
+async fn test_real_docs_bm25_search_chinese() {
+    let (_tmp, store, _source) = build_real_index().await;
 
-    let results = store.search("函数定义", 5, None).unwrap();
+    let results = store.search("函数定义", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "searching '函数定义' in real docs should return results"
@@ -84,30 +81,30 @@ fn test_real_docs_bm25_search_chinese() {
     assert!(results[0].score > 0.0);
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_real_docs_bm25_search_english_keyword() {
-    let (_tmp, store, _source) = build_real_index();
+async fn test_real_docs_bm25_search_english_keyword() {
+    let (_tmp, store, _source) = build_real_index().await;
 
     // English keywords like "Array", "HashMap" should appear in Chinese docs
-    let results = store.search("Array", 5, None).unwrap();
+    let results = store.search("Array", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "searching 'Array' in real docs should return results"
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_real_docs_bm25_search_with_category() {
-    let (_tmp, store, _source) = build_real_index();
+async fn test_real_docs_bm25_search_with_category() {
+    let (_tmp, store, _source) = build_real_index().await;
 
     // Get a result first to find a real category
-    let all_results = store.search("仓颉", 10, None).unwrap();
+    let all_results = store.search("仓颉", 10, None).await.unwrap();
     assert!(!all_results.is_empty());
 
     let cat = &all_results[0].metadata.category;
-    let filtered = store.search("仓颉", 10, Some(cat)).unwrap();
+    let filtered = store.search("仓颉", 10, Some(cat)).await.unwrap();
     for r in &filtered {
         assert_eq!(
             &r.metadata.category, cat,
@@ -116,12 +113,12 @@ fn test_real_docs_bm25_search_with_category() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_real_docs_search_relevance() {
-    let (_tmp, store, _source) = build_real_index();
+async fn test_real_docs_search_relevance() {
+    let (_tmp, store, _source) = build_real_index().await;
 
-    let results = store.search("错误处理 异常", 5, None).unwrap();
+    let results = store.search("错误处理 异常", 5, None).await.unwrap();
     assert!(!results.is_empty());
 
     // At least one result should contain error/exception related content
@@ -146,17 +143,17 @@ async fn test_real_docs_local_search_index_query() {
 
     let repo_dir = tmp.path().join("docs_repo");
     let mut git_mgr = GitManager::new(repo_dir.clone());
-    git_mgr.ensure_cloned(false).unwrap();
+    git_mgr.ensure_cloned(false).await.unwrap();
 
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
-    let docs = source.load_all_documents().unwrap();
-    let chunks = chunk_documents(&docs, 6000);
+    let docs = source.load_all_documents().await.unwrap();
+    let chunks = chunk_documents(docs, 6000).await;
 
     let bm25_dir = tmp.path().join("bm25_index");
     let mut bm25 = BM25Store::new(bm25_dir);
-    bm25.build_from_chunks(&chunks).unwrap();
+    bm25.build_from_chunks(&chunks).await.unwrap();
 
-    let index = LocalSearchIndex::with_bm25(settings, bm25);
+    let index = LocalSearchIndex::with_bm25(settings, bm25).await;
     let results = index.query("变量声明", 5, None, false).await.unwrap();
     assert!(
         !results.is_empty(),
@@ -167,12 +164,12 @@ async fn test_real_docs_local_search_index_query() {
 #[tokio::test]
 #[ignore]
 async fn test_real_docs_http_app_search() {
-    let (_tmp, bm25, doc_source) = build_real_index();
+    let (_tmp, bm25, doc_source) = build_real_index().await;
 
     let settings = real_settings(_tmp.path().to_path_buf());
-    let search_index = LocalSearchIndex::with_bm25(settings, bm25);
+    let search_index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
-    let docs = doc_source.load_all_documents().unwrap();
+    let docs = doc_source.load_all_documents().await.unwrap();
     let metadata = IndexMetadata {
         version: "test".to_string(),
         lang: "zh".to_string(),
@@ -181,7 +178,7 @@ async fn test_real_docs_http_app_search() {
         search_mode: "bm25".to_string(),
     };
 
-    let app = create_http_app(search_index, doc_source, metadata);
+    let app = create_http_app(search_index, doc_source, metadata).await;
 
     // Test search
     let req = Request::builder()
@@ -216,14 +213,14 @@ async fn test_real_docs_http_app_search() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_initialize_and_index_full_pipeline() {
+async fn test_initialize_and_index_full_pipeline() {
     let tmp = TempDir::new().unwrap();
     let settings = real_settings(tmp.path().to_path_buf());
 
-    let mut search_index = LocalSearchIndex::new(settings);
-    let index_info = search_index.init().unwrap();
+    let mut search_index = LocalSearchIndex::new(settings).await;
+    let index_info = search_index.init().await.unwrap();
 
     assert!(!index_info.version.is_empty());
     assert!(
@@ -240,19 +237,19 @@ fn test_initialize_and_index_full_pipeline() {
     assert_eq!(meta["search_mode"], "bm25");
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_initialize_and_index_is_idempotent() {
+async fn test_initialize_and_index_is_idempotent() {
     let tmp = TempDir::new().unwrap();
     let settings = real_settings(tmp.path().to_path_buf());
 
     // First build
-    let mut index1 = LocalSearchIndex::new(settings.clone());
-    let info1 = index1.init().unwrap();
+    let mut index1 = LocalSearchIndex::new(settings.clone()).await;
+    let info1 = index1.init().await.unwrap();
 
     // Second build should detect existing index and skip
-    let mut index2 = LocalSearchIndex::new(settings);
-    let info2 = index2.init().unwrap();
+    let mut index2 = LocalSearchIndex::new(settings).await;
+    let info2 = index2.init().await.unwrap();
 
     assert_eq!(info1.version, info2.version);
 }

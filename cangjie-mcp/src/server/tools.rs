@@ -11,8 +11,8 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::config::{
-    IndexInfo, Settings, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K,
-    PACKAGE_FETCH_MULTIPLIER, SIMILARITY_THRESHOLD,
+    Settings, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER,
+    SIMILARITY_THRESHOLD,
 };
 use crate::indexer::document::loader::extract_code_blocks;
 use crate::indexer::document::source::{DocumentSource, GitDocumentSource, RemoteDocumentSource};
@@ -82,14 +82,15 @@ pub struct TopicsListResult {
 
 // ── Internal state ──────────────────────────────────────────────────────────
 
+#[derive(Clone)]
 enum SearchBackend {
-    Local(Box<LocalSearchIndex>),
-    Remote(RemoteSearchIndex),
+    Local(Arc<LocalSearchIndex>),
+    Remote(Arc<RemoteSearchIndex>),
 }
 
 struct InnerState {
     search: SearchBackend,
-    docs: Box<dyn DocumentSource>,
+    docs: Arc<dyn DocumentSource>,
 }
 
 // ── MCP Server ──────────────────────────────────────────────────────────────
@@ -110,38 +111,50 @@ impl CangjieServer {
         }
     }
 
+    /// Create a `CangjieServer` with pre-initialized state (for testing).
+    #[doc(hidden)]
+    pub fn with_local_state(
+        settings: Settings,
+        search: LocalSearchIndex,
+        docs: Box<dyn DocumentSource>,
+    ) -> Self {
+        let inner = InnerState {
+            search: SearchBackend::Local(Arc::new(search)),
+            docs: Arc::from(docs),
+        };
+        Self {
+            state: Arc::new(RwLock::new(Some(inner))),
+            settings,
+            tool_router: Self::tool_router(),
+        }
+    }
+
     /// Initialize the server (clone repo, build index, etc.)
     pub async fn initialize(&self) -> Result<()> {
         let settings = self.settings.clone();
         info!("Initializing index...");
 
-        let (search, index_info) = tokio::task::spawn_blocking({
-            let settings = settings.clone();
-            move || -> Result<(SearchBackend, IndexInfo)> {
-                if let Some(ref url) = settings.server_url {
-                    let remote = RemoteSearchIndex::new(url)?;
-                    let info = remote.init()?;
-                    Ok((SearchBackend::Remote(remote), info))
-                } else {
-                    let mut local = LocalSearchIndex::new(settings.clone());
-                    let info = local.init()?;
-                    Ok((SearchBackend::Local(Box::new(local)), info))
-                }
-            }
-        })
-        .await??;
+        let (search, index_info) = if let Some(ref url) = settings.server_url {
+            let remote = RemoteSearchIndex::new(url)?;
+            let info = remote.init().await?;
+            (SearchBackend::Remote(Arc::new(remote)), info)
+        } else {
+            let mut local = LocalSearchIndex::new(settings.clone()).await;
+            let info = local.init().await?;
+            (SearchBackend::Local(Arc::new(local)), info)
+        };
 
         crate::config::log_startup_info(&settings, &index_info);
 
-        let docs: Box<dyn DocumentSource> = if let Some(ref url) = settings.server_url {
-            Box::new(RemoteDocumentSource::new(url))
+        let docs: Arc<dyn DocumentSource> = if let Some(ref url) = settings.server_url {
+            Arc::new(RemoteDocumentSource::new(url))
         } else {
             let repo_dir = settings.docs_repo_dir();
             let lang = index_info.lang;
             let git_source =
                 tokio::task::spawn_blocking(move || GitDocumentSource::new(repo_dir, lang))
                     .await??;
-            Box::new(git_source)
+            Arc::new(git_source)
         };
 
         let inner = InnerState { search, docs };
@@ -156,12 +169,15 @@ impl CangjieServer {
         top_k: usize,
         category: Option<&str>,
     ) -> Result<Vec<SearchResult>> {
-        let state = self.state.read().await;
-        let inner = state
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Server not initialized"))?;
+        let search = {
+            let state = self.state.read().await;
+            let inner = state
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Server not initialized"))?;
+            inner.search.clone()
+        };
 
-        match &inner.search {
+        match search {
             SearchBackend::Local(local) => local.query(query, top_k, category, true).await,
             SearchBackend::Remote(remote) => remote.query(query, top_k, category, true).await,
         }
@@ -239,7 +255,7 @@ impl CangjieServer {
         name = "cangjie_search_docs",
         description = "Search Cangjie documentation using semantic search. Performs similarity search across all indexed documentation. Returns matching sections ranked by relevance with pagination support."
     )]
-    async fn search_docs(&self, Parameters(params): Parameters<SearchDocsParams>) -> String {
+    pub async fn search_docs(&self, Parameters(params): Parameters<SearchDocsParams>) -> String {
         let top_k = params.top_k.clamp(MIN_TOP_K, MAX_TOP_K);
         let category = params.category.as_deref().filter(|s| !s.is_empty());
         let package = params.package.as_deref().filter(|s| !s.is_empty());
@@ -323,17 +339,19 @@ impl CangjieServer {
         name = "cangjie_get_topic",
         description = "Get complete documentation for a specific topic. Retrieves the full content of a documentation file by topic name. Use cangjie_list_topics first to discover available topic names."
     )]
-    async fn get_topic(&self, Parameters(params): Parameters<GetTopicParams>) -> String {
-        let state = self.state.read().await;
-        let inner = match state.as_ref() {
-            Some(s) => s,
-            None => return "Server not initialized".to_string(),
+    pub async fn get_topic(&self, Parameters(params): Parameters<GetTopicParams>) -> String {
+        let docs = {
+            let state = self.state.read().await;
+            match state.as_ref() {
+                Some(s) => s.docs.clone(),
+                None => return "Server not initialized".to_string(),
+            }
         };
 
         let topic = &params.topic;
         let category = params.category.as_deref().filter(|s| !s.is_empty());
 
-        let doc = inner.docs.get_document_by_topic(topic, category);
+        let doc = docs.get_document_by_topic(topic, category).await;
 
         match doc {
             Ok(Some(doc)) => {
@@ -348,7 +366,7 @@ impl CangjieServer {
                     .unwrap_or_else(|e| format!("Serialization error: {e}"))
             }
             Ok(None) => {
-                let all_topics = inner.docs.get_all_topic_names().unwrap_or_default();
+                let all_topics = docs.get_all_topic_names().await.unwrap_or_default();
                 let mut suggestions: Vec<(String, f64)> = all_topics
                     .iter()
                     .map(|t| {
@@ -378,17 +396,19 @@ impl CangjieServer {
         name = "cangjie_list_topics",
         description = "List available documentation topics organized by category. Returns all documentation topics, optionally filtered by category. Use this to discover topic names for use with cangjie_get_topic."
     )]
-    async fn list_topics(&self, Parameters(params): Parameters<ListTopicsParams>) -> String {
-        let state = self.state.read().await;
-        let inner = match state.as_ref() {
-            Some(s) => s,
-            None => return "Server not initialized".to_string(),
+    pub async fn list_topics(&self, Parameters(params): Parameters<ListTopicsParams>) -> String {
+        let docs = {
+            let state = self.state.read().await;
+            match state.as_ref() {
+                Some(s) => s.docs.clone(),
+                None => return "Server not initialized".to_string(),
+            }
         };
 
         let filter_category = params.category.as_deref().filter(|s| !s.is_empty());
 
         if let Some(cat) = filter_category {
-            let all_cats = inner.docs.get_categories().unwrap_or_default();
+            let all_cats = docs.get_categories().await.unwrap_or_default();
             if !all_cats.contains(&cat.to_string()) {
                 let result = TopicsListResult {
                     categories: HashMap::new(),
@@ -405,13 +425,13 @@ impl CangjieServer {
         let categories_to_list = if let Some(cat) = filter_category {
             vec![cat.to_string()]
         } else {
-            inner.docs.get_categories().unwrap_or_default()
+            docs.get_categories().await.unwrap_or_default()
         };
 
         let mut categories = HashMap::new();
         for cat in &categories_to_list {
-            let topics = inner.docs.get_topics_in_category(cat).unwrap_or_default();
-            let titles = inner.docs.get_topic_titles(cat).unwrap_or_default();
+            let topics = docs.get_topics_in_category(cat).await.unwrap_or_default();
+            let titles = docs.get_topic_titles(cat).await.unwrap_or_default();
             if !topics.is_empty() {
                 let infos: Vec<TopicInfo> = topics
                     .iter()
@@ -639,5 +659,175 @@ impl ServerHandler for CangjieServer {
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::indexer::{SearchResult, SearchResultMetadata};
+
+    #[test]
+    fn test_has_package_direct_match() {
+        let result = SearchResult {
+            text: "This text mentions std.collection directly".to_string(),
+            score: 1.0,
+            metadata: SearchResultMetadata::default(),
+        };
+        assert!(CangjieServer::has_package(&result, "std.collection"));
+    }
+
+    #[test]
+    fn test_has_package_import_match() {
+        let result = SearchResult {
+            text: "You can use import std.fs to access filesystem APIs".to_string(),
+            score: 1.0,
+            metadata: SearchResultMetadata::default(),
+        };
+        assert!(CangjieServer::has_package(&result, "std.fs"));
+    }
+
+    #[test]
+    fn test_has_package_no_match() {
+        let result = SearchResult {
+            text: "This text has nothing relevant to any package".to_string(),
+            score: 1.0,
+            metadata: SearchResultMetadata::default(),
+        };
+        assert!(!CangjieServer::has_package(&result, "std.collection"));
+    }
+
+    #[test]
+    fn test_get_info_without_cangjie_home() {
+        std::env::remove_var("CANGJIE_HOME");
+
+        let settings = Settings {
+            docs_version: "dev".to_string(),
+            docs_lang: crate::config::DocLang::Zh,
+            embedding_type: crate::config::EmbeddingType::None,
+            local_model: String::new(),
+            rerank_type: crate::config::RerankType::None,
+            rerank_model: String::new(),
+            rerank_top_k: 5,
+            rerank_initial_k: 20,
+            rrf_k: 60,
+            chunk_max_size: 6000,
+            data_dir: std::path::PathBuf::from("/tmp/test-info"),
+            server_url: None,
+            openai_api_key: None,
+            openai_base_url: "https://api.example.com".to_string(),
+            openai_model: "test".to_string(),
+            prebuilt: crate::config::PrebuiltMode::Off,
+        };
+
+        let server = CangjieServer::new(settings);
+        let info = server.get_info();
+
+        assert!(
+            info.instructions.is_some(),
+            "instructions should be present"
+        );
+        let instructions = info.instructions.unwrap();
+        assert!(!instructions.is_empty(), "instructions should not be empty");
+    }
+
+    #[test]
+    fn test_get_info_with_cangjie_home() {
+        std::env::set_var("CANGJIE_HOME", "/some/path");
+
+        let settings = Settings {
+            docs_version: "dev".to_string(),
+            docs_lang: crate::config::DocLang::Zh,
+            embedding_type: crate::config::EmbeddingType::None,
+            local_model: String::new(),
+            rerank_type: crate::config::RerankType::None,
+            rerank_model: String::new(),
+            rerank_top_k: 5,
+            rerank_initial_k: 20,
+            rrf_k: 60,
+            chunk_max_size: 6000,
+            data_dir: std::path::PathBuf::from("/tmp/test-info"),
+            server_url: None,
+            openai_api_key: None,
+            openai_base_url: "https://api.example.com".to_string(),
+            openai_model: "test".to_string(),
+            prebuilt: crate::config::PrebuiltMode::Off,
+        };
+
+        let server = CangjieServer::new(settings);
+        let info = server.get_info();
+
+        assert!(
+            info.instructions.is_some(),
+            "instructions should be present"
+        );
+        let instructions = info.instructions.unwrap();
+        assert!(!instructions.is_empty(), "instructions should not be empty");
+        std::env::remove_var("CANGJIE_HOME");
+    }
+
+    #[tokio::test]
+    async fn test_get_topic_not_initialized() {
+        let settings = Settings {
+            docs_version: "dev".to_string(),
+            docs_lang: crate::config::DocLang::Zh,
+            embedding_type: crate::config::EmbeddingType::None,
+            local_model: String::new(),
+            rerank_type: crate::config::RerankType::None,
+            rerank_model: String::new(),
+            rerank_top_k: 5,
+            rerank_initial_k: 20,
+            rrf_k: 60,
+            chunk_max_size: 6000,
+            data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
+            server_url: None,
+            openai_api_key: None,
+            openai_base_url: "https://api.example.com".to_string(),
+            openai_model: "test".to_string(),
+            prebuilt: crate::config::PrebuiltMode::Off,
+        };
+
+        let server = CangjieServer::new(settings);
+        let result = server
+            .get_topic(rmcp::handler::server::wrapper::Parameters(
+                super::GetTopicParams {
+                    topic: "functions".to_string(),
+                    category: None,
+                },
+            ))
+            .await;
+
+        assert_eq!(result, "Server not initialized");
+    }
+
+    #[tokio::test]
+    async fn test_list_topics_not_initialized() {
+        let settings = Settings {
+            docs_version: "dev".to_string(),
+            docs_lang: crate::config::DocLang::Zh,
+            embedding_type: crate::config::EmbeddingType::None,
+            local_model: String::new(),
+            rerank_type: crate::config::RerankType::None,
+            rerank_model: String::new(),
+            rerank_top_k: 5,
+            rerank_initial_k: 20,
+            rrf_k: 60,
+            chunk_max_size: 6000,
+            data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
+            server_url: None,
+            openai_api_key: None,
+            openai_base_url: "https://api.example.com".to_string(),
+            openai_model: "test".to_string(),
+            prebuilt: crate::config::PrebuiltMode::Off,
+        };
+
+        let server = CangjieServer::new(settings);
+        let result = server
+            .list_topics(rmcp::handler::server::wrapper::Parameters(
+                super::ListTopicsParams { category: None },
+            ))
+            .await;
+
+        assert_eq!(result, "Server not initialized");
     }
 }

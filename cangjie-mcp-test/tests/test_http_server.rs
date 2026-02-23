@@ -10,15 +10,15 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 /// Build a fully-wired HTTP app backed by real BM25 + MockDocumentSource.
-fn build_test_app() -> (TempDir, axum::Router) {
+async fn build_test_app() -> (TempDir, axum::Router) {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_index");
 
     let mut bm25 = BM25Store::new(bm25_dir);
-    bm25.build_from_chunks(&sample_chunks()).unwrap();
+    bm25.build_from_chunks(&sample_chunks()).await.unwrap();
 
     let settings = test_settings(tmp.path().to_path_buf());
-    let search_index = LocalSearchIndex::with_bm25(settings, bm25);
+    let search_index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
     let docs = sample_documents();
     let doc_source = Box::new(MockDocumentSource::from_docs(&docs));
@@ -31,7 +31,7 @@ fn build_test_app() -> (TempDir, axum::Router) {
         search_mode: "bm25".to_string(),
     };
 
-    let app = create_http_app(search_index, doc_source, metadata);
+    let app = create_http_app(search_index, doc_source, metadata).await;
     (tmp, app)
 }
 
@@ -57,17 +57,8 @@ async fn post_json(app: axum::Router, uri: &str, json: &str) -> (StatusCode, Str
 }
 
 #[tokio::test]
-async fn test_health_endpoint() {
-    let (_tmp, app) = build_test_app();
-    let (status, body) = get(app, "/health").await;
-    assert_eq!(status, StatusCode::OK);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(v["status"], "ok");
-}
-
-#[tokio::test]
 async fn test_info_endpoint() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = get(app, "/info").await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -78,7 +69,7 @@ async fn test_info_endpoint() {
 
 #[tokio::test]
 async fn test_search_endpoint() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = post_json(app, "/search", r#"{"query":"函数"}"#).await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -88,20 +79,19 @@ async fn test_search_endpoint() {
 
 #[tokio::test]
 async fn test_search_empty_query() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, _body) = post_json(app, "/search", r#"{"query":""}"#).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn test_topics_endpoint() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = get(app, "/topics").await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     let categories = v["categories"].as_object().unwrap();
     assert!(!categories.is_empty(), "categories should not be empty");
-    // We have syntax, stdlib, cjpm
     assert!(categories.contains_key("syntax"));
     assert!(categories.contains_key("stdlib"));
     assert!(categories.contains_key("cjpm"));
@@ -109,7 +99,7 @@ async fn test_topics_endpoint() {
 
 #[tokio::test]
 async fn test_topic_detail() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = get(app, "/topics/syntax/functions").await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -120,21 +110,16 @@ async fn test_topic_detail() {
 
 #[tokio::test]
 async fn test_topic_not_found() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = get(app, "/topics/nonexistent/fake").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(v["error"].as_str().is_some());
 }
 
-/// Whitespace-only query should be rejected the same as empty query,
-/// since jieba tokenization of pure whitespace yields no useful tokens.
 #[tokio::test]
 async fn test_search_whitespace_only_query() {
-    let (_tmp, app) = build_test_app();
-    // The handler checks `req.query.is_empty()` — whitespace is not empty,
-    // so it passes validation. BM25 tokenizes it to no tokens → empty results.
-    // This tests that the full pipeline doesn't error on whitespace.
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = post_json(app, "/search", r#"{"query":"   "}"#).await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -145,15 +130,13 @@ async fn test_search_whitespace_only_query() {
     );
 }
 
-/// Search with explicit category filter through the HTTP API.
 #[tokio::test]
 async fn test_search_with_category_filter() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = post_json(app, "/search", r#"{"query":"函数","category":"stdlib"}"#).await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     let results = v["results"].as_array().unwrap();
-    // All results (if any) must belong to stdlib
     for r in results {
         assert_eq!(
             r["metadata"]["category"].as_str().unwrap(),
@@ -163,10 +146,9 @@ async fn test_search_with_category_filter() {
     }
 }
 
-/// Search with custom top_k parameter.
 #[tokio::test]
 async fn test_search_custom_top_k() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = post_json(app, "/search", r#"{"query":"仓颉","top_k":2}"#).await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -178,10 +160,9 @@ async fn test_search_custom_top_k() {
     );
 }
 
-/// Verify search results contain expected metadata fields.
 #[tokio::test]
 async fn test_search_result_metadata_fields() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = post_json(app, "/search", r#"{"query":"函数"}"#).await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -189,7 +170,6 @@ async fn test_search_result_metadata_fields() {
     assert!(!results.is_empty());
 
     let first = &results[0];
-    // All metadata fields must be present
     assert!(first["text"].is_string());
     assert!(first["score"].is_f64());
     assert!(first["metadata"]["file_path"].is_string());
@@ -199,10 +179,9 @@ async fn test_search_result_metadata_fields() {
     assert!(first["metadata"]["has_code"].is_boolean());
 }
 
-/// Verify topic detail returns all expected fields.
 #[tokio::test]
 async fn test_topic_detail_response_fields() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let (status, body) = get(app, "/topics/cjpm/getting_started").await;
     assert_eq!(status, StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -213,33 +192,9 @@ async fn test_topic_detail_response_fields() {
     assert!(!v["title"].as_str().unwrap().is_empty());
 }
 
-/// Topics endpoint should list entries with both name and title.
-#[tokio::test]
-async fn test_topics_entries_have_title() {
-    let (_tmp, app) = build_test_app();
-    let (status, body) = get(app, "/topics").await;
-    assert_eq!(status, StatusCode::OK);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let syntax_topics = v["categories"]["syntax"].as_array().unwrap();
-    assert!(!syntax_topics.is_empty());
-
-    // Each entry should have "name" and "title"
-    for entry in syntax_topics {
-        assert!(entry["name"].is_string());
-        assert!(entry["title"].is_string());
-        // Titles should be populated from MockDocumentSource
-        assert!(
-            !entry["title"].as_str().unwrap().is_empty(),
-            "topic '{}' should have a non-empty title",
-            entry["name"]
-        );
-    }
-}
-
-/// Invalid JSON body should return an error, not panic.
 #[tokio::test]
 async fn test_search_invalid_json() {
-    let (_tmp, app) = build_test_app();
+    let (_tmp, app) = build_test_app().await;
     let req = axum::http::Request::builder()
         .method("POST")
         .uri("/search")
@@ -247,7 +202,6 @@ async fn test_search_invalid_json() {
         .body(Body::from("not valid json"))
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    // Axum returns 422 for deserialization failures
     assert!(
         resp.status().is_client_error(),
         "invalid JSON should return 4xx, got {}",

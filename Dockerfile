@@ -95,8 +95,8 @@ ENV CANGJIE_DOCS_VERSION=${CANGJIE_DOCS_VERSION}
 ENV CANGJIE_DOCS_LANG=${CANGJIE_DOCS_LANG}
 ENV OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL}
 ENV OPENAI_BASE_URL=${OPENAI_BASE_URL}
-# Internal: records the build-time model for entrypoint validation
-ENV CANGJIE_BUILD_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL}
+# Record build-time model to a file (immune to runtime ENV overrides)
+RUN echo "${OPENAI_EMBEDDING_MODEL}" > /data/.build_embedding_model
 
 USER nonroot
 

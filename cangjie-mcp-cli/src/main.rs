@@ -163,19 +163,19 @@ async fn main() -> Result<()> {
     let settings = cli.to_settings();
 
     match cli.command {
-        Some(Commands::Index) => run_index(settings),
+        Some(Commands::Index) => run_index(settings).await,
         None => run_mcp_server(settings).await,
     }
 }
 
-fn run_index(settings: Settings) -> Result<()> {
+async fn run_index(settings: Settings) -> Result<()> {
     info!(
         "Building index (version={}, lang={})...",
         settings.docs_version, settings.docs_lang
     );
 
-    let mut search_index = LocalSearchIndex::new(settings.clone());
-    let index_info = search_index.init()?;
+    let mut search_index = LocalSearchIndex::new(settings.clone()).await;
+    let index_info = search_index.init().await?;
 
     config::log_startup_info(&settings, &index_info);
     info!("Index built successfully.");

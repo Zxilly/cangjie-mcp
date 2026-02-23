@@ -433,4 +433,18 @@ mod tests {
         assert_eq!(info.embedding_model_name, "none");
         assert_eq!(info.data_dir, PathBuf::from("/tmp/test-data"));
     }
+
+    #[test]
+    fn test_prebuilt_mode_is_prebuilt() {
+        assert!(!PrebuiltMode::Off.is_prebuilt());
+        assert!(PrebuiltMode::Auto.is_prebuilt());
+        assert!(PrebuiltMode::Version("1.0".to_string()).is_prebuilt());
+    }
+
+    #[test]
+    fn test_embedding_type_is_enabled() {
+        assert!(!EmbeddingType::None.is_enabled());
+        assert!(EmbeddingType::Local.is_enabled());
+        assert!(EmbeddingType::OpenAI.is_enabled());
+    }
 }

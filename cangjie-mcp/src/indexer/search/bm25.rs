@@ -149,179 +149,215 @@ impl BM25Store {
         self.index_dir.exists() && self.index_dir.join("meta.json").exists()
     }
 
-    pub fn build_from_chunks(&mut self, chunks: &[TextChunk]) -> Result<()> {
+    pub async fn build_from_chunks(&mut self, chunks: &[TextChunk]) -> Result<()> {
         if chunks.is_empty() {
             warn!("No chunks provided for BM25 indexing.");
             return Ok(());
         }
 
-        info!("Building BM25 index from {} chunks...", chunks.len());
-        std::fs::create_dir_all(&self.index_dir)?;
+        let chunks = chunks.to_vec();
+        let index_dir = self.index_dir.clone();
+        let schema = self.schema.clone();
+        let ft = self.field_text;
+        let ffp = self.field_file_path;
+        let fc = self.field_category;
+        let fto = self.field_topic;
+        let fti = self.field_title;
+        let fhc = self.field_has_code;
 
-        let index = Index::create_in_dir(&self.index_dir, self.schema.clone())
-            .context("Failed to create tantivy index")?;
-        Self::register_tokenizer(&index);
+        let (index, reader) =
+            tokio::task::spawn_blocking(move || -> Result<(Index, IndexReader)> {
+                info!("Building BM25 index from {} chunks...", chunks.len());
+                std::fs::create_dir_all(&index_dir)?;
 
-        let mut writer: IndexWriter = index
-            .writer(INDEX_WRITER_HEAP_BYTES)
-            .context("Failed to create index writer")?;
+                let index = Index::create_in_dir(&index_dir, schema)
+                    .context("Failed to create tantivy index")?;
+                Self::register_tokenizer(&index);
 
-        for chunk in chunks {
-            let mut doc = TantivyDocument::new();
-            doc.add_text(self.field_text, &chunk.text);
-            doc.add_text(self.field_file_path, &chunk.metadata.file_path);
-            doc.add_text(self.field_category, &chunk.metadata.category);
-            doc.add_text(self.field_topic, &chunk.metadata.topic);
-            doc.add_text(self.field_title, &chunk.metadata.title);
-            doc.add_text(
-                self.field_has_code,
-                if chunk.metadata.has_code {
-                    "true"
-                } else {
-                    "false"
-                },
-            );
-            writer.add_document(doc)?;
-        }
+                let mut writer: IndexWriter = index
+                    .writer(INDEX_WRITER_HEAP_BYTES)
+                    .context("Failed to create index writer")?;
 
-        writer.commit()?;
-        self.reader = Some(
-            index
-                .reader_builder()
-                .reload_policy(ReloadPolicy::Manual)
-                .try_into()?,
-        );
+                for chunk in &chunks {
+                    let mut doc = TantivyDocument::new();
+                    doc.add_text(ft, &chunk.text);
+                    doc.add_text(ffp, &chunk.metadata.file_path);
+                    doc.add_text(fc, &chunk.metadata.category);
+                    doc.add_text(fto, &chunk.metadata.topic);
+                    doc.add_text(fti, &chunk.metadata.title);
+                    doc.add_text(
+                        fhc,
+                        if chunk.metadata.has_code {
+                            "true"
+                        } else {
+                            "false"
+                        },
+                    );
+                    writer.add_document(doc)?;
+                }
+
+                writer.commit()?;
+                let reader = index
+                    .reader_builder()
+                    .reload_policy(ReloadPolicy::Manual)
+                    .try_into()?;
+
+                info!("BM25 index built and saved to {:?}", index_dir);
+                Ok((index, reader))
+            })
+            .await
+            .context("BM25 build task panicked")??;
+
         self.index = Some(index);
-
-        info!("BM25 index built and saved to {:?}", self.index_dir);
+        self.reader = Some(reader);
         Ok(())
     }
 
-    pub fn load(&mut self) -> Result<bool> {
+    pub async fn load(&mut self) -> Result<bool> {
         if !self.is_indexed() {
             return Ok(false);
         }
 
-        let index = Index::open_in_dir(&self.index_dir).context("Failed to open tantivy index")?;
-        Self::register_tokenizer(&index);
-        self.reader = Some(
-            index
-                .reader_builder()
-                .reload_policy(ReloadPolicy::Manual)
-                .try_into()?,
-        );
-        self.index = Some(index);
+        let index_dir = self.index_dir.clone();
 
-        info!("BM25 index loaded from {:?}", self.index_dir);
+        let (index, reader) =
+            tokio::task::spawn_blocking(move || -> Result<(Index, IndexReader)> {
+                let index =
+                    Index::open_in_dir(&index_dir).context("Failed to open tantivy index")?;
+                Self::register_tokenizer(&index);
+                let reader = index
+                    .reader_builder()
+                    .reload_policy(ReloadPolicy::Manual)
+                    .try_into()?;
+                info!("BM25 index loaded from {:?}", index_dir);
+                Ok((index, reader))
+            })
+            .await
+            .context("BM25 load task panicked")??;
+
+        self.index = Some(index);
+        self.reader = Some(reader);
         Ok(true)
     }
 
-    pub fn search(
+    pub async fn search(
         &self,
         query: &str,
         top_k: usize,
         category: Option<&str>,
     ) -> Result<Vec<SearchResult>> {
         let index = match &self.index {
-            Some(idx) => idx,
+            Some(idx) => idx.clone(),
             None => return Ok(Vec::new()),
         };
         let reader = match &self.reader {
-            Some(r) => r,
+            Some(r) => r.clone(),
             None => return Ok(Vec::new()),
         };
 
-        // Tokenize query with jieba for better CJK search
-        let jieba = Jieba::new();
-        let query_lower = query.to_lowercase();
-        let tokens: Vec<&str> = jieba
-            .cut_for_search(&query_lower, true)
-            .into_iter()
-            .filter(|w| !w.trim().is_empty())
-            .collect();
+        let query = query.to_string();
+        let category = category.map(|s| s.to_string());
+        let field_text = self.field_text;
+        let field_file_path = self.field_file_path;
+        let field_category = self.field_category;
+        let field_topic = self.field_topic;
+        let field_title = self.field_title;
+        let field_has_code = self.field_has_code;
 
-        if tokens.is_empty() {
-            return Ok(Vec::new());
-        }
+        tokio::task::spawn_blocking(move || {
+            // Tokenize query with jieba for better CJK search
+            let jieba = Jieba::new();
+            let query_lower = query.to_lowercase();
+            let tokens: Vec<&str> = jieba
+                .cut_for_search(&query_lower, true)
+                .into_iter()
+                .filter(|w| !w.trim().is_empty())
+                .collect();
 
-        let query_str = tokens.join(" ");
-        let retrieve_k = if category.is_some() {
-            top_k * CATEGORY_FILTER_MULTIPLIER
-        } else {
-            top_k
-        };
+            if tokens.is_empty() {
+                return Ok(Vec::new());
+            }
 
-        let searcher = reader.searcher();
-        let query_parser = QueryParser::for_index(index, vec![self.field_text]);
+            let query_str = tokens.join(" ");
+            let retrieve_k = if category.is_some() {
+                top_k * CATEGORY_FILTER_MULTIPLIER
+            } else {
+                top_k
+            };
 
-        let tantivy_query = query_parser.parse_query(&query_str).unwrap_or_else(|_| {
-            // Fallback: treat as simple term query
-            Box::new(tantivy::query::AllQuery)
-        });
+            let searcher = reader.searcher();
+            let query_parser = QueryParser::for_index(&index, vec![field_text]);
 
-        let top_docs = searcher
-            .search(&tantivy_query, &TopDocs::with_limit(retrieve_k))
-            .context("Search failed")?;
+            let tantivy_query = query_parser
+                .parse_query(&query_str)
+                .unwrap_or_else(|_| Box::new(tantivy::query::AllQuery));
 
-        let mut results = Vec::new();
-        for (score, doc_addr) in top_docs {
-            let doc: TantivyDocument = searcher.doc(doc_addr)?;
+            let top_docs = searcher
+                .search(&tantivy_query, &TopDocs::with_limit(retrieve_k))
+                .context("Search failed")?;
 
-            let file_path = doc
-                .get_first(self.field_file_path)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let cat = doc
-                .get_first(self.field_category)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let topic = doc
-                .get_first(self.field_topic)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let title = doc
-                .get_first(self.field_title)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let has_code = doc
-                .get_first(self.field_has_code)
-                .and_then(|v| v.as_str())
-                .unwrap_or("false")
-                == "true";
-            let text = doc
-                .get_first(self.field_text)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            let mut results = Vec::new();
+            for (score, doc_addr) in top_docs {
+                let doc: TantivyDocument = searcher.doc(doc_addr)?;
 
-            // Apply category filter
-            if let Some(filter_cat) = category {
-                if cat != filter_cat {
-                    continue;
+                let file_path = doc
+                    .get_first(field_file_path)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let cat = doc
+                    .get_first(field_category)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let topic = doc
+                    .get_first(field_topic)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let title = doc
+                    .get_first(field_title)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let has_code = doc
+                    .get_first(field_has_code)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("false")
+                    == "true";
+                let text = doc
+                    .get_first(field_text)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                // Apply category filter
+                if let Some(ref filter_cat) = category {
+                    if cat != *filter_cat {
+                        continue;
+                    }
+                }
+
+                results.push(SearchResult {
+                    text,
+                    score: score as f64,
+                    metadata: SearchResultMetadata {
+                        file_path,
+                        category: cat,
+                        topic,
+                        title,
+                        has_code,
+                    },
+                });
+
+                if results.len() >= top_k {
+                    break;
                 }
             }
 
-            results.push(SearchResult {
-                text,
-                score: score as f64,
-                metadata: SearchResultMetadata {
-                    file_path,
-                    category: cat,
-                    topic,
-                    title,
-                    has_code,
-                },
-            });
-
-            if results.len() >= top_k {
-                break;
-            }
-        }
-
-        Ok(results)
+            Ok(results)
+        })
+        .await
+        .context("BM25 search task panicked")?
     }
 }

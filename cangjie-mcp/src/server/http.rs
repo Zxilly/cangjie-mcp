@@ -155,6 +155,7 @@ async fn topic_detail_handler(
     let doc = match state
         .doc_source
         .get_document_by_topic(&topic, Some(&category))
+        .await
     {
         Ok(Some(doc)) => doc,
         Ok(None) => {
@@ -191,17 +192,17 @@ async fn topic_detail_handler(
 
 // ── App builder ─────────────────────────────────────────────────────────────
 
-pub fn create_http_app(
+pub async fn create_http_app(
     search_index: LocalSearchIndex,
     doc_source: Box<dyn DocumentSource>,
     index_metadata: IndexMetadata,
 ) -> Router {
     // Pre-compute topics cache
     let mut topics_cache = HashMap::new();
-    if let Ok(categories) = doc_source.get_categories() {
+    if let Ok(categories) = doc_source.get_categories().await {
         for cat in &categories {
-            if let Ok(topics) = doc_source.get_topics_in_category(cat) {
-                let titles = doc_source.get_topic_titles(cat).unwrap_or_default();
+            if let Ok(topics) = doc_source.get_topics_in_category(cat).await {
+                let titles = doc_source.get_topic_titles(cat).await.unwrap_or_default();
                 let entries: Vec<TopicEntry> = topics
                     .iter()
                     .map(|t| TopicEntry {

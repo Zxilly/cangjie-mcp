@@ -28,7 +28,7 @@ impl RerankerKind {
             RerankerKind::NoOp => noop::NoOpReranker.rerank(results, top_k),
             RerankerKind::OpenAI(r) => r.rerank(query, results, top_k).await,
             #[cfg(feature = "local")]
-            RerankerKind::Local(r) => r.rerank(query, results, top_k),
+            RerankerKind::Local(r) => r.rerank(query, results, top_k).await,
         }
     }
 
@@ -39,7 +39,7 @@ impl RerankerKind {
 
 // -- Factory -----------------------------------------------------------------
 
-pub fn create_reranker(settings: &Settings) -> Result<RerankerKind> {
+pub async fn create_reranker(settings: &Settings) -> Result<RerankerKind> {
     match settings.rerank_type {
         RerankType::None => Ok(RerankerKind::NoOp),
         RerankType::OpenAI => {
@@ -56,7 +56,7 @@ pub fn create_reranker(settings: &Settings) -> Result<RerankerKind> {
         RerankType::Local => {
             #[cfg(feature = "local")]
             {
-                let reranker = local::LocalReranker::new()?;
+                let reranker = local::LocalReranker::new().await?;
                 Ok(RerankerKind::Local(Box::new(reranker)))
             }
             #[cfg(not(feature = "local"))]
@@ -112,17 +112,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_create_noop_reranker() {
+    #[tokio::test]
+    async fn test_create_noop_reranker() {
         let settings = test_settings(RerankType::None);
-        let reranker = create_reranker(&settings).unwrap();
+        let reranker = create_reranker(&settings).await.unwrap();
         assert!(!reranker.is_enabled());
     }
 
-    #[test]
-    fn test_create_openai_reranker_no_key() {
+    #[tokio::test]
+    async fn test_create_openai_reranker_no_key() {
         let settings = test_settings(RerankType::OpenAI);
-        let result = create_reranker(&settings);
+        let result = create_reranker(&settings).await;
         assert!(result.is_err());
     }
 

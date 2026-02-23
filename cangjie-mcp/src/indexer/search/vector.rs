@@ -70,7 +70,10 @@ impl VectorStore {
 
         for (i, batch_chunks) in chunks.chunks(batch_size).enumerate() {
             let texts: Vec<&str> = batch_chunks.iter().map(|c| c.text.as_str()).collect();
-            let embeddings = embedder.embed(&texts).context("Embedding batch failed")?;
+            let embeddings = embedder
+                .embed(&texts)
+                .await
+                .context("Embedding batch failed")?;
 
             if embeddings.is_empty() {
                 continue;

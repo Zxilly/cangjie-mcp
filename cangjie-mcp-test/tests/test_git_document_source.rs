@@ -8,43 +8,43 @@ use cangjie_mcp::indexer::document::source::{DocumentSource, GitDocumentSource};
 use cangjie_mcp::repo::GitManager;
 use tempfile::TempDir;
 
-fn setup_repo() -> (TempDir, std::path::PathBuf) {
+async fn setup_repo() -> (TempDir, std::path::PathBuf) {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
     let mut mgr = GitManager::new(repo_dir.clone());
-    mgr.ensure_cloned(false).unwrap();
+    mgr.ensure_cloned(false).await.unwrap();
     (tmp, repo_dir)
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_is_available() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_is_available() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
-    assert!(source.is_available());
+    assert!(source.is_available().await);
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_get_categories() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_get_categories() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
-    let categories = source.get_categories().unwrap();
+    let categories = source.get_categories().await.unwrap();
     assert!(!categories.is_empty(), "should have at least one category");
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_get_topics_in_category() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_get_topics_in_category() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
-    let categories = source.get_categories().unwrap();
+    let categories = source.get_categories().await.unwrap();
     assert!(!categories.is_empty());
 
     let first_cat = &categories[0];
-    let topics = source.get_topics_in_category(first_cat).unwrap();
+    let topics = source.get_topics_in_category(first_cat).await.unwrap();
     assert!(
         !topics.is_empty(),
         "category '{}' should have topics",
@@ -52,19 +52,20 @@ fn test_git_source_get_topics_in_category() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_get_document_by_topic() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_get_document_by_topic() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
-    let categories = source.get_categories().unwrap();
+    let categories = source.get_categories().await.unwrap();
     let first_cat = &categories[0];
-    let topics = source.get_topics_in_category(first_cat).unwrap();
+    let topics = source.get_topics_in_category(first_cat).await.unwrap();
     let first_topic = &topics[0];
 
     let doc = source
         .get_document_by_topic(first_topic, Some(first_cat))
+        .await
         .unwrap();
     assert!(
         doc.is_some(),
@@ -78,13 +79,13 @@ fn test_git_source_get_document_by_topic() {
     assert_eq!(doc.metadata.topic, *first_topic);
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_load_all_documents() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_load_all_documents() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
-    let docs = source.load_all_documents().unwrap();
+    let docs = source.load_all_documents().await.unwrap();
     assert!(
         docs.len() > 10,
         "should load a substantial number of documents, got {}",
@@ -100,13 +101,13 @@ fn test_git_source_load_all_documents() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_get_all_topic_names() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_get_all_topic_names() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
-    let names = source.get_all_topic_names().unwrap();
+    let names = source.get_all_topic_names().await.unwrap();
     assert!(
         names.len() > 5,
         "should have many topic names, got {}",
@@ -114,15 +115,15 @@ fn test_git_source_get_all_topic_names() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_get_topic_titles() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_get_topic_titles() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
-    let categories = source.get_categories().unwrap();
+    let categories = source.get_categories().await.unwrap();
     let first_cat = &categories[0];
-    let titles = source.get_topic_titles(first_cat).unwrap();
+    let titles = source.get_topic_titles(first_cat).await.unwrap();
     assert!(
         !titles.is_empty(),
         "category '{}' should have topic titles",
@@ -140,26 +141,28 @@ fn test_git_source_get_topic_titles() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_nonexistent_topic_returns_none() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_nonexistent_topic_returns_none() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
     let doc = source
         .get_document_by_topic("nonexistent_topic_xyz", None)
+        .await
         .unwrap();
     assert!(doc.is_none());
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_git_source_nonexistent_category_returns_empty() {
-    let (_tmp, repo_dir) = setup_repo();
+async fn test_git_source_nonexistent_category_returns_empty() {
+    let (_tmp, repo_dir) = setup_repo().await;
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
 
     let topics = source
         .get_topics_in_category("nonexistent_category_xyz")
+        .await
         .unwrap();
     assert!(topics.is_empty());
 }

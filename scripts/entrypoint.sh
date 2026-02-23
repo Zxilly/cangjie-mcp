@@ -21,7 +21,9 @@ if [ "$CANGJIE_RERANK_TYPE" != "openai" ]; then
 fi
 
 # --- Validate embedding model matches build-time value ---
-if [ -n "$CANGJIE_BUILD_EMBEDDING_MODEL" ] && [ "$OPENAI_EMBEDDING_MODEL" != "$CANGJIE_BUILD_EMBEDDING_MODEL" ]; then
+BUILD_MODEL_FILE="/data/.build_embedding_model"
+CANGJIE_BUILD_EMBEDDING_MODEL=$(cat "$BUILD_MODEL_FILE")
+if [ "$OPENAI_EMBEDDING_MODEL" != "$CANGJIE_BUILD_EMBEDDING_MODEL" ]; then
     echo "ERROR: OPENAI_EMBEDDING_MODEL='${OPENAI_EMBEDDING_MODEL}' does not match the pre-built index model '${CANGJIE_BUILD_EMBEDDING_MODEL}'." >&2
     echo "  Remove OPENAI_EMBEDDING_MODEL override or rebuild the image with the desired model." >&2
     exit 1

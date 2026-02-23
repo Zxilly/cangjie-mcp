@@ -52,12 +52,10 @@ impl CangjieClient {
         let diagnostics = Arc::new(Mutex::new(HashMap::<String, Vec<Value>>::new()));
         let initialized = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        // Start stderr reader
         tokio::spawn(async move {
             Self::stderr_loop(stderr).await;
         });
 
-        // Start background message receiver
         {
             let client_clone = client_arc.clone();
             let diagnostics_clone = diagnostics.clone();
@@ -121,7 +119,6 @@ impl CangjieClient {
             _child: Arc::new(Mutex::new(Some(child))),
         };
 
-        // Initialize
         let root_uri = path_to_uri(&settings.workspace_path);
         let init_options_value = serde_json::to_value(init_options)?;
 

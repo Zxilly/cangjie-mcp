@@ -173,8 +173,8 @@ async fn main() -> Result<()> {
         settings.docs_version, settings.docs_lang
     );
 
-    let mut search_index = LocalSearchIndex::new(settings.clone());
-    let index_info = search_index.init()?;
+    let mut search_index = LocalSearchIndex::new(settings.clone()).await;
+    let index_info = search_index.init().await?;
 
     config::log_startup_info(&settings, &index_info);
 
@@ -184,7 +184,7 @@ async fn main() -> Result<()> {
 
     let doc_source = GitDocumentSource::new(settings.docs_repo_dir(), index_info.lang)?;
 
-    let app = create_http_app(search_index, Box::new(doc_source), index_metadata);
+    let app = create_http_app(search_index, Box::new(doc_source), index_metadata).await;
 
     let bind_addr = format!("{}:{}", cli.host, cli.port);
     info!("Starting HTTP server on {bind_addr}...");
