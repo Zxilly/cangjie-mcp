@@ -131,9 +131,9 @@ jobs:
           args: --release --out dist
           sccache: "true"
           before-script-linux: |
-            curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
-            unzip protoc-29.3-linux-x86_64.zip -d /usr/local
-            rm protoc-29.3-linux-x86_64.zip
+            curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v33.5/protoc-33.5-linux-x86_64.zip
+            python3 -m zipfile -e protoc-33.5-linux-x86_64.zip /usr/local
+            rm protoc-33.5-linux-x86_64.zip
             protoc --version
 
       - name: Test wheel
@@ -162,9 +162,9 @@ jobs:
           args: --release --out dist
           sccache: "true"
           before-script-linux: |
-            curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
-            unzip protoc-29.3-linux-aarch_64.zip -d /usr/local
-            rm protoc-29.3-linux-aarch_64.zip
+            curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v33.5/protoc-33.5-linux-aarch_64.zip
+            python3 -m zipfile -e protoc-33.5-linux-aarch_64.zip /usr/local
+            rm protoc-33.5-linux-aarch_64.zip
             protoc --version
 
       - name: Upload wheel
