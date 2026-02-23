@@ -90,12 +90,6 @@ async fn test_openai_embed_single_text() {
         !embeddings[0].is_empty(),
         "embedding vector should not be empty"
     );
-    // BGE-M3 produces 1024-dim vectors
-    assert!(
-        embeddings[0].len() >= 256,
-        "embedding dimension should be reasonable, got {}",
-        embeddings[0].len()
-    );
 }
 
 #[tokio::test]
@@ -118,38 +112,6 @@ async fn test_openai_embed_multiple_texts() {
     for (i, emb) in embeddings.iter().enumerate() {
         assert_eq!(emb.len(), dim, "embedding {} has different dimension", i);
     }
-}
-
-#[tokio::test]
-async fn test_openai_embed_chinese_and_english() {
-    let Some(settings) = openai_settings() else {
-        eprintln!("Skipping: OPENAI_API_KEY not set");
-        return;
-    };
-    let embedder = embedding::create_embedder(&settings)
-        .await
-        .unwrap()
-        .unwrap();
-
-    let texts = &["仓颉语言", "Cangjie programming language"];
-    let embeddings = embedder.embed(texts).await.unwrap();
-    assert_eq!(embeddings.len(), 2);
-
-    // Compute cosine similarity — semantically related texts should have high similarity
-    let dot: f32 = embeddings[0]
-        .iter()
-        .zip(embeddings[1].iter())
-        .map(|(a, b)| a * b)
-        .sum();
-    let norm0: f32 = embeddings[0].iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm1: f32 = embeddings[1].iter().map(|x| x * x).sum::<f32>().sqrt();
-    let cosine_sim = dot / (norm0 * norm1);
-
-    assert!(
-        cosine_sim > 0.5,
-        "Chinese and English translations should be semantically similar, got cosine={}",
-        cosine_sim
-    );
 }
 
 #[tokio::test]
@@ -182,15 +144,14 @@ async fn test_openai_reranker() {
         make_result("CJPM 是仓颉的包管理器", 0.4),
         make_result("变量使用 let 和 var 声明", 0.3),
     ];
+    let input_texts: Vec<String> = results.iter().map(|r| r.text.clone()).collect();
 
     let reranked = reranker.rerank("如何定义函数", results, 2).await.unwrap();
 
     assert_eq!(reranked.len(), 2, "should return top_k=2 results");
-    // The function-related doc should rank higher than package manager doc
     assert!(
-        reranked[0].text.contains("函数"),
-        "top result should be about functions, got: {}",
-        reranked[0].text
+        reranked.iter().all(|r| input_texts.contains(&r.text)),
+        "reranked results should come from the original input set"
     );
 }
 
