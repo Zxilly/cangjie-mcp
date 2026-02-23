@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "cangjie-mcp"
+version = "0.3.0"
+description = "MCP server for Cangjie programming language - documentation search and code intelligence"
+authors = [{ name = "Zxilly" }]
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+keywords = ["cangjie", "mcp", "model-context-protocol", "language-server"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+]
+
+[project.urls]
+Repository = "https://github.com/Zxilly/cangjie-mcp"
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "cangjie-mcp-cli/Cargo.toml"
+module-name = "cangjie_mcp"
+python-source = "python"
+strip = true
