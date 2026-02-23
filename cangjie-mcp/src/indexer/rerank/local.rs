@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use fastembed::{RerankerModel, TextRerank};
@@ -7,7 +7,7 @@ use tracing::info;
 use crate::indexer::SearchResult;
 
 pub struct LocalReranker {
-    model: Arc<TextRerank>,
+    model: Arc<Mutex<TextRerank>>,
 }
 
 impl LocalReranker {
@@ -24,7 +24,7 @@ impl LocalReranker {
         .context("Reranker loading task panicked")??;
 
         Ok(Self {
-            model: Arc::new(model),
+            model: Arc::new(Mutex::new(model)),
         })
     }
 
@@ -45,8 +45,11 @@ impl LocalReranker {
 
         tokio::task::spawn_blocking(move || {
             let documents: Vec<&str> = results.iter().map(|r| r.text.as_str()).collect();
+            let mut model = model
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Reranker model lock poisoned: {}", e))?;
             let reranked = model
-                .rerank(&query, documents, true, None)
+                .rerank(query.as_str(), documents, true, None)
                 .context("Local reranking failed")?;
 
             let mut output: Vec<SearchResult> = reranked

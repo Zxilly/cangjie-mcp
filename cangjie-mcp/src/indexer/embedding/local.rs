@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -8,7 +8,7 @@ use tracing::info;
 use super::Embedder;
 
 pub struct LocalEmbedder {
-    model: Arc<TextEmbedding>,
+    model: Arc<Mutex<TextEmbedding>>,
     model_name: String,
 }
 
@@ -28,7 +28,7 @@ impl LocalEmbedder {
         .context("Model loading task panicked")??;
 
         Ok(Self {
-            model: Arc::new(model),
+            model: Arc::new(Mutex::new(model)),
             model_name: name,
         })
     }
@@ -40,6 +40,9 @@ impl Embedder for LocalEmbedder {
         let docs: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
         let model = Arc::clone(&self.model);
         tokio::task::spawn_blocking(move || {
+            let mut model = model
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Embedding model lock poisoned: {}", e))?;
             model.embed(docs, None).context("Local embedding failed")
         })
         .await
