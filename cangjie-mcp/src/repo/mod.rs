@@ -46,6 +46,42 @@ fn ref_edit_symbolic(name: &str, target_ref: &str, msg: &str) -> Result<RefEdit>
     })
 }
 
+fn ensure_committer_for_ref_edits(repo: &mut gix::Repository) -> Result<()> {
+    match repo.committer() {
+        Some(Ok(_)) => return Ok(()),
+        Some(Err(err)) => {
+            return Err(anyhow::Error::new(err))
+                .context("Invalid committer configuration for reflog writes");
+        }
+        None => {}
+    }
+
+    // gix requires committer identity to write reflog entries during ref edits.
+    let mut repo_config = repo.config_snapshot_mut();
+    repo_config
+        .set_value(
+            &gix::config::tree::gitoxide::Committer::NAME_FALLBACK,
+            "cangjie-mcp",
+        )
+        .context("Failed to set in-memory committer name fallback")?;
+    repo_config
+        .set_value(
+            &gix::config::tree::gitoxide::Committer::EMAIL_FALLBACK,
+            "no-email@cangjie-mcp.local",
+        )
+        .context("Failed to set in-memory committer email fallback")?;
+    repo_config
+        .commit()
+        .context("Failed to apply in-memory committer fallback")?;
+
+    match repo.committer() {
+        Some(Ok(_)) => Ok(()),
+        Some(Err(err)) => Err(anyhow::Error::new(err))
+            .context("Invalid committer configuration after applying fallback"),
+        None => bail!("No committer is configured and fallback committer could not be applied"),
+    }
+}
+
 impl GitManager {
     pub fn new(repo_dir: PathBuf) -> Self {
         Self {
@@ -68,10 +104,11 @@ impl GitManager {
         fetch: bool,
     ) -> Result<gix::Repository> {
         if repo_dir.exists() && repo_dir.join(".git").exists() {
-            let repo = match repo {
+            let mut repo = match repo {
                 Some(r) => r,
                 None => gix::open(repo_dir).context("Failed to open existing repository")?,
             };
+            ensure_committer_for_ref_edits(&mut repo)?;
             if fetch {
                 fetch_all(&repo)?;
             }
@@ -85,9 +122,10 @@ impl GitManager {
                 .context("Failed to prepare clone")?
                 .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
                 .context("Failed to fetch during clone")?;
-            let (repo, _) = checkout
+            let (mut repo, _) = checkout
                 .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
                 .context("Failed to checkout worktree during clone")?;
+            ensure_committer_for_ref_edits(&mut repo)?;
             info!("Repository cloned successfully.");
             Ok(repo)
         }
@@ -148,8 +186,8 @@ impl GitManager {
         let version = version.to_string();
 
         let repo = tokio::task::spawn_blocking(move || -> Result<gix::Repository> {
-            let repo = Self::open_or_clone(&repo_dir, repo, true)?;
-            checkout(&repo, &version)?;
+            let mut repo = Self::open_or_clone(&repo_dir, repo, true)?;
+            checkout(&mut repo, &version)?;
             Ok(repo)
         })
         .await
@@ -166,8 +204,8 @@ impl GitManager {
 
         let (repo, resolved) =
             tokio::task::spawn_blocking(move || -> Result<(gix::Repository, String)> {
-                let repo = Self::open_or_clone(&repo_dir, repo, true)?;
-                checkout(&repo, &version)?;
+                let mut repo = Self::open_or_clone(&repo_dir, repo, true)?;
+                checkout(&mut repo, &version)?;
                 let resolved = Self::resolve_after_checkout(&repo)?;
                 Ok((repo, resolved))
             })
@@ -221,7 +259,8 @@ fn do_fetch(repo: &gix::Repository) -> Result<()> {
     Ok(())
 }
 
-fn sync_branch(repo: &gix::Repository) -> Result<()> {
+fn sync_branch(repo: &mut gix::Repository) -> Result<()> {
+    ensure_committer_for_ref_edits(repo)?;
     let head = repo.head().context("Failed to read HEAD")?;
     if head.is_detached() {
         return Ok(());
@@ -247,7 +286,8 @@ fn sync_branch(repo: &gix::Repository) -> Result<()> {
     Ok(())
 }
 
-fn checkout(repo: &gix::Repository, version: &str) -> Result<()> {
+fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
+    ensure_committer_for_ref_edits(repo)?;
     if version == "latest" {
         for branch in &["main", "master"] {
             let remote_ref = format!("refs/remotes/origin/{branch}");
@@ -649,11 +689,13 @@ mod tests {
     #[test]
     fn test_checkout_commit_hash() {
         let (tmp, _repo) = create_test_repo();
-        let repo = gix::open(tmp.path()).unwrap();
-        let commit = repo.head_commit().unwrap();
-        let hash = commit.id().to_string();
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let hash = {
+            let commit = repo.head_commit().unwrap();
+            commit.id().to_string()
+        };
 
-        let result = checkout(&repo, &hash);
+        let result = checkout(&mut repo, &hash);
         assert!(result.is_ok());
 
         assert!(repo.head().unwrap().is_detached());
@@ -662,9 +704,9 @@ mod tests {
     #[test]
     fn test_checkout_nonexistent_version() {
         let (tmp, _repo) = create_test_repo();
-        let repo = gix::open(tmp.path()).unwrap();
+        let mut repo = gix::open(tmp.path()).unwrap();
 
-        let result = checkout(&repo, "nonexistent-tag-or-branch");
+        let result = checkout(&mut repo, "nonexistent-tag-or-branch");
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("not found as tag, branch, or commit"));
@@ -783,9 +825,9 @@ mod tests {
     #[test]
     fn test_checkout_latest_with_remote_main() {
         let (tmp, _repo) = create_test_repo_with_remote();
-        let repo = gix::open(tmp.path()).unwrap();
+        let mut repo = gix::open(tmp.path()).unwrap();
 
-        let result = checkout(&repo, "latest");
+        let result = checkout(&mut repo, "latest");
         assert!(
             result.is_ok(),
             "checkout('latest') should succeed: {:?}",
@@ -823,8 +865,8 @@ mod tests {
             .status()
             .unwrap();
 
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = checkout(&repo, "latest");
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = checkout(&mut repo, "latest");
         assert!(
             result.is_ok(),
             "checkout('latest') should succeed for master: {:?}",
@@ -845,9 +887,9 @@ mod tests {
     #[test]
     fn test_checkout_latest_no_remote_refs() {
         let (tmp, _repo) = create_test_repo();
-        let repo = gix::open(tmp.path()).unwrap();
+        let mut repo = gix::open(tmp.path()).unwrap();
 
-        let result = checkout(&repo, "latest");
+        let result = checkout(&mut repo, "latest");
         assert!(
             result.is_err(),
             "checkout('latest') with no remote refs should fail"
@@ -874,8 +916,8 @@ mod tests {
             .status()
             .unwrap();
 
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = checkout(&repo, "dev");
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = checkout(&mut repo, "dev");
         assert!(
             result.is_ok(),
             "checkout('dev') should succeed for remote branch: {:?}",
@@ -923,8 +965,8 @@ mod tests {
             .status()
             .unwrap();
 
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = checkout(&repo, "feature");
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = checkout(&mut repo, "feature");
         assert!(
             result.is_ok(),
             "checkout('feature') should succeed when already on branch: {:?}",
@@ -941,8 +983,8 @@ mod tests {
             .status()
             .unwrap();
 
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = checkout(&repo, "v2.0.0");
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = checkout(&mut repo, "v2.0.0");
         assert!(
             result.is_ok(),
             "checkout('v2.0.0') should succeed for tag: {:?}",
@@ -966,8 +1008,8 @@ mod tests {
             .status()
             .unwrap();
 
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = sync_branch(&repo);
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = sync_branch(&mut repo);
         assert!(
             result.is_ok(),
             "sync_branch should succeed: {:?}",
@@ -984,16 +1026,16 @@ mod tests {
             .status()
             .unwrap();
 
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = sync_branch(&repo);
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = sync_branch(&mut repo);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_sync_branch_no_remote_ref() {
         let (tmp, _repo) = create_test_repo();
-        let repo = gix::open(tmp.path()).unwrap();
-        let result = sync_branch(&repo);
+        let mut repo = gix::open(tmp.path()).unwrap();
+        let result = sync_branch(&mut repo);
         assert!(result.is_ok());
     }
 
