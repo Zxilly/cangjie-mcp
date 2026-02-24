@@ -1,12 +1,18 @@
 # Cangjie MCP Server
 
+[![CI](https://github.com/Zxilly/cangjie-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Zxilly/cangjie-mcp/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cangjie-mcp)](https://pypi.org/project/cangjie-mcp/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/cangjie-mcp)](https://pypi.org/project/cangjie-mcp/)
+[![GitHub Release](https://img.shields.io/github/v/release/Zxilly/cangjie-mcp)](https://github.com/Zxilly/cangjie-mcp/releases)
+[![License](https://img.shields.io/github/license/Zxilly/cangjie-mcp)](LICENSE)
+
 仓颉编程语言的 MCP (Model Context Protocol) 服务器，提供文档搜索和代码智能功能。
 
 ## 功能
 
 - **文档搜索**: 基于向量检索的仓颉语言文档搜索
 - **代码智能**: 基于 LSP 的代码补全、跳转定义、查找引用等功能
-- **客户端-服务器架构**: 支持通过 HTTP 服务器分离索引和查询
+- **可选远程文档服务**: 支持连接远程文档/索引服务，减少本地资源占用，适合开箱即用或团队共享
 
 ## 安装
 
@@ -17,8 +23,24 @@ pip install cangjie-mcp
 或使用 uvx 直接运行（推荐）：
 
 ```bash
-uvx cangjie-mcp  # 启动 MCP 服务器（包含文档搜索 + 代码智能）
+uvx cangjie-mcp  # 启动 MCP 服务器
 ```
+
+### 安装并指定 Rust feature
+
+当平台没有预编译 wheel，或你希望自定义 fastembed 后端时，可强制从 sdist 构建并传入 maturin 构建参数：
+
+```bash
+pip install --no-binary cangjie-mcp cangjie-mcp \
+  --config-settings=build-args="--features local"
+```
+
+可用 feature（传给 `cangjie-mcp-cli`）：
+
+- `local`：本地向量化
+- `local-cuda` / `local-cudnn`：启用 CUDA/CUDNN 后端
+- `local-metal`：启用 Apple Metal 后端
+- `local-mkl` / `local-accelerate`：启用 MKL / Accelerate 后端
 
 ## 架构
 
@@ -26,15 +48,15 @@ cangjie-mcp 支持两种运行模式：
 
 ### 本地模式（默认）
 
-MCP 服务器在本地加载嵌入模型和 ChromaDB 索引，直接处理查询。
+MCP 服务器在本地加载检索索引（BM25 + 向量索引），直接处理查询。
 
 ```bash
 cangjie-mcp
 ```
 
-### 客户端-服务器模式
+### 远程文档服务模式（可选）
 
-将索引和嵌入模型放在独立的 HTTP 服务器上，MCP 客户端通过 `--server-url` 连接，无需本地加载模型。
+如果你不想在本机下载/加载向量模型与索引（或希望多人/多台机器共享同一套索引），可以把检索能力以 HTTP 的方式独立部署。之后 MCP 只需要通过 `--server-url` 连接，就能直接使用文档检索能力。
 
 ```bash
 # 终端 1：启动 HTTP 查询服务器
@@ -192,7 +214,7 @@ cangjie-mcp [OPTIONS]
 | `--debug / --no-debug` | `CANGJIE_DEBUG` | `--no-debug` | 启用调试模式，将 stdio 流量写入日志文件 |
 | `-V, --docs-version TEXT` | `CANGJIE_DOCS_VERSION` | `latest` | 文档版本 (git tag) |
 | `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | `zh` | 文档语言 (`zh` / `en`) |
-| `-e, --embedding TEXT` | `CANGJIE_EMBEDDING_TYPE` | `local` | 向量化类型 (`local` / `openai`) |
+| `-e, --embedding TEXT` | `CANGJIE_EMBEDDING_TYPE` | `none` | 向量化类型 (`none` / `local` / `openai`) |
 | `--local-model TEXT` | `CANGJIE_LOCAL_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | 本地 HuggingFace 向量化模型 |
 | `--openai-api-key TEXT` | `OPENAI_API_KEY` | - | OpenAI API 密钥 |
 | `--openai-base-url TEXT` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API 基础 URL |
@@ -213,7 +235,7 @@ LSP 功能通过以下环境变量控制：
 
 ### cangjie-mcp server
 
-启动 HTTP 查询服务器，加载嵌入模型和 ChromaDB 索引，通过 HTTP 提供查询服务。
+启动 HTTP 查询服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务。
 
 ```bash
 cangjie-mcp server [OPTIONS]

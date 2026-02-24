@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 cangjie-mcp = { path = "../cangjie-mcp" }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 serde_json = "1"
 axum = "0.8"

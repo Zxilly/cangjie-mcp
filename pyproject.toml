@@ -30,3 +30,4 @@ manifest-path = "cangjie-mcp-cli/Cargo.toml"
 module-name = "cangjie_mcp"
 python-source = "python"
 strip = true
+features = ["local"]

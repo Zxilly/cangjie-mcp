@@ -7,7 +7,17 @@ license = "MIT"
 
 [features]
 default = []
-local = ["dep:fastembed"]
+local = [
+    "dep:fastembed",
+    "fastembed/hf-hub-rustls-tls",
+    "fastembed/ort-download-binaries-rustls-tls",
+    "fastembed/image-models",
+]
+local-cuda = ["local", "fastembed/cuda"]
+local-cudnn = ["local", "fastembed/cudnn"]
+local-metal = ["local", "fastembed/metal"]
+local-mkl = ["local", "fastembed/mkl"]
+local-accelerate = ["local", "fastembed/accelerate"]
 
 [dependencies]
 # MCP protocol
@@ -17,7 +27,7 @@ rmcp = { version = "0.16", features = ["server", "transport-io", "macros", "sche
 clap = { version = "4", features = ["derive"] }
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "fs", "io-util", "process"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -73,7 +83,7 @@ tokio-lsp = "0.1"
 lsp-types = "0.97"
 
 # Local embedding/reranking (optional)
-fastembed = { version = "5", optional = true }
+fastembed = { version = "5", optional = true, default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
