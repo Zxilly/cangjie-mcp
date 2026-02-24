@@ -2,6 +2,8 @@ pub mod client;
 pub mod config;
 pub mod dependency;
 pub mod tools;
+pub mod transport;
+pub mod types;
 pub mod utils;
 
 use std::path::{Path, PathBuf};
@@ -11,8 +13,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 
 use crate::lsp::client::CangjieClient;
-use crate::lsp::config::{build_init_options, get_platform_env, LSPSettings};
-use crate::lsp::utils::get_path_separator;
+use crate::lsp::config::{build_init_options, LSPSettings};
 
 static LSP_CLIENT: once_cell::sync::Lazy<Arc<RwLock<Option<CangjieClient>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(None)));
@@ -54,26 +55,44 @@ fn detect_cangjie_home(workspace: &Path) -> Option<PathBuf> {
 
 /// Initialize the global LSP client.
 pub async fn init(settings: LSPSettings) -> bool {
-    let mut env = get_platform_env(&settings.sdk_path);
-    let (init_options, require_path) = build_init_options(&settings);
+    let validation_errors = settings.validate();
+    if !validation_errors.is_empty() {
+        error!(
+            "Failed to initialize LSP client: invalid settings: {}",
+            validation_errors.join("; ")
+        );
+        return false;
+    }
 
-    if !require_path.is_empty() {
-        let sep = get_path_separator();
-        let existing = env.get("PATH").cloned().unwrap_or_default();
-        env.insert(
-            "PATH".to_string(),
-            if existing.is_empty() {
-                require_path.clone()
-            } else {
-                format!("{require_path}{sep}{existing}")
-            },
+    if let Some(ref log_path) = settings.log_path {
+        if let Err(e) = std::fs::create_dir_all(log_path) {
+            error!(
+                "Failed to create LSP log directory {}: {}",
+                log_path.display(),
+                e
+            );
+        }
+    }
+
+    // Create the LSP compilation cache directory
+    let cache_dir = settings.workspace_path.join(".cache").join("lsp");
+    if let Err(e) = std::fs::create_dir_all(&cache_dir) {
+        error!(
+            "Failed to create LSP cache directory {}: {}",
+            cache_dir.display(),
+            e
         );
     }
 
-    match CangjieClient::start(&settings, &init_options, &env).await {
+    let (init_options, require_path) = build_init_options(&settings);
+
+    match CangjieClient::start(&settings, &init_options, &require_path).await {
         Ok(client) => {
             *LSP_CLIENT.write().await = Some(client);
             info!("LSP client initialized successfully");
+            if let Some(ref log_path) = settings.log_path {
+                info!("LSP server log directory: {}", log_path.display());
+            }
             true
         }
         Err(e) => {
@@ -115,11 +134,13 @@ pub fn detect_settings(workspace_path: Option<PathBuf>) -> Option<LSPSettings> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let sdk_path = detect_cangjie_home(&workspace)?;
 
+    let log_path = std::env::temp_dir().join(format!("cangjie-lsp-{}", std::process::id()));
+
     Some(LSPSettings {
         sdk_path,
         workspace_path: workspace,
-        log_enabled: false,
-        log_path: None,
+        log_enabled: true,
+        log_path: Some(log_path),
         init_timeout_ms: 45000,
         disable_auto_import: true,
     })
@@ -163,8 +184,8 @@ mod tests {
             let settings = result.unwrap();
             assert_eq!(settings.sdk_path, PathBuf::from("/tmp/fake-cangjie-sdk"));
             assert_eq!(settings.workspace_path, PathBuf::from("/tmp/workspace"));
-            assert!(!settings.log_enabled);
-            assert!(settings.log_path.is_none());
+            assert!(settings.log_enabled);
+            assert!(settings.log_path.is_some());
             assert_eq!(settings.init_timeout_ms, 45000);
             assert!(settings.disable_auto_import);
         });

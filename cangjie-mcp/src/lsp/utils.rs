@@ -6,27 +6,99 @@ use serde::Deserialize;
 use std::sync::LazyLock;
 
 // -- URI / path conversion ---------------------------------------------------
+// Aligned with Cangjie LSP server C++ implementation:
+// - URI.cpp: URIFromAbsolutePath, ToString, PercentEncode, ShouldEscape
+// - Utils.cpp: PathWindowsToLinux
 
 pub fn path_to_uri(path: &Path) -> String {
-    let path_str = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
-        format!("file:///{path_str}")
-    } else {
-        format!("file://{path_str}")
-    }
+    let s = path.to_string_lossy();
+    let body = path_to_uri_body(&s);
+    let encoded = percent_encode_uri_body(&body);
+    format!("file://{encoded}")
 }
 
 pub fn uri_to_path(uri: &str) -> PathBuf {
-    if let Some(rest) = uri.strip_prefix("file:///") {
+    let path_str = if let Some(rest) = uri.strip_prefix("file:///") {
         if cfg!(windows) {
-            PathBuf::from(rest.replace('/', "\\"))
+            let decoded = percent_decode(rest);
+            decoded.replace('/', "\\")
         } else {
-            PathBuf::from(format!("/{rest}"))
+            format!("/{}", percent_decode(rest))
         }
     } else if let Some(rest) = uri.strip_prefix("file://") {
-        PathBuf::from(rest)
+        percent_decode(rest)
     } else {
-        PathBuf::from(uri)
+        uri.to_string()
+    };
+    PathBuf::from(path_str)
+}
+
+/// Build the URI body from a filesystem path (before percent-encoding).
+/// Converts backslashes to forward slashes and prepends '/' for Windows drive paths.
+fn path_to_uri_body(path: &str) -> String {
+    // 1. Backslash → forward slash (C++ PathWindowsToLinux)
+    let path = path.replace('\\', "/");
+    // 2. Windows drive letter path (e.g., D:/foo): prepend '/'
+    if path.len() > 1 && path.as_bytes().get(1) == Some(&b':') {
+        format!("/{path}")
+    } else {
+        path
+    }
+}
+
+/// Percent-encode a URI body. Only unreserved characters (RFC 3986) and '/' are
+/// kept literal; everything else (including ':') is encoded as %XX with uppercase
+/// hex digits — matching the C++ PercentEncode + ShouldEscape.
+fn percent_encode_uri_body(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + s.len() / 4);
+    for b in s.bytes() {
+        if is_uri_unreserved(b) {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push(hex_upper(b >> 4));
+            out.push(hex_upper(b & 0x0F));
+        }
+    }
+    out
+}
+
+/// Unreserved characters that are never percent-encoded in URI body.
+/// Matches C++ ShouldEscape: a-z A-Z 0-9 - _ . ~ / are NOT escaped.
+fn is_uri_unreserved(b: u8) -> bool {
+    matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/')
+}
+
+fn hex_upper(n: u8) -> char {
+    const HEX: [u8; 16] = *b"0123456789ABCDEF";
+    HEX[n as usize] as char
+}
+
+/// Decode percent-encoded sequences (%XX) in a string.
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2])) {
+                out.push((hi << 4 | lo) as char);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn from_hex(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     }
 }
 
@@ -78,14 +150,6 @@ fn clean_path_components(path: &Path) -> PathBuf {
         }
     }
     parts.iter().collect()
-}
-
-pub fn get_path_separator() -> &'static str {
-    if cfg!(windows) {
-        ";"
-    } else {
-        ":"
-    }
 }
 
 pub fn strip_trailing_separator(path_str: &str) -> &str {
@@ -151,6 +215,9 @@ pub enum CjpmDepValue {
 pub struct CjpmDepConfig {
     pub path: Option<String>,
     pub git: Option<String>,
+    pub tag: Option<String>,
+    pub branch: Option<String>,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -245,7 +312,7 @@ mod tests {
         if cfg!(windows) {
             assert_eq!(
                 path_to_uri(Path::new("C:\\Users\\test\\file.cj")),
-                "file:///C:/Users/test/file.cj"
+                "file:///C%3A/Users/test/file.cj"
             );
         }
     }
@@ -253,6 +320,10 @@ mod tests {
     #[test]
     fn test_uri_to_path_file_triple_slash() {
         if cfg!(windows) {
+            // Percent-encoded colon (standard LSP format)
+            let path = uri_to_path("file:///c%3A/Users/test/file.cj");
+            assert_eq!(path, PathBuf::from("c:\\Users\\test\\file.cj"));
+            // Unencoded colon (also handled)
             let path = uri_to_path("file:///C:/Users/test/file.cj");
             assert_eq!(path, PathBuf::from("C:\\Users\\test\\file.cj"));
         } else {
@@ -282,8 +353,10 @@ mod tests {
         if cfg!(windows) {
             let original = Path::new("D:\\projects\\test\\main.cj");
             let uri = path_to_uri(original);
+            assert_eq!(uri, "file:///D%3A/projects/test/main.cj");
             let back = uri_to_path(&uri);
-            assert_eq!(back, original);
+            // Drive letter case is preserved through the roundtrip
+            assert_eq!(back, PathBuf::from("D:\\projects\\test\\main.cj"));
         }
     }
 
@@ -320,15 +393,6 @@ mod tests {
         let base = Path::new("/base/dir");
         let result = normalize_path("relative/path", base);
         assert_eq!(result, PathBuf::from("/base/dir/relative/path"));
-    }
-
-    #[test]
-    fn test_get_path_separator() {
-        if cfg!(windows) {
-            assert_eq!(get_path_separator(), ";");
-        } else {
-            assert_eq!(get_path_separator(), ":");
-        }
     }
 
     #[test]

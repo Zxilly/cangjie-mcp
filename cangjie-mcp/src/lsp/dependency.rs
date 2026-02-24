@@ -10,6 +10,10 @@ use crate::lsp::utils::*;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Dependency {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     pub path: String, // file:// URI
 }
 
@@ -90,6 +94,23 @@ impl DependencyResolver {
         }
 
         self.process_package_mode();
+    }
+
+    fn append_require_path(&mut self, path: &Path) {
+        let mut current_paths: Vec<PathBuf> = if self.require_path.is_empty() {
+            Vec::new()
+        } else {
+            std::env::split_paths(&self.require_path).collect()
+        };
+
+        if current_paths.iter().any(|p| p == path) {
+            return;
+        }
+
+        current_paths.push(path.to_path_buf());
+        if let Ok(joined) = std::env::join_paths(current_paths) {
+            self.require_path = joined.to_string_lossy().to_string();
+        }
     }
 
     fn process_workspace_mode(&mut self, cjpm: &CjpmToml) {
@@ -235,14 +256,7 @@ impl DependencyResolver {
                 for c_module in ffi.c.values() {
                     if !c_module.path.is_empty() {
                         let resolved = normalize_path(&c_module.path, module_path);
-                        let resolved_str = resolved.to_string_lossy().to_string();
-                        if !self.require_path.contains(&resolved_str) {
-                            let sep = get_path_separator();
-                            if !self.require_path.is_empty() {
-                                self.require_path.push_str(sep);
-                            }
-                            self.require_path.push_str(&resolved_str);
-                        }
+                        self.append_require_path(&resolved);
                     }
                 }
             }
@@ -280,12 +294,19 @@ impl DependencyResolver {
                         // Local path dependency
                         let resolved = normalize_path(path_str, module_path);
                         let uri = path_to_uri(&resolved);
-                        result.insert(name.clone(), Dependency { path: uri });
+                        result.insert(
+                            name.clone(),
+                            Dependency {
+                                git: None,
+                                tag: None,
+                                path: uri,
+                            },
+                        );
                         // Recurse
                         self.find_all_toml(&resolved, name);
-                    } else if let Some(ref _git_url) = config.git {
+                    } else if config.git.is_some() {
                         // Git dependency — resolve via lock file
-                        if let Some(dep) = self.resolve_git_dep(name, module_path) {
+                        if let Some(dep) = self.resolve_git_dep(name, module_path, config) {
                             result.insert(name.clone(), dep);
                         }
                     }
@@ -302,7 +323,12 @@ impl DependencyResolver {
         result
     }
 
-    fn resolve_git_dep(&mut self, name: &str, _module_path: &Path) -> Option<Dependency> {
+    fn resolve_git_dep(
+        &mut self,
+        name: &str,
+        _module_path: &Path,
+        config: &CjpmDepConfig,
+    ) -> Option<Dependency> {
         if self.root_lock_data.is_none() {
             let lock_path = self.workspace_path.join(CJPM_LOCK);
             self.root_lock_data = load_cjpm_lock(&lock_path);
@@ -317,7 +343,11 @@ impl DependencyResolver {
                     if git_path.exists() {
                         let uri = path_to_uri(&git_path);
                         self.find_all_toml(&git_path, name);
-                        return Some(Dependency { path: uri });
+                        return Some(Dependency {
+                            git: config.git.clone(),
+                            tag: config.tag.clone(),
+                            path: uri,
+                        });
                     }
                 }
             }
@@ -327,13 +357,16 @@ impl DependencyResolver {
     }
 
     fn resolve_version_dep(&mut self, name: &str, version: &str) -> Option<Dependency> {
-        let repo_path = get_cjpm_config_path(CJPM_REPOSITORY_SUBDIR)
-            .join(name)
-            .join(version);
+        let repo_path =
+            get_cjpm_config_path(CJPM_REPOSITORY_SUBDIR).join(format!("{name}-{version}"));
         if repo_path.exists() {
             let uri = path_to_uri(&repo_path);
             self.find_all_toml(&repo_path, name);
-            Some(Dependency { path: uri })
+            Some(Dependency {
+                git: None,
+                tag: None,
+                path: uri,
+            })
         } else {
             None
         }
@@ -1084,11 +1117,11 @@ path = "native2"
             require_path.contains(&expected2),
             "require_path should contain native2. Got: {require_path}"
         );
-        // Should be separated by platform separator
-        let sep = get_path_separator();
+        // Should be split into multiple PATH entries
+        let path_count = std::env::split_paths(require_path).count();
         assert!(
-            require_path.contains(sep),
-            "Multiple paths should be joined by separator"
+            path_count >= 2,
+            "Multiple paths should be represented as multiple PATH entries"
         );
     }
 

@@ -9,7 +9,7 @@ use rmcp::model::*;
 use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::{
     Settings, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER,
@@ -104,6 +104,45 @@ pub struct CangjieServer {
 }
 
 impl CangjieServer {
+    fn log_lsp_startup_status() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let env_cangjie_home = std::env::var("CANGJIE_HOME")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+
+        info!(
+            "LSP startup check: cwd={}, env_CANGJIE_HOME={}",
+            cwd.display(),
+            env_cangjie_home.as_deref().unwrap_or("<unset>")
+        );
+
+        match crate::lsp::detect_settings(Some(cwd.clone())) {
+            Some(lsp_settings) => {
+                let lsp_server_path = lsp_settings.lsp_server_path();
+                let validation_errors = lsp_settings.validate();
+                info!(
+                    "LSP startup check: enabled=true, workspace={}, sdk_path={}, lsp_server={}",
+                    lsp_settings.workspace_path.display(),
+                    lsp_settings.sdk_path.display(),
+                    lsp_server_path.display()
+                );
+                if validation_errors.is_empty() {
+                    info!("LSP startup check: settings validation passed");
+                } else {
+                    warn!(
+                        "LSP startup check: settings validation warnings: {}",
+                        validation_errors.join("; ")
+                    );
+                }
+            }
+            None => {
+                warn!(
+                    "LSP startup check: enabled=false, CANGJIE_HOME not found in env or .vscode/settings.json terminal.integrated.env*"
+                );
+            }
+        }
+    }
+
     pub fn new(settings: Settings) -> Self {
         Self {
             state: Arc::new(RwLock::new(None)),
@@ -134,6 +173,17 @@ impl CangjieServer {
     pub async fn initialize(&self) -> Result<()> {
         let settings = self.settings.clone();
         info!("Initializing index...");
+        Self::log_lsp_startup_status();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        if let Some(lsp_settings) = crate::lsp::detect_settings(Some(cwd)) {
+            if crate::lsp::init(lsp_settings).await {
+                info!("LSP startup: initialization completed");
+            } else {
+                warn!("LSP startup: initialization failed, LSP tools will be unavailable");
+            }
+        } else {
+            warn!("LSP startup: skipped initialization because CANGJIE_HOME is not configured");
+        }
 
         let (search, index_info) = if let Some(ref url) = settings.server_url {
             let remote = RemoteSearchIndex::new(&settings, url)?;
@@ -358,6 +408,15 @@ impl CangjieServer {
             _ => topic.to_string(),
         }
     }
+
+    fn lsp_unavailable_message() -> String {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        if crate::lsp::detect_settings(Some(cwd)).is_none() {
+            return "LSP is not available: CANGJIE_HOME is not configured. Set CANGJIE_HOME (and optionally CANGJIE_PATH) in environment variables.".to_string();
+        }
+
+        "LSP is not available: client is not initialized or failed to start. Check startup logs for 'LSP startup' and 'Failed to initialize LSP client'.".to_string()
+    }
 }
 
 // ── Tool parameter types ────────────────────────────────────────────────────
@@ -417,6 +476,24 @@ pub struct LspPositionParams {
 pub struct LspFileParams {
     /// Absolute path to the .cj source file
     pub file_path: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LspWorkspaceSymbolParams {
+    /// Search query to find symbols by name across the workspace
+    pub query: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LspRenameParams {
+    /// Absolute path to the .cj source file
+    pub file_path: String,
+    /// Line number (1-based)
+    pub line: u32,
+    /// Character position (1-based)
+    pub character: u32,
+    /// New name for the symbol
+    pub new_name: String,
 }
 
 // ── Tool implementations ────────────────────────────────────────────────────
@@ -689,9 +766,9 @@ impl CangjieServer {
         let client = match guard {
             Some(ref g) => match g.as_ref() {
                 Some(c) => c,
-                None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+                None => return Self::lsp_unavailable_message(),
             },
-            None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+            None => return Self::lsp_unavailable_message(),
         };
 
         match client
@@ -722,9 +799,9 @@ impl CangjieServer {
         let client = match guard {
             Some(ref g) => match g.as_ref() {
                 Some(c) => c,
-                None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+                None => return Self::lsp_unavailable_message(),
             },
-            None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+            None => return Self::lsp_unavailable_message(),
         };
 
         match client
@@ -755,9 +832,9 @@ impl CangjieServer {
         let client = match guard {
             Some(ref g) => match g.as_ref() {
                 Some(c) => c,
-                None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+                None => return Self::lsp_unavailable_message(),
             },
-            None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+            None => return Self::lsp_unavailable_message(),
         };
 
         match client
@@ -784,9 +861,9 @@ impl CangjieServer {
         let client = match guard {
             Some(ref g) => match g.as_ref() {
                 Some(c) => c,
-                None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+                None => return Self::lsp_unavailable_message(),
             },
-            None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+            None => return Self::lsp_unavailable_message(),
         };
 
         match client
@@ -817,9 +894,9 @@ impl CangjieServer {
         let client = match guard {
             Some(ref g) => match g.as_ref() {
                 Some(c) => c,
-                None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+                None => return Self::lsp_unavailable_message(),
             },
-            None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+            None => return Self::lsp_unavailable_message(),
         };
 
         match client.document_symbol(&params.file_path).await {
@@ -847,15 +924,259 @@ impl CangjieServer {
         let client = match guard {
             Some(ref g) => match g.as_ref() {
                 Some(c) => c,
-                None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+                None => return Self::lsp_unavailable_message(),
             },
-            None => return "LSP is not available. Ensure CANGJIE_HOME is set.".to_string(),
+            None => return Self::lsp_unavailable_message(),
         };
 
         match client.get_diagnostics(&params.file_path).await {
             Ok(diags) => {
                 let result = lsp_tools::process_diagnostics(&diags);
                 serde_json::to_string_pretty(&result)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_workspace_symbol",
+        description = "Search for symbols (classes, functions, variables, etc.) by name across the entire workspace. Useful for finding where a type or function is defined without knowing the file."
+    )]
+    async fn lsp_workspace_symbol(
+        &self,
+        Parameters(params): Parameters<LspWorkspaceSymbolParams>,
+    ) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client.workspace_symbol(&params.query).await {
+            Ok(result) => {
+                let syms = lsp_tools::process_workspace_symbols(&result);
+                serde_json::to_string_pretty(&syms)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_incoming_calls",
+        description = "Find all functions/methods that call the function at the given position. Useful for understanding who uses a function. Positions are 1-based."
+    )]
+    async fn lsp_incoming_calls(
+        &self,
+        Parameters(params): Parameters<LspPositionParams>,
+    ) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
+            return err;
+        }
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client
+            .incoming_calls(&params.file_path, params.line - 1, params.character - 1)
+            .await
+        {
+            Ok(result) => {
+                let calls = lsp_tools::process_incoming_calls(&result);
+                serde_json::to_string_pretty(&calls)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_outgoing_calls",
+        description = "Find all functions/methods called by the function at the given position. Useful for understanding what a function depends on. Positions are 1-based."
+    )]
+    async fn lsp_outgoing_calls(
+        &self,
+        Parameters(params): Parameters<LspPositionParams>,
+    ) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
+            return err;
+        }
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client
+            .outgoing_calls(&params.file_path, params.line - 1, params.character - 1)
+            .await
+        {
+            Ok(result) => {
+                let calls = lsp_tools::process_outgoing_calls(&result);
+                serde_json::to_string_pretty(&calls)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_type_supertypes",
+        description = "Find parent classes and implemented interfaces of the type at the given position. Useful for understanding inheritance hierarchy. Positions are 1-based."
+    )]
+    async fn lsp_type_supertypes(
+        &self,
+        Parameters(params): Parameters<LspPositionParams>,
+    ) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
+            return err;
+        }
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client
+            .type_supertypes(&params.file_path, params.line - 1, params.character - 1)
+            .await
+        {
+            Ok(result) => {
+                let types = lsp_tools::process_type_hierarchy(&result);
+                serde_json::to_string_pretty(&types)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_type_subtypes",
+        description = "Find subclasses and implementations of the type at the given position. Useful for finding all concrete implementations of an interface or subclasses. Positions are 1-based."
+    )]
+    async fn lsp_type_subtypes(&self, Parameters(params): Parameters<LspPositionParams>) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
+            return err;
+        }
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client
+            .type_subtypes(&params.file_path, params.line - 1, params.character - 1)
+            .await
+        {
+            Ok(result) => {
+                let types = lsp_tools::process_type_hierarchy(&result);
+                serde_json::to_string_pretty(&types)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_rename",
+        description = "Rename a symbol across the workspace. Returns the list of file edits needed (does not apply them). Positions are 1-based."
+    )]
+    async fn lsp_rename(&self, Parameters(params): Parameters<LspRenameParams>) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
+            return err;
+        }
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client
+            .rename(
+                &params.file_path,
+                params.line - 1,
+                params.character - 1,
+                &params.new_name,
+            )
+            .await
+        {
+            Ok(result) => {
+                let rename = lsp_tools::process_rename(&result);
+                serde_json::to_string_pretty(&rename)
+                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(
+        name = "cangjie_lsp_signature_help",
+        description = "Get function/method signature information at a position. Shows parameter names, types, and documentation. Useful when filling in function arguments. Positions are 1-based."
+    )]
+    async fn lsp_signature_help(
+        &self,
+        Parameters(params): Parameters<LspPositionParams>,
+    ) -> String {
+        use crate::lsp::tools as lsp_tools;
+
+        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
+            return err;
+        }
+
+        let guard = crate::lsp::get_client().await;
+        let client = match guard {
+            Some(ref g) => match g.as_ref() {
+                Some(c) => c,
+                None => return Self::lsp_unavailable_message(),
+            },
+            None => return Self::lsp_unavailable_message(),
+        };
+
+        match client
+            .signature_help(&params.file_path, params.line - 1, params.character - 1)
+            .await
+        {
+            Ok(result) => {
+                let sig = lsp_tools::process_signature_help(&result);
+                serde_json::to_string_pretty(&sig)
                     .unwrap_or_else(|e| format!("Serialization error: {e}"))
             }
             Err(e) => format!("Error: {e}"),

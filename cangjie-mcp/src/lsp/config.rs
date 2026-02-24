@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::lsp::dependency::DependencyResolver;
-use crate::lsp::utils::load_cjpm_toml;
 use serde::Serialize;
 
 // -- LSP Settings ------------------------------------------------------------
@@ -46,6 +45,14 @@ impl LSPSettings {
         self.sdk_path.join("tools").join("bin").join(exe_name)
     }
 
+    pub fn envsetup_script_path(&self) -> PathBuf {
+        if cfg!(windows) {
+            self.sdk_path.join("envsetup.ps1")
+        } else {
+            self.sdk_path.join("envsetup.sh")
+        }
+    }
+
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -59,6 +66,14 @@ impl LSPSettings {
         let server_path = self.lsp_server_path();
         if !server_path.exists() {
             errors.push(format!("LSP server not found: {}", server_path.display()));
+        }
+
+        let envsetup_path = self.envsetup_script_path();
+        if !envsetup_path.exists() {
+            errors.push(format!(
+                "Environment setup script not found: {}",
+                envsetup_path.display()
+            ));
         }
 
         if !self.workspace_path.exists() {
@@ -95,133 +110,6 @@ pub struct LSPInitOptions {
     pub telemetry_option: bool,
     #[serde(default)]
     pub extension_path: String,
-    #[serde(default)]
-    pub clangd_file_status: bool,
-    #[serde(default)]
-    pub fallback_flags: Vec<String>,
-}
-
-// -- Platform environment ----------------------------------------------------
-
-pub fn get_platform_env(sdk_path: &Path) -> HashMap<String, String> {
-    let mut env: HashMap<String, String> = std::env::vars().collect();
-
-    if cfg!(windows) {
-        get_windows_env(sdk_path, &mut env);
-    } else if cfg!(target_os = "macos") {
-        get_darwin_env(sdk_path, &mut env);
-    } else {
-        get_linux_env(sdk_path, &mut env);
-    }
-
-    env
-}
-
-fn get_linux_env(sdk_path: &Path, env: &mut HashMap<String, String>) {
-    let arch = std::process::Command::new("arch")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "x86_64".to_string());
-
-    let ld_lib = sdk_path
-        .join("lib")
-        .join(format!("linux_{arch}_llvm"))
-        .to_string_lossy()
-        .to_string();
-    let bin_path = sdk_path
-        .join("tools")
-        .join("bin")
-        .to_string_lossy()
-        .to_string();
-
-    let existing_ld = env.get("LD_LIBRARY_PATH").cloned().unwrap_or_default();
-    env.insert(
-        "LD_LIBRARY_PATH".to_string(),
-        if existing_ld.is_empty() {
-            ld_lib
-        } else {
-            format!("{ld_lib}:{existing_ld}")
-        },
-    );
-
-    let existing_path = env.get("PATH").cloned().unwrap_or_default();
-    env.insert(
-        "PATH".to_string(),
-        if existing_path.is_empty() {
-            bin_path
-        } else {
-            format!("{bin_path}:{existing_path}")
-        },
-    );
-}
-
-fn get_darwin_env(sdk_path: &Path, env: &mut HashMap<String, String>) {
-    let arch = if std::env::consts::ARCH == "aarch64" {
-        "aarch64"
-    } else {
-        "x86_64"
-    };
-
-    let dyld_lib = sdk_path
-        .join("lib")
-        .join(format!("darwin_{arch}_llvm"))
-        .to_string_lossy()
-        .to_string();
-    let bin_path = sdk_path
-        .join("tools")
-        .join("bin")
-        .to_string_lossy()
-        .to_string();
-
-    let existing_dyld = env.get("DYLD_LIBRARY_PATH").cloned().unwrap_or_default();
-    env.insert(
-        "DYLD_LIBRARY_PATH".to_string(),
-        if existing_dyld.is_empty() {
-            dyld_lib
-        } else {
-            format!("{dyld_lib}:{existing_dyld}")
-        },
-    );
-
-    let existing_path = env.get("PATH").cloned().unwrap_or_default();
-    env.insert(
-        "PATH".to_string(),
-        if existing_path.is_empty() {
-            bin_path
-        } else {
-            format!("{bin_path}:{existing_path}")
-        },
-    );
-}
-
-fn get_windows_env(sdk_path: &Path, env: &mut HashMap<String, String>) {
-    let runtime_lib = sdk_path
-        .join("runtime")
-        .join("lib")
-        .join("windows_x86_64_llvm")
-        .to_string_lossy()
-        .to_string();
-    let bin = sdk_path.join("bin").to_string_lossy().to_string();
-    let tools_bin = sdk_path
-        .join("tools")
-        .join("bin")
-        .to_string_lossy()
-        .to_string();
-    let existing_path = env.get("PATH").cloned().unwrap_or_default();
-
-    let paths: Vec<&str> = [
-        runtime_lib.as_str(),
-        bin.as_str(),
-        tools_bin.as_str(),
-        existing_path.as_str(),
-    ]
-    .into_iter()
-    .filter(|p| !p.is_empty())
-    .collect();
-
-    env.insert("PATH".to_string(), paths.join(";"));
 }
 
 // -- Build init options ------------------------------------------------------
@@ -237,25 +125,26 @@ pub fn build_init_options(settings: &LSPSettings) -> (LSPInitOptions, String) {
 
     let require_path = resolver.get_require_path().to_string();
 
-    let cjpm_toml_path = settings.workspace_path.join("cjpm.toml");
-    let std_lib_path = if let Some(cjpm) = load_cjpm_toml(&cjpm_toml_path) {
-        if let Some(pkg) = &cjpm.package {
-            if !pkg.target_dir.is_empty() {
-                pkg.target_dir.clone()
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        }
-    } else {
-        String::new()
-    };
+    // Must be non-empty: the LSP server's IsInCjlibDir() uses
+    // std::string::find(stdLibPath) — an empty string matches every path,
+    // causing all document requests to be treated as stdlib files and
+    // suppressing responses.
+    let std_lib_path = settings.sdk_path.join("lib").to_string_lossy().to_string();
+
+    // The LSP server uses targetLib as a cache directory for compilation
+    // artifacts. Without it, incremental compilation and AST caching may fail.
+    let target_lib = settings
+        .workspace_path
+        .join(".cache")
+        .join("lsp")
+        .to_string_lossy()
+        .to_string();
 
     let options = LSPInitOptions {
         multi_module_option,
         std_lib_path_option: std_lib_path,
-        clangd_file_status: true,
+        modules_home_option: settings.sdk_path.to_string_lossy().to_string(),
+        target_lib,
         ..Default::default()
     };
 
@@ -337,34 +226,46 @@ mod tests {
         let options = LSPInitOptions::default();
         assert!(options.multi_module_option.is_empty());
         assert!(!options.telemetry_option);
-        assert!(!options.clangd_file_status);
     }
 
     #[test]
     fn test_lsp_init_options_serialization() {
         let options = LSPInitOptions {
-            clangd_file_status: true,
             telemetry_option: false,
             ..Default::default()
         };
         let json = serde_json::to_value(&options).unwrap();
-        assert_eq!(json["clangdFileStatus"], true);
         assert_eq!(json["telemetryOption"], false);
+        // clangdFileStatus and fallbackFlags should not be present
+        assert!(json.get("clangdFileStatus").is_none());
+        assert!(json.get("fallbackFlags").is_none());
     }
 
     #[test]
-    fn test_get_platform_env_sets_path() {
-        let sdk_path = PathBuf::from("/opt/cangjie-sdk");
-        let env = get_platform_env(&sdk_path);
-        // Regardless of platform, PATH should be set
-        assert!(env.contains_key("PATH"));
-        let path_val = &env["PATH"];
-        // PATH should include SDK's tools/bin
-        assert!(
-            path_val.contains("tools") && path_val.contains("bin"),
-            "PATH should include SDK tools/bin directory, got: {}",
-            path_val
-        );
+    fn test_envsetup_script_path() {
+        let settings = test_lsp_settings();
+        let path = settings.envsetup_script_path();
+        if cfg!(windows) {
+            assert_eq!(path, PathBuf::from("/opt/cangjie-sdk/envsetup.ps1"));
+        } else {
+            assert_eq!(path, PathBuf::from("/opt/cangjie-sdk/envsetup.sh"));
+        }
+    }
+
+    #[test]
+    fn test_validate_missing_envsetup_script() {
+        let settings = LSPSettings {
+            sdk_path: PathBuf::from("/nonexistent/sdk"),
+            workspace_path: PathBuf::from("/nonexistent/workspace"),
+            log_enabled: false,
+            log_path: None,
+            init_timeout_ms: 30000,
+            disable_auto_import: false,
+        };
+        let errors = settings.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Environment setup script")));
     }
 
     #[test]
@@ -408,15 +309,12 @@ mod tests {
             multi_module_option: mm,
             std_lib_path_option: "/std/lib".to_string(),
             target_lib: "my_target".to_string(),
-            clangd_file_status: true,
-            fallback_flags: vec!["-Wall".to_string()],
             ..Default::default()
         };
         let json = serde_json::to_value(&options).unwrap();
         assert_eq!(json["stdLibPathOption"], "/std/lib");
         assert_eq!(json["targetLib"], "my_target");
         assert!(json["multiModuleOption"]["module1"].is_object());
-        assert_eq!(json["fallbackFlags"][0], "-Wall");
     }
 
     #[test]
@@ -459,23 +357,28 @@ mod tests {
     }
 
     #[test]
-    fn test_build_init_options_with_target_dir() {
+    fn test_build_init_options_std_lib_from_sdk() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            tmp.path().join("cjpm.toml"),
-            "[package]\nname = \"test-pkg\"\ntarget-dir = \"/custom/target\"\n",
-        )
-        .unwrap();
+        let sdk_dir = tmp.path().join("sdk");
+        std::fs::create_dir_all(&sdk_dir).unwrap();
+
+        let ws_dir = tmp.path().join("workspace");
+        std::fs::create_dir_all(&ws_dir).unwrap();
+
         let settings = LSPSettings {
-            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
-            workspace_path: tmp.path().to_path_buf(),
+            sdk_path: sdk_dir.clone(),
+            workspace_path: ws_dir,
             log_enabled: false,
             log_path: None,
             init_timeout_ms: 30000,
             disable_auto_import: false,
         };
         let (options, _require_path) = build_init_options(&settings);
-        assert_eq!(options.std_lib_path_option, "/custom/target");
+        // Always <sdk_path>/lib — must never be empty
+        assert_eq!(
+            options.std_lib_path_option,
+            sdk_dir.join("lib").to_string_lossy().to_string()
+        );
     }
 
     #[test]
@@ -559,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_init_options_cjpm_toml_package_no_target_dir() {
+    fn test_build_init_options_std_lib_never_empty() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join("cjpm.toml"),
@@ -575,47 +478,10 @@ mod tests {
             disable_auto_import: false,
         };
         let (options, _) = build_init_options(&settings);
-        // No target-dir means std_lib_path_option should be empty
-        assert!(options.std_lib_path_option.is_empty());
-    }
-
-    #[test]
-    fn test_build_init_options_cjpm_toml_empty_target_dir() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            tmp.path().join("cjpm.toml"),
-            "[package]\nname = \"test-pkg\"\ntarget-dir = \"\"\n",
-        )
-        .unwrap();
-        let settings = LSPSettings {
-            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
-            workspace_path: tmp.path().to_path_buf(),
-            log_enabled: false,
-            log_path: None,
-            init_timeout_ms: 30000,
-            disable_auto_import: false,
-        };
-        let (options, _) = build_init_options(&settings);
-        // Empty target-dir means std_lib_path_option should be empty
-        assert!(options.std_lib_path_option.is_empty());
-    }
-
-    #[test]
-    fn test_build_init_options_cjpm_toml_no_package_section() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        // TOML without [package] section - just dependencies
-        std::fs::write(tmp.path().join("cjpm.toml"), "[dependencies]\n").unwrap();
-        let settings = LSPSettings {
-            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
-            workspace_path: tmp.path().to_path_buf(),
-            log_enabled: false,
-            log_path: None,
-            init_timeout_ms: 30000,
-            disable_auto_import: false,
-        };
-        let (options, _) = build_init_options(&settings);
-        // No package section -> std_lib_path_option should be empty
-        assert!(options.std_lib_path_option.is_empty());
+        // Must never be empty — empty string causes IsInCjlibDir() to
+        // match every path, suppressing LSP responses.
+        assert!(!options.std_lib_path_option.is_empty());
+        assert!(options.std_lib_path_option.contains("lib"));
     }
 
     #[test]
@@ -658,37 +524,5 @@ mod tests {
         let json = serde_json::to_value(&options).unwrap();
         assert_eq!(json["modulesHomeOption"], "/home/modules");
         assert_eq!(json["extensionPath"], "/ext/path");
-    }
-
-    #[test]
-    fn test_get_platform_env_contains_system_vars() {
-        let sdk_path = PathBuf::from("/opt/cangjie-sdk");
-        let env = get_platform_env(&sdk_path);
-        // Should contain at least PATH (on any platform)
-        assert!(env.contains_key("PATH"));
-        // The env should also contain regular system environment variables
-        // (since it starts from std::env::vars())
-        assert!(
-            env.len() > 1,
-            "Platform env should contain multiple variables"
-        );
-    }
-
-    #[test]
-    fn test_build_init_options_sets_clangd_file_status() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let settings = LSPSettings {
-            sdk_path: PathBuf::from("/opt/cangjie-sdk"),
-            workspace_path: tmp.path().to_path_buf(),
-            log_enabled: false,
-            log_path: None,
-            init_timeout_ms: 30000,
-            disable_auto_import: false,
-        };
-        let (options, _) = build_init_options(&settings);
-        assert!(
-            options.clangd_file_status,
-            "clangd_file_status should be set to true"
-        );
     }
 }

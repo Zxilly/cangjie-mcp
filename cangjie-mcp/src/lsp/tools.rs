@@ -1,7 +1,9 @@
-use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, Diagnostic, DiagnosticSeverity,
-    DocumentSymbol, DocumentSymbolResponse, GotoDefinitionResponse, Hover, HoverContents, Location,
-    LocationLink, MarkedString, SymbolKind,
+use crate::lsp::types::{
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CompletionItem,
+    CompletionItemKind, CompletionResponse, Diagnostic, DiagnosticSeverity, DocumentSymbol,
+    DocumentSymbolResponse, Documentation, GotoDefinitionResponse, Hover, HoverContents, Location,
+    LocationLink, MarkedString, NumberOrString, ParameterLabel, SignatureHelp, SymbolKind,
+    TypeHierarchyItem, WorkspaceEdit,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,6 +102,123 @@ pub struct CompletionResult {
     pub count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WorkspaceSymbolOutput {
+    pub name: String,
+    pub kind: String,
+    pub file_path: String,
+    pub line: u32,
+    pub character: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WorkspaceSymbolResult {
+    pub symbols: Vec<WorkspaceSymbolOutput>,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CallHierarchyItemOutput {
+    pub name: String,
+    pub kind: String,
+    pub file_path: String,
+    pub line: u32,
+    pub character: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IncomingCallOutput {
+    pub from: CallHierarchyItemOutput,
+    pub call_sites: Vec<LocationResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IncomingCallsResult {
+    pub calls: Vec<IncomingCallOutput>,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OutgoingCallOutput {
+    pub to: CallHierarchyItemOutput,
+    pub call_sites: Vec<LocationResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OutgoingCallsResult {
+    pub calls: Vec<OutgoingCallOutput>,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TypeHierarchyItemOutput {
+    pub name: String,
+    pub kind: String,
+    pub file_path: String,
+    pub line: u32,
+    pub character: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TypeHierarchyResult {
+    pub items: Vec<TypeHierarchyItemOutput>,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FileEdit {
+    pub file_path: String,
+    pub edits: Vec<TextEditOutput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TextEditOutput {
+    pub line: u32,
+    pub character: u32,
+    pub end_line: u32,
+    pub end_character: u32,
+    pub new_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RenameResult {
+    pub files: Vec<FileEdit>,
+    pub file_count: usize,
+    pub edit_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ParameterOutput {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SignatureOutput {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    pub parameters: Vec<ParameterOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_parameter: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SignatureHelpResult {
+    pub signatures: Vec<SignatureOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_signature: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_parameter: Option<u32>,
+}
+
 // -- Helpers -----------------------------------------------------------------
 
 fn severity_name(severity: Option<DiagnosticSeverity>) -> &'static str {
@@ -140,6 +259,38 @@ fn symbol_kind_name(kind: SymbolKind) -> &'static str {
         SymbolKind::EVENT => "event",
         SymbolKind::OPERATOR => "operator",
         SymbolKind::TYPE_PARAMETER => "type parameter",
+        _ => "unknown",
+    }
+}
+
+fn symbol_kind_name_by_number(kind: u32) -> &'static str {
+    match kind {
+        1 => "file",
+        2 => "module",
+        3 => "namespace",
+        4 => "package",
+        5 => "class",
+        6 => "method",
+        7 => "property",
+        8 => "field",
+        9 => "constructor",
+        10 => "enum",
+        11 => "interface",
+        12 => "function",
+        13 => "variable",
+        14 => "constant",
+        15 => "string",
+        16 => "number",
+        17 => "boolean",
+        18 => "array",
+        19 => "object",
+        20 => "key",
+        21 => "null",
+        22 => "enum member",
+        23 => "struct",
+        24 => "event",
+        25 => "operator",
+        26 => "type parameter",
         _ => "unknown",
     }
 }
@@ -232,17 +383,17 @@ fn convert_document_symbol(sym: &DocumentSymbol) -> SymbolOutput {
     }
 }
 
-fn extract_documentation(doc: &lsp_types::Documentation) -> String {
+fn extract_documentation(doc: &Documentation) -> String {
     match doc {
-        lsp_types::Documentation::String(s) => s.clone(),
-        lsp_types::Documentation::MarkupContent(mc) => mc.value.clone(),
+        Documentation::String(s) => s.clone(),
+        Documentation::MarkupContent(mc) => mc.value.clone(),
     }
 }
 
-fn extract_diagnostic_code(code: &lsp_types::NumberOrString) -> String {
+fn extract_diagnostic_code(code: &NumberOrString) -> String {
     match code {
-        lsp_types::NumberOrString::Number(n) => n.to_string(),
-        lsp_types::NumberOrString::String(s) => s.clone(),
+        NumberOrString::Number(n) => n.to_string(),
+        NumberOrString::String(s) => s.clone(),
     }
 }
 
@@ -405,6 +556,229 @@ pub fn process_completion(result: &Value) -> CompletionResult {
 
     let count = items.len();
     CompletionResult { items, count }
+}
+
+pub fn process_workspace_symbols(result: &Value) -> WorkspaceSymbolResult {
+    // workspace/symbol can return SymbolInformation[] or WorkspaceSymbol[]
+    let arr = result.as_array().cloned().unwrap_or_default();
+    let symbols: Vec<WorkspaceSymbolOutput> = arr
+        .iter()
+        .filter_map(|item| {
+            let name = item.get("name")?.as_str()?.to_string();
+            let kind_num = item.get("kind")?.as_u64()? as u32;
+            let kind = symbol_kind_name_by_number(kind_num).to_string();
+            let container_name = item
+                .get("containerName")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            // SymbolInformation has location.uri + location.range
+            let (file_path, line, character) = if let Some(loc) = item.get("location") {
+                let uri = loc.get("uri")?.as_str()?;
+                let range = loc.get("range")?;
+                let start = range.get("start")?;
+                (
+                    uri_to_path(uri).to_string_lossy().to_string(),
+                    start.get("line")?.as_u64()? as u32 + 1,
+                    start.get("character")?.as_u64()? as u32 + 1,
+                )
+            } else {
+                // WorkspaceSymbol has uri + range directly
+                let uri = item.get("uri")?.as_str()?;
+                let range = item.get("range")?;
+                let start = range.get("start")?;
+                (
+                    uri_to_path(uri).to_string_lossy().to_string(),
+                    start.get("line")?.as_u64()? as u32 + 1,
+                    start.get("character")?.as_u64()? as u32 + 1,
+                )
+            };
+
+            Some(WorkspaceSymbolOutput {
+                name,
+                kind,
+                file_path,
+                line,
+                character,
+                container_name,
+            })
+        })
+        .collect();
+
+    let count = symbols.len();
+    WorkspaceSymbolResult { symbols, count }
+}
+
+fn convert_call_hierarchy_item(item: &CallHierarchyItem) -> CallHierarchyItemOutput {
+    CallHierarchyItemOutput {
+        name: item.name.clone(),
+        kind: symbol_kind_name(item.kind).to_string(),
+        file_path: uri_to_path(item.uri.as_str()).to_string_lossy().to_string(),
+        line: item.selection_range.start.line + 1,
+        character: item.selection_range.start.character + 1,
+        detail: item.detail.clone(),
+    }
+}
+
+pub fn process_incoming_calls(result: &Value) -> IncomingCallsResult {
+    let calls: Vec<CallHierarchyIncomingCall> =
+        serde_json::from_value(result.clone()).unwrap_or_default();
+    let calls: Vec<IncomingCallOutput> = calls
+        .iter()
+        .map(|call| {
+            let call_sites = call
+                .from_ranges
+                .iter()
+                .map(|range| LocationResult {
+                    file_path: uri_to_path(call.from.uri.as_str())
+                        .to_string_lossy()
+                        .to_string(),
+                    line: range.start.line + 1,
+                    character: range.start.character + 1,
+                    end_line: Some(range.end.line + 1),
+                    end_character: Some(range.end.character + 1),
+                })
+                .collect();
+            IncomingCallOutput {
+                from: convert_call_hierarchy_item(&call.from),
+                call_sites,
+            }
+        })
+        .collect();
+    let count = calls.len();
+    IncomingCallsResult { calls, count }
+}
+
+pub fn process_outgoing_calls(result: &Value) -> OutgoingCallsResult {
+    let calls: Vec<CallHierarchyOutgoingCall> =
+        serde_json::from_value(result.clone()).unwrap_or_default();
+    let calls: Vec<OutgoingCallOutput> = calls
+        .iter()
+        .map(|call| {
+            let call_sites = call
+                .from_ranges
+                .iter()
+                .map(|range| LocationResult {
+                    file_path: uri_to_path(call.to.uri.as_str())
+                        .to_string_lossy()
+                        .to_string(),
+                    line: range.start.line + 1,
+                    character: range.start.character + 1,
+                    end_line: Some(range.end.line + 1),
+                    end_character: Some(range.end.character + 1),
+                })
+                .collect();
+            OutgoingCallOutput {
+                to: convert_call_hierarchy_item(&call.to),
+                call_sites,
+            }
+        })
+        .collect();
+    let count = calls.len();
+    OutgoingCallsResult { calls, count }
+}
+
+fn convert_type_hierarchy_item(item: &TypeHierarchyItem) -> TypeHierarchyItemOutput {
+    TypeHierarchyItemOutput {
+        name: item.name.clone(),
+        kind: symbol_kind_name(item.kind).to_string(),
+        file_path: uri_to_path(item.uri.as_str()).to_string_lossy().to_string(),
+        line: item.selection_range.start.line + 1,
+        character: item.selection_range.start.character + 1,
+        detail: item.detail.clone(),
+    }
+}
+
+pub fn process_type_hierarchy(result: &Value) -> TypeHierarchyResult {
+    let items: Vec<TypeHierarchyItem> = serde_json::from_value(result.clone()).unwrap_or_default();
+    let items: Vec<TypeHierarchyItemOutput> =
+        items.iter().map(convert_type_hierarchy_item).collect();
+    let count = items.len();
+    TypeHierarchyResult { items, count }
+}
+
+pub fn process_rename(result: &Value) -> RenameResult {
+    let edit: Option<WorkspaceEdit> = serde_json::from_value(result.clone()).ok();
+    let edit = match edit {
+        Some(e) => e,
+        None => return RenameResult::default(),
+    };
+
+    let mut files = Vec::new();
+    let mut total_edits = 0;
+
+    if let Some(changes) = edit.changes {
+        for (uri, text_edits) in changes {
+            let file_path = uri_to_path(uri.as_str()).to_string_lossy().to_string();
+            let edits: Vec<TextEditOutput> = text_edits
+                .iter()
+                .map(|te| TextEditOutput {
+                    line: te.range.start.line + 1,
+                    character: te.range.start.character + 1,
+                    end_line: te.range.end.line + 1,
+                    end_character: te.range.end.character + 1,
+                    new_text: te.new_text.clone(),
+                })
+                .collect();
+            total_edits += edits.len();
+            files.push(FileEdit { file_path, edits });
+        }
+    }
+
+    let file_count = files.len();
+    RenameResult {
+        files,
+        file_count,
+        edit_count: total_edits,
+    }
+}
+
+fn extract_param_label(label: &ParameterLabel) -> String {
+    match label {
+        ParameterLabel::Simple(s) => s.clone(),
+        ParameterLabel::LabelOffsets([start, end]) => format!("[{}:{}]", start, end),
+    }
+}
+
+pub fn process_signature_help(result: &Value) -> SignatureHelpResult {
+    let help: Option<SignatureHelp> = serde_json::from_value(result.clone()).ok();
+    let help = match help {
+        Some(h) => h,
+        None => return SignatureHelpResult::default(),
+    };
+
+    let signatures: Vec<SignatureOutput> = help
+        .signatures
+        .iter()
+        .map(|sig| {
+            let parameters: Vec<ParameterOutput> = sig
+                .parameters
+                .as_ref()
+                .map(|params| {
+                    params
+                        .iter()
+                        .map(|p| ParameterOutput {
+                            label: extract_param_label(&p.label),
+                            documentation: p.documentation.as_ref().map(extract_documentation),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            SignatureOutput {
+                label: sig.label.clone(),
+                documentation: sig.documentation.as_ref().map(extract_documentation),
+                parameters,
+                active_parameter: sig.active_parameter,
+            }
+        })
+        .collect();
+
+    SignatureHelpResult {
+        signatures,
+        active_signature: help.active_signature,
+        active_parameter: help.active_parameter,
+    }
 }
 
 pub fn get_validate_error(file_path: &str) -> Option<String> {
