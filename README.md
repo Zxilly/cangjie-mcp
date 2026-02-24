@@ -28,19 +28,21 @@ uvx cangjie-mcp  # 启动 MCP 服务器
 
 ### 安装并指定 Rust feature
 
-当平台没有预编译 wheel，或你希望自定义 fastembed 后端时，可强制从 sdist 构建并传入 maturin 构建参数：
+当平台没有预编译 wheel，或你希望按需启用 GPU/NPU 等加速后端时，可强制从 sdist 构建并传入 maturin 构建参数：
 
 ```bash
 pip install --no-binary cangjie-mcp cangjie-mcp \
   --config-settings=build-args="--features local"
 ```
 
+
 可用 feature（传给 `cangjie-mcp-cli`）：
 
-- `local`：本地向量化
+- `local`：本地向量化（CPU；默认构建的二进制已启用）
 - `local-cuda` / `local-cudnn`：启用 CUDA/CUDNN 后端
 - `local-metal`：启用 Apple Metal 后端
 - `local-mkl` / `local-accelerate`：启用 MKL / Accelerate 后端
+
 
 ## 架构
 

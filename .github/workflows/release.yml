@@ -63,51 +63,6 @@ jobs:
           name: wheels-linux-${{ matrix.platform.artifact_suffix }}
           path: dist
 
-  musllinux:
-    name: Build musllinux wheels
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            artifact_suffix: x86_64
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            artifact_suffix: aarch64
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@b1bd829e37fef14c63f19162034228a2f3dc1021 # v1.50.0
-        with:
-          target: ${{ matrix.platform.target }}
-          manylinux: musllinux_1_2
-          args: --release --features local --out dist
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          before-script-linux: |
-            ARCH="$(uname -m)"
-            if [ "$ARCH" = "x86_64" ]; then
-              PROTOC_ARCH="x86_64"
-            elif [ "$ARCH" = "aarch64" ]; then
-              PROTOC_ARCH="aarch_64"
-            else
-              echo "Unsupported architecture for protoc: $ARCH"
-              exit 1
-            fi
-            PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
-            curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
-            python3 -m zipfile -e "${PROTOC_ZIP}" /usr/local
-            rm "${PROTOC_ZIP}"
-            chmod +x /usr/local/bin/protoc
-            protoc --version
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: wheels-musllinux-${{ matrix.platform.artifact_suffix }}
-          path: dist
-
   windows:
     name: Build Windows wheels
     runs-on: windows-latest
@@ -150,9 +105,6 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            artifact_suffix: x86_64
           - runner: macos-15
             target: aarch64-apple-darwin
             artifact_suffix: aarch64
@@ -212,7 +164,7 @@ jobs:
     name: Publish to PyPI
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
-    needs: [linux, musllinux, windows, macos, sdist]
+    needs: [linux, windows, macos, sdist]
     permissions:
       contents: write
       id-token: write
