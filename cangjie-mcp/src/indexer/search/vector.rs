@@ -2,207 +2,73 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use arrow_array::{
-    BooleanArray, FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
-};
-use lancedb::arrow::arrow_schema::{DataType, Field, Schema};
-use lancedb::query::{ExecutableQuery, QueryBase};
+use rusqlite::Connection;
 use tracing::info;
+use zerocopy::IntoBytes;
 
 use crate::config::CATEGORY_FILTER_MULTIPLIER;
 use crate::indexer::embedding::Embedder;
 use crate::indexer::{SearchResult, SearchResultMetadata, TextChunk};
 
-const TABLE_NAME: &str = "chunks";
-const COL_VECTOR: &str = "vector";
-const COL_VECTOR_ITEM: &str = "item";
-const COL_TEXT: &str = "text";
-const COL_FILE_PATH: &str = "file_path";
-const COL_CATEGORY: &str = "category";
-const COL_TOPIC: &str = "topic";
-const COL_TITLE: &str = "title";
-const COL_HAS_CODE: &str = "has_code";
-const COL_DISTANCE: &str = "_distance";
-
 pub struct VectorStore {
-    db: lancedb::Connection,
-    table: Option<lancedb::Table>,
+    conn: Arc<std::sync::Mutex<Connection>>,
+    ready: bool,
     dim: usize,
-    schema: Arc<Schema>,
 }
 
-struct SearchBatchCols<'a> {
-    text: &'a StringArray,
-    file_path: &'a StringArray,
-    category: &'a StringArray,
-    topic: &'a StringArray,
-    title: &'a StringArray,
-    has_code: &'a BooleanArray,
-    distance: Option<&'a Float32Array>,
+/// Load the sqlite-vec extension via `sqlite3_auto_extension` before any
+/// connection is opened.  This is safe to call multiple times — SQLite
+/// de-duplicates auto-extensions internally.
+fn register_sqlite_vec() {
+    unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut rusqlite::ffi::sqlite3,
+                *mut *mut i8,
+                *const rusqlite::ffi::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
+        )));
+    }
 }
 
 impl VectorStore {
     pub async fn open(path: &Path, dim: usize) -> Result<Self> {
-        let db = lancedb::connect(path.to_str().context("Invalid UTF-8 in path")?)
-            .execute()
+        let path = path.to_path_buf();
+        let d = dim;
+        tokio::task::spawn_blocking(move || Self::open_sync(&path, d))
             .await
-            .context("Failed to open LanceDB")?;
+            .context("spawn_blocking join error")?
+    }
 
-        let table = db.open_table(TABLE_NAME).execute().await.ok();
-        let schema = Self::build_schema(dim);
+    fn open_sync(path: &Path, dim: usize) -> Result<Self> {
+        std::fs::create_dir_all(path)
+            .with_context(|| format!("Failed to create vector store dir: {path:?}"))?;
+
+        register_sqlite_vec();
+
+        let db_path = path.join("vectors.db");
+        let conn = Connection::open(&db_path)
+            .with_context(|| format!("Failed to open SQLite DB at {db_path:?}"))?;
+
+        // Check whether the data tables already exist and contain rows.
+        let ready = conn
+            .prepare("SELECT COUNT(*) FROM chunks")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+            .unwrap_or(0)
+            > 0;
 
         Ok(Self {
-            db,
-            table,
+            conn: Arc::new(std::sync::Mutex::new(conn)),
+            ready,
             dim,
-            schema,
         })
     }
 
-    fn build_schema(dim: usize) -> Arc<Schema> {
-        Arc::new(Schema::new(vec![
-            Field::new(
-                COL_VECTOR,
-                DataType::FixedSizeList(
-                    Arc::new(Field::new(COL_VECTOR_ITEM, DataType::Float32, true)),
-                    dim as i32,
-                ),
-                false,
-            ),
-            Field::new(COL_TEXT, DataType::Utf8, false),
-            Field::new(COL_FILE_PATH, DataType::Utf8, false),
-            Field::new(COL_CATEGORY, DataType::Utf8, false),
-            Field::new(COL_TOPIC, DataType::Utf8, false),
-            Field::new(COL_TITLE, DataType::Utf8, false),
-            Field::new(COL_HAS_CODE, DataType::Boolean, false),
-        ]))
-    }
-
-    fn build_batch(
-        schema: Arc<Schema>,
-        dim: usize,
-        batch_chunks: &[TextChunk],
-        embeddings: &[Vec<f32>],
-    ) -> Result<RecordBatch> {
-        let flat: Vec<f32> = embeddings.iter().flatten().copied().collect();
-        let values = Float32Array::from(flat);
-        let list_field = Arc::new(Field::new(COL_VECTOR_ITEM, DataType::Float32, true));
-        let vector_array =
-            FixedSizeListArray::try_new(list_field, dim as i32, Arc::new(values), None)?;
-
-        let text_array = StringArray::from(
-            batch_chunks
-                .iter()
-                .map(|c| c.text.as_str())
-                .collect::<Vec<_>>(),
-        );
-        let file_path_array = StringArray::from(
-            batch_chunks
-                .iter()
-                .map(|c| c.metadata.file_path.as_str())
-                .collect::<Vec<_>>(),
-        );
-        let category_array = StringArray::from(
-            batch_chunks
-                .iter()
-                .map(|c| c.metadata.category.as_str())
-                .collect::<Vec<_>>(),
-        );
-        let topic_array = StringArray::from(
-            batch_chunks
-                .iter()
-                .map(|c| c.metadata.topic.as_str())
-                .collect::<Vec<_>>(),
-        );
-        let title_array = StringArray::from(
-            batch_chunks
-                .iter()
-                .map(|c| c.metadata.title.as_str())
-                .collect::<Vec<_>>(),
-        );
-        let has_code_array = BooleanArray::from(
-            batch_chunks
-                .iter()
-                .map(|c| c.metadata.has_code)
-                .collect::<Vec<_>>(),
-        );
-
-        RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(vector_array),
-                Arc::new(text_array),
-                Arc::new(file_path_array),
-                Arc::new(category_array),
-                Arc::new(topic_array),
-                Arc::new(title_array),
-                Arc::new(has_code_array),
-            ],
-        )
-        .context("Failed to construct RecordBatch for vector store")
-    }
-
-    fn extract_search_columns(batch: &RecordBatch) -> Option<SearchBatchCols<'_>> {
-        let text = batch
-            .column_by_name(COL_TEXT)
-            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
-        let file_path = batch
-            .column_by_name(COL_FILE_PATH)
-            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
-        let category = batch
-            .column_by_name(COL_CATEGORY)
-            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
-        let topic = batch
-            .column_by_name(COL_TOPIC)
-            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
-        let title = batch
-            .column_by_name(COL_TITLE)
-            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
-        let has_code = batch
-            .column_by_name(COL_HAS_CODE)
-            .and_then(|c| c.as_any().downcast_ref::<BooleanArray>())?;
-        let distance = batch
-            .column_by_name(COL_DISTANCE)
-            .and_then(|c| c.as_any().downcast_ref::<Float32Array>());
-
-        Some(SearchBatchCols {
-            text,
-            file_path,
-            category,
-            topic,
-            title,
-            has_code,
-            distance,
-        })
-    }
-
-    fn append_search_results(
-        batch: &RecordBatch,
-        cols: SearchBatchCols<'_>,
-        out: &mut Vec<SearchResult>,
-        top_k: usize,
-    ) {
-        for i in 0..batch.num_rows() {
-            let score = cols
-                .distance
-                .map(|d| 1.0 / (1.0 + d.value(i) as f64))
-                .unwrap_or(0.0);
-            out.push(SearchResult {
-                text: cols.text.value(i).to_string(),
-                score,
-                metadata: SearchResultMetadata {
-                    file_path: cols.file_path.value(i).to_string(),
-                    category: cols.category.value(i).to_string(),
-                    topic: cols.topic.value(i).to_string(),
-                    title: cols.title.value(i).to_string(),
-                    has_code: cols.has_code.value(i),
-                },
-            });
-
-            if out.len() >= top_k {
-                break;
-            }
-        }
+    pub fn is_ready(&self) -> bool {
+        self.ready
     }
 
     pub async fn build_from_chunks(
@@ -211,32 +77,25 @@ impl VectorStore {
         embedder: &dyn Embedder,
         batch_size: usize,
     ) -> Result<()> {
+        if chunks.is_empty() {
+            anyhow::bail!("No chunks provided for vector index");
+        }
+
         info!(
             "Building vector index from {} chunks (batch_size={})...",
             chunks.len(),
             batch_size
         );
 
-        // Drop existing table if any
-        let _ = self.db.drop_table(TABLE_NAME, &[]).await;
-
-        let schema = self.schema.clone();
-        let mut all_batches = Vec::new();
-
+        // Phase 1: embed all chunks (async)
+        let mut all_embeddings: Vec<Vec<f32>> = Vec::with_capacity(chunks.len());
         for (i, batch_chunks) in chunks.chunks(batch_size).enumerate() {
             let texts: Vec<&str> = batch_chunks.iter().map(|c| c.text.as_str()).collect();
             let embeddings = embedder
                 .embed(&texts)
                 .await
                 .context("Embedding batch failed")?;
-
-            if embeddings.is_empty() {
-                continue;
-            }
-
-            let batch = Self::build_batch(schema.clone(), self.dim, batch_chunks, &embeddings)?;
-
-            all_batches.push(batch);
+            all_embeddings.extend(embeddings);
             info!(
                 "Embedded batch {}/{} ({} chunks)",
                 i + 1,
@@ -245,25 +104,92 @@ impl VectorStore {
             );
         }
 
-        if all_batches.is_empty() {
+        if all_embeddings.is_empty() {
             anyhow::bail!("No embeddings generated");
         }
 
-        let batches = RecordBatchIterator::new(all_batches.into_iter().map(Ok), schema.clone());
-        let table = self
-            .db
-            .create_table(TABLE_NAME, Box::new(batches))
-            .execute()
-            .await
-            .context("Failed to create LanceDB table")?;
+        // Phase 2: insert into SQLite (blocking)
+        let conn = Arc::clone(&self.conn);
+        let dim = self.dim;
+        let chunks_owned: Vec<(String, String, String, String, String, bool)> = chunks
+            .iter()
+            .map(|c| {
+                (
+                    c.text.clone(),
+                    c.metadata.file_path.clone(),
+                    c.metadata.category.clone(),
+                    c.metadata.topic.clone(),
+                    c.metadata.title.clone(),
+                    c.metadata.has_code,
+                )
+            })
+            .collect();
 
-        self.table = Some(table);
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().expect("mutex poisoned");
+
+            // Drop old tables and recreate
+            conn.execute_batch("DROP TABLE IF EXISTS chunks_vec; DROP TABLE IF EXISTS chunks;")
+                .context("Failed to drop old tables")?;
+
+            conn.execute_batch(&format!(
+                "CREATE TABLE chunks (
+                    id        INTEGER PRIMARY KEY,
+                    text      TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    category  TEXT NOT NULL,
+                    topic     TEXT NOT NULL,
+                    title     TEXT NOT NULL,
+                    has_code  INTEGER NOT NULL
+                );
+                CREATE INDEX idx_chunks_category ON chunks(category);
+                CREATE VIRTUAL TABLE chunks_vec USING vec0(
+                    embedding float[{dim}]
+                );"
+            ))
+            .context("Failed to create tables")?;
+
+            conn.execute_batch("BEGIN")?;
+
+            let mut insert_chunk = conn
+                .prepare_cached(
+                    "INSERT INTO chunks (id, text, file_path, category, topic, title, has_code)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .context("Failed to prepare chunk insert")?;
+
+            let mut insert_vec = conn
+                .prepare_cached("INSERT INTO chunks_vec (rowid, embedding) VALUES (?1, ?2)")
+                .context("Failed to prepare vec insert")?;
+
+            for (idx, ((text, file_path, category, topic, title, has_code), emb)) in
+                chunks_owned.iter().zip(all_embeddings.iter()).enumerate()
+            {
+                let rowid = (idx + 1) as i64;
+                insert_chunk.execute(rusqlite::params![
+                    rowid,
+                    text,
+                    file_path,
+                    category,
+                    topic,
+                    title,
+                    *has_code as i32,
+                ])?;
+                insert_vec.execute(rusqlite::params![rowid, emb.as_bytes()])?;
+            }
+
+            drop(insert_chunk);
+            drop(insert_vec);
+            conn.execute_batch("COMMIT")?;
+
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("spawn_blocking join error")??;
+
+        self.ready = true;
         info!("Vector index built successfully.");
         Ok(())
-    }
-
-    pub fn is_ready(&self) -> bool {
-        self.table.is_some()
     }
 
     pub async fn search(
@@ -272,40 +198,90 @@ impl VectorStore {
         top_k: usize,
         category: Option<&str>,
     ) -> Result<Vec<SearchResult>> {
-        let table = match &self.table {
-            Some(t) => t,
-            None => return Ok(Vec::new()),
+        if !self.ready {
+            return Ok(Vec::new());
+        }
+
+        let conn = Arc::clone(&self.conn);
+        let query_bytes = query_emb.as_bytes().to_vec();
+        let fetch_limit = if category.is_some() {
+            top_k * CATEGORY_FILTER_MULTIPLIER
+        } else {
+            top_k
         };
+        let category_owned = category.map(|s| s.to_string());
 
-        let mut query = table
-            .vector_search(query_emb)
-            .context("Failed to build vector query")?
-            .limit(if category.is_some() {
-                top_k * CATEGORY_FILTER_MULTIPLIER
-            } else {
-                top_k
-            });
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().expect("mutex poisoned");
 
-        if let Some(cat) = category {
-            query = query.only_if(format!("category = '{}'", cat.replace('\'', "''")));
-        }
+            // KNN search via sqlite-vec
+            let mut knn_stmt = conn
+                .prepare(
+                    "SELECT v.rowid, v.distance
+                     FROM chunks_vec v
+                     WHERE v.embedding MATCH ?1
+                     ORDER BY v.distance
+                     LIMIT ?2",
+                )
+                .context("Failed to prepare KNN query")?;
 
-        let results = query.execute().await.context("Vector search failed")?;
+            let matches: Vec<(i64, f32)> = knn_stmt
+                .query_map(rusqlite::params![query_bytes, fetch_limit as i64], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
 
-        use futures::TryStreamExt;
-        let batches: Vec<RecordBatch> = results.try_collect().await?;
+            let mut meta_stmt = conn
+                .prepare_cached(
+                    "SELECT text, file_path, category, topic, title, has_code
+                     FROM chunks WHERE id = ?1",
+                )
+                .context("Failed to prepare metadata query")?;
 
-        let mut search_results = Vec::new();
-        for batch in &batches {
-            if let Some(cols) = Self::extract_search_columns(batch) {
-                Self::append_search_results(batch, cols, &mut search_results, top_k);
+            let mut results = Vec::with_capacity(top_k);
+            for (rowid, distance) in &matches {
+                let row = meta_stmt.query_row([rowid], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, bool>(5)?,
+                    ))
+                });
+
+                if let Ok((text, file_path, cat, topic, title, has_code)) = row {
+                    // Category filter
+                    if let Some(ref filter_cat) = category_owned {
+                        if cat != *filter_cat {
+                            continue;
+                        }
+                    }
+
+                    let score = 1.0 / (1.0 + *distance as f64);
+                    results.push(SearchResult {
+                        text,
+                        score,
+                        metadata: SearchResultMetadata {
+                            file_path,
+                            category: cat,
+                            topic,
+                            title,
+                            has_code,
+                        },
+                    });
+
+                    if results.len() >= top_k {
+                        break;
+                    }
+                }
             }
 
-            if search_results.len() >= top_k {
-                break;
-            }
-        }
-
-        Ok(search_results)
+            Ok(results)
+        })
+        .await
+        .context("spawn_blocking join error")?
     }
 }

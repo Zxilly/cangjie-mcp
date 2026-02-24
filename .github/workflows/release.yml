@@ -32,7 +32,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
-          args: --release --out dist
+          args: --release --features local --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           before-script-linux: |
             ARCH="$(uname -m)"
@@ -83,7 +83,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: musllinux_1_2
-          args: --release --out dist
+          args: --release --features local --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           before-script-linux: |
             ARCH="$(uname -m)"
@@ -129,7 +129,7 @@ jobs:
         uses: PyO3/maturin-action@b1bd829e37fef14c63f19162034228a2f3dc1021 # v1.50.0
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist
+          args: --release --features local --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       - name: Test wheel
@@ -169,7 +169,7 @@ jobs:
         uses: PyO3/maturin-action@b1bd829e37fef14c63f19162034228a2f3dc1021 # v1.50.0
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist
+          args: --release --features local --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       - name: Test wheel
@@ -200,7 +200,7 @@ jobs:
         uses: PyO3/maturin-action@b1bd829e37fef14c63f19162034228a2f3dc1021 # v1.50.0
         with:
           command: sdist
-          args: --out dist
+          args: --features local --out dist
 
       - name: Upload sdist
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

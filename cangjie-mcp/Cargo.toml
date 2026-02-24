@@ -59,14 +59,13 @@ anyhow = "1"
 thiserror = "2"
 once_cell = "1"
 strsim = "0.11"
-futures = "0.3"
-
 # Markdown-aware chunking
 text-splitter = { version = "0.29", features = ["markdown"] }
 
-# Vector database
-lancedb = "0.26"
-arrow-array = "57"
+# Vector database (SQLite + sqlite-vec)
+rusqlite = { version = "0.38", features = ["bundled"] }
+sqlite-vec = "0.1.7-alpha.10"
+zerocopy = { version = "0.8", features = ["derive"] }
 
 # LSP support
 toml = "1.0"
