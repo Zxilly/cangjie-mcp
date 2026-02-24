@@ -868,7 +868,7 @@ impl CangjieServer {
 #[tool_handler]
 impl ServerHandler for CangjieServer {
     fn get_info(&self) -> ServerInfo {
-        let lsp_enabled = std::env::var("CANGJIE_HOME").is_ok();
+        let lsp_enabled = crate::lsp::is_available();
         ServerInfo {
             instructions: Some(get_prompt(lsp_enabled)),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

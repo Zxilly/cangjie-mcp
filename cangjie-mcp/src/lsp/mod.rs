@@ -4,7 +4,7 @@ pub mod dependency;
 pub mod tools;
 pub mod utils;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -16,6 +16,41 @@ use crate::lsp::utils::get_path_separator;
 
 static LSP_CLIENT: once_cell::sync::Lazy<Arc<RwLock<Option<CangjieClient>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(None)));
+
+fn detect_cangjie_home_from_vscode_settings(workspace: &Path) -> Option<PathBuf> {
+    let settings_path = workspace.join(".vscode").join("settings.json");
+    let content = std::fs::read_to_string(settings_path).ok()?;
+    let root: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let root_obj = root.as_object()?;
+
+    for (key, value) in root_obj {
+        if !key.starts_with("terminal.integrated.env") {
+            continue;
+        }
+
+        let env_obj = match value.as_object() {
+            Some(env_obj) => env_obj,
+            None => continue,
+        };
+
+        let sdk_path = match env_obj.get("CANGJIE_HOME").and_then(|v| v.as_str()) {
+            Some(sdk_path) if !sdk_path.trim().is_empty() => sdk_path,
+            _ => continue,
+        };
+
+        return Some(PathBuf::from(sdk_path));
+    }
+
+    None
+}
+
+fn detect_cangjie_home(workspace: &Path) -> Option<PathBuf> {
+    std::env::var("CANGJIE_HOME")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| detect_cangjie_home_from_vscode_settings(workspace))
+}
 
 /// Initialize the global LSP client.
 pub async fn init(settings: LSPSettings) -> bool {
@@ -60,8 +95,8 @@ pub async fn shutdown() {
 
 /// Check if the LSP client is available.
 pub fn is_available() -> bool {
-    // Can't do async check here, so we just check if CANGJIE_HOME is set
-    std::env::var("CANGJIE_HOME").is_ok()
+    let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    detect_cangjie_home(&workspace).is_some()
 }
 
 /// Get a reference to the global LSP client (read lock).
@@ -76,10 +111,9 @@ pub async fn get_client() -> Option<tokio::sync::RwLockReadGuard<'static, Option
 
 /// Try to auto-detect and create LSP settings.
 pub fn detect_settings(workspace_path: Option<PathBuf>) -> Option<LSPSettings> {
-    let sdk_path = std::env::var("CANGJIE_HOME").ok().map(PathBuf::from)?;
-
     let workspace = workspace_path
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let sdk_path = detect_cangjie_home(&workspace)?;
 
     Some(LSPSettings {
         sdk_path,
@@ -94,6 +128,13 @@ pub fn detect_settings(workspace_path: Option<PathBuf>) -> Option<LSPSettings> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn write_workspace_settings(workspace: &Path, content: &str) {
+        let vscode_dir = workspace.join(".vscode");
+        std::fs::create_dir_all(&vscode_dir).unwrap();
+        std::fs::write(vscode_dir.join("settings.json"), content).unwrap();
+    }
 
     #[test]
     fn test_is_available_checks_env() {
@@ -148,6 +189,47 @@ mod tests {
             let settings = result.unwrap();
             let expected = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             assert_eq!(settings.workspace_path, expected);
+        });
+    }
+
+    #[test]
+    fn test_detect_settings_falls_back_to_vscode_terminal_env() {
+        let temp_dir = TempDir::new().unwrap();
+        write_workspace_settings(
+            temp_dir.path(),
+            r#"{
+  "terminal.integrated.env.windows": {
+    "CANGJIE_HOME": "/from/vscode/settings"
+  }
+}"#,
+        );
+
+        temp_env::with_var("CANGJIE_HOME", None::<&str>, || {
+            let result = detect_settings(Some(temp_dir.path().to_path_buf()));
+            assert!(result.is_some());
+            assert_eq!(
+                result.unwrap().sdk_path,
+                PathBuf::from("/from/vscode/settings")
+            );
+        });
+    }
+
+    #[test]
+    fn test_detect_settings_env_takes_precedence_over_vscode_fallback() {
+        let temp_dir = TempDir::new().unwrap();
+        write_workspace_settings(
+            temp_dir.path(),
+            r#"{
+  "terminal.integrated.env.windows": {
+    "CANGJIE_HOME": "/from/vscode/settings"
+  }
+}"#,
+        );
+
+        temp_env::with_var("CANGJIE_HOME", Some("/from/env"), || {
+            let result = detect_settings(Some(temp_dir.path().to_path_buf()));
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().sdk_path, PathBuf::from("/from/env"));
         });
     }
 }
