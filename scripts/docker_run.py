@@ -4,6 +4,7 @@
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -79,7 +80,9 @@ def main():
 
     port = os.environ.get("CANGJIE_SERVER_PORT") or env.get("CANGJIE_SERVER_PORT") or DEFAULT_PORT
 
-    cmd = ["docker", "run", "--rm", "-p", f"{port}:{port}"]
+    container_name = f"cangjie-mcp-run-{uuid.uuid4().hex[:8]}"
+
+    cmd = ["docker", "run", "--rm", "--name", container_name, "-p", f"{port}:{port}"]
 
     # Pass forced values (always override)
     for var, value in FORCED_VARS.items():
@@ -94,7 +97,24 @@ def main():
     cmd.append(IMAGE_NAME)
 
     print(f"+ {' '.join(cmd)}")
-    sys.exit(subprocess.call(cmd, cwd=PROJECT_DIR))
+    proc = subprocess.Popen(cmd, cwd=PROJECT_DIR)
+
+    try:
+        sys.exit(proc.wait())
+    except KeyboardInterrupt:
+        print(f"\nCtrl+C detected, stopping container: {container_name}", file=sys.stderr)
+        subprocess.run(
+            ["docker", "stop", "-t", "1", container_name],
+            cwd=PROJECT_DIR,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        sys.exit(130)
 
 
 if __name__ == "__main__":
