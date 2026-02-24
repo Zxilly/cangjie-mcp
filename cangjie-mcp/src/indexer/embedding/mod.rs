@@ -28,6 +28,7 @@ pub async fn create_embedder(settings: &Settings) -> Result<Option<Box<dyn Embed
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("OpenAI API key required for openai embedding"))?;
             Ok(Some(Box::new(openai::OpenAIEmbedder::new(
+                settings,
                 api_key,
                 &settings.openai_model,
                 &settings.openai_base_url,
@@ -56,22 +57,12 @@ mod tests {
 
     fn test_settings(embedding_type: EmbeddingType) -> Settings {
         Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: crate::config::DocLang::Zh,
             embedding_type,
             local_model: "test-model".to_string(),
-            rerank_type: crate::config::RerankType::None,
-            rerank_model: "".to_string(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
             data_dir: std::path::PathBuf::from("/tmp"),
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
-            prebuilt: crate::config::PrebuiltMode::Off,
+            ..Settings::default()
         }
     }
 

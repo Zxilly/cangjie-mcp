@@ -18,6 +18,11 @@ pub const DEFAULT_OPENAI_MODEL: &str = "BAAI/bge-m3";
 pub const DEFAULT_DATA_DIR_NAME: &str = ".cangjie-mcp";
 pub const DEFAULT_SERVER_HOST: &str = "127.0.0.1";
 pub const DEFAULT_SERVER_PORT: u16 = 8765;
+pub const DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 90;
+pub const DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST: usize = 16;
+pub const DEFAULT_HTTP_TCP_KEEPALIVE_SECS: u64 = 60;
+pub const DEFAULT_HTTP_ENABLE_HTTP2: bool = true;
+pub const DEFAULT_SERVER_ENABLE_HTTP2: bool = true;
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -148,8 +153,41 @@ pub struct Settings {
     pub openai_api_key: Option<String>,
     pub openai_base_url: String,
     pub openai_model: String,
+    pub http_pool_idle_timeout_secs: u64,
+    pub http_pool_max_idle_per_host: usize,
+    pub http_tcp_keepalive_secs: u64,
+    pub http_enable_http2: bool,
+    pub server_enable_http2: bool,
     /// Pre-built index mode. Skips all git operations.
     pub prebuilt: PrebuiltMode,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            docs_version: DEFAULT_DOCS_VERSION.to_string(),
+            docs_lang: DocLang::Zh,
+            embedding_type: EmbeddingType::None,
+            local_model: DEFAULT_LOCAL_MODEL.to_string(),
+            rerank_type: RerankType::None,
+            rerank_model: DEFAULT_RERANK_MODEL.to_string(),
+            rerank_top_k: DEFAULT_RERANK_TOP_K,
+            rerank_initial_k: DEFAULT_RERANK_INITIAL_K,
+            rrf_k: DEFAULT_RRF_K,
+            chunk_max_size: DEFAULT_CHUNK_MAX_SIZE,
+            data_dir: get_default_data_dir(),
+            server_url: None,
+            openai_api_key: None,
+            openai_base_url: DEFAULT_OPENAI_BASE_URL.to_string(),
+            openai_model: DEFAULT_OPENAI_MODEL.to_string(),
+            http_pool_idle_timeout_secs: DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS,
+            http_pool_max_idle_per_host: DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST,
+            http_tcp_keepalive_secs: DEFAULT_HTTP_TCP_KEEPALIVE_SECS,
+            http_enable_http2: DEFAULT_HTTP_ENABLE_HTTP2,
+            server_enable_http2: DEFAULT_SERVER_ENABLE_HTTP2,
+            prebuilt: PrebuiltMode::Off,
+        }
+    }
 }
 
 impl Settings {
@@ -282,21 +320,10 @@ mod tests {
     fn test_settings() -> Settings {
         Settings {
             docs_version: "0.55.3".to_string(),
-            docs_lang: DocLang::Zh,
-            embedding_type: EmbeddingType::None,
-            local_model: "".to_string(),
-            rerank_type: RerankType::None,
-            rerank_model: "".to_string(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
             data_dir: PathBuf::from("/tmp/test-data"),
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test-model".to_string(),
-            prebuilt: PrebuiltMode::Off,
+            ..Settings::default()
         }
     }
 

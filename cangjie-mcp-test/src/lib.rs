@@ -1,32 +1,20 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use cangjie_mcp::config::{
-    DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE, DEFAULT_OPENAI_BASE_URL,
-    DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
-};
+use cangjie_mcp::config::{DocLang, EmbeddingType, RerankType, Settings};
 use cangjie_mcp::indexer::document::source::DocumentSource;
 use cangjie_mcp::indexer::{DocData, DocMetadata, TextChunk};
 
 /// Create a BM25-only `Settings` suitable for testing.
 pub fn test_settings(data_dir: PathBuf) -> Settings {
     Settings {
-        docs_version: "test".to_string(),
         docs_lang: DocLang::Zh,
         embedding_type: EmbeddingType::None,
-        local_model: String::new(),
         rerank_type: RerankType::None,
-        rerank_model: String::new(),
-        rerank_top_k: DEFAULT_RERANK_TOP_K,
-        rerank_initial_k: DEFAULT_RERANK_INITIAL_K,
-        rrf_k: DEFAULT_RRF_K,
-        chunk_max_size: DEFAULT_CHUNK_MAX_SIZE,
+        docs_version: "test".to_string(),
         data_dir,
-        server_url: None,
-        openai_api_key: None,
-        openai_base_url: DEFAULT_OPENAI_BASE_URL.to_string(),
         openai_model: String::new(),
-        prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
+        ..Settings::default()
     }
 }
 

@@ -24,19 +24,11 @@ fn real_settings(data_dir: std::path::PathBuf) -> Settings {
         docs_version: "latest".to_string(),
         docs_lang: DocLang::Zh,
         embedding_type: EmbeddingType::None,
-        local_model: String::new(),
         rerank_type: RerankType::None,
-        rerank_model: String::new(),
-        rerank_top_k: 5,
-        rerank_initial_k: 20,
-        rrf_k: 60,
-        chunk_max_size: 6000,
         data_dir,
-        server_url: None,
-        openai_api_key: None,
         openai_base_url: "https://api.siliconflow.cn/v1".to_string(),
         openai_model: String::new(),
-        prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
+        ..Settings::default()
     }
 }
 

@@ -31,19 +31,15 @@ fn openai_settings() -> Option<Settings> {
         docs_version: "test".to_string(),
         docs_lang: DocLang::Zh,
         embedding_type: EmbeddingType::OpenAI,
-        local_model: String::new(),
         rerank_type: RerankType::OpenAI,
         rerank_model,
         rerank_top_k: 3,
         rerank_initial_k: 10,
-        rrf_k: 60,
-        chunk_max_size: 6000,
         data_dir: std::path::PathBuf::from("/tmp/test"),
-        server_url: None,
         openai_api_key: Some(api_key),
         openai_base_url: base_url,
         openai_model: model,
-        prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
+        ..Settings::default()
     })
 }
 

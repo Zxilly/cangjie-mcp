@@ -6,9 +6,11 @@ use tracing::info;
 
 use cangjie_mcp::config::{
     self, DocLang, EmbeddingType, PrebuiltMode, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
-    DEFAULT_DOCS_VERSION, DEFAULT_LOCAL_MODEL, DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL,
-    DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
-    DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT,
+    DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2, DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS,
+    DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST, DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL,
+    DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL,
+    DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K, DEFAULT_SERVER_ENABLE_HTTP2, DEFAULT_SERVER_HOST,
+    DEFAULT_SERVER_PORT,
 };
 use cangjie_mcp::indexer::document::source::GitDocumentSource;
 use cangjie_mcp::indexer::search::LocalSearchIndex;
@@ -86,6 +88,26 @@ struct Cli {
     #[arg(long, short = 'p', env = "CANGJIE_SERVER_PORT", default_value_t = DEFAULT_SERVER_PORT)]
     port: u16,
 
+    /// HTTP client pool idle timeout in seconds
+    #[arg(long = "http-pool-idle-timeout-secs", env = "CANGJIE_HTTP_POOL_IDLE_TIMEOUT_SECS", default_value_t = DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS)]
+    http_pool_idle_timeout_secs: u64,
+
+    /// Max idle HTTP connections per host
+    #[arg(long = "http-pool-max-idle-per-host", env = "CANGJIE_HTTP_POOL_MAX_IDLE_PER_HOST", default_value_t = DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST)]
+    http_pool_max_idle_per_host: usize,
+
+    /// TCP keepalive for outbound HTTP in seconds
+    #[arg(long = "http-tcp-keepalive-secs", env = "CANGJIE_HTTP_TCP_KEEPALIVE_SECS", default_value_t = DEFAULT_HTTP_TCP_KEEPALIVE_SECS)]
+    http_tcp_keepalive_secs: u64,
+
+    /// Enable HTTP/2 for outbound HTTP client
+    #[arg(long = "http2", env = "CANGJIE_HTTP2", default_value_t = DEFAULT_HTTP_ENABLE_HTTP2)]
+    http_enable_http2: bool,
+
+    /// Enable HTTP/2 for the HTTP server
+    #[arg(long = "server-http2", env = "CANGJIE_SERVER_HTTP2", default_value_t = DEFAULT_SERVER_ENABLE_HTTP2)]
+    server_enable_http2: bool,
+
     /// Log file path
     #[arg(long = "log-file", env = "CANGJIE_LOG_FILE")]
     log_file: Option<PathBuf>,
@@ -116,15 +138,20 @@ impl Cli {
                 .data_dir
                 .clone()
                 .unwrap_or_else(config::get_default_data_dir),
-            server_url: None,
             openai_api_key: self.openai_api_key.clone(),
             openai_base_url: self.openai_base_url.clone(),
             openai_model: self.openai_model.clone(),
+            http_pool_idle_timeout_secs: self.http_pool_idle_timeout_secs,
+            http_pool_max_idle_per_host: self.http_pool_max_idle_per_host,
+            http_tcp_keepalive_secs: self.http_tcp_keepalive_secs,
+            http_enable_http2: self.http_enable_http2,
+            server_enable_http2: self.server_enable_http2,
             prebuilt: match &self.prebuilt {
                 None => PrebuiltMode::Off,
                 Some(v) if v == "true" || v.is_empty() => PrebuiltMode::Auto,
                 Some(v) => PrebuiltMode::Version(v.clone()),
             },
+            ..Settings::default()
         }
     }
 }
@@ -189,6 +216,9 @@ async fn main() -> Result<()> {
     let bind_addr = format!("{}:{}", cli.host, cli.port);
     info!("Starting HTTP server on {bind_addr}...");
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    if cli.server_enable_http2 {
+        info!("HTTP/2 enabled on server.");
+    }
     axum::serve(listener, app).await?;
 
     Ok(())

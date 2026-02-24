@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use tracing::{info, warn};
 
 use crate::config::{DocLang, IndexInfo, Settings, DEFAULT_EMBEDDING_DIM};
+use crate::indexer::build_http_client;
 use crate::indexer::embedding::{self, Embedder};
 use crate::indexer::rerank::{self, RerankerKind};
 use crate::indexer::search::bm25::BM25Store;
@@ -230,13 +231,10 @@ pub struct RemoteSearchIndex {
 }
 
 impl RemoteSearchIndex {
-    pub fn new(server_url: &str) -> Result<Self> {
+    pub fn new(settings: &Settings, server_url: &str) -> Result<Self> {
         Ok(Self {
             server_url: server_url.trim_end_matches('/').to_string(),
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()
-                .context("Failed to build HTTP client")?,
+            client: build_http_client(settings, std::time::Duration::from_secs(60))?,
         })
     }
 
@@ -298,28 +296,19 @@ impl RemoteSearchIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DocLang, EmbeddingType, PrebuiltMode, RerankType, Settings};
+    use crate::config::{DocLang, EmbeddingType, RerankType, Settings};
     use crate::indexer::TextChunk;
     use std::path::PathBuf;
 
     fn test_settings(data_dir: PathBuf) -> Settings {
         Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: DocLang::Zh,
-            embedding_type: EmbeddingType::None,
-            local_model: String::new(),
-            rerank_type: RerankType::None,
-            rerank_model: String::new(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
             data_dir,
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
-            prebuilt: PrebuiltMode::Off,
+            docs_lang: DocLang::Zh,
+            embedding_type: EmbeddingType::None,
+            rerank_type: RerankType::None,
+            ..Settings::default()
         }
     }
 
@@ -438,13 +427,21 @@ mod tests {
 
     #[test]
     fn test_remote_search_new() {
-        let remote = RemoteSearchIndex::new("http://localhost:8765").unwrap();
+        let remote = RemoteSearchIndex::new(
+            &test_settings(PathBuf::from("/tmp")),
+            "http://localhost:8765",
+        )
+        .unwrap();
         assert_eq!(remote.server_url, "http://localhost:8765");
     }
 
     #[test]
     fn test_remote_search_new_trailing_slash() {
-        let remote = RemoteSearchIndex::new("http://localhost:8765/").unwrap();
+        let remote = RemoteSearchIndex::new(
+            &test_settings(PathBuf::from("/tmp")),
+            "http://localhost:8765/",
+        )
+        .unwrap();
         assert_eq!(
             remote.server_url, "http://localhost:8765",
             "Trailing slash should be trimmed"
@@ -453,7 +450,11 @@ mod tests {
 
     #[test]
     fn test_remote_search_new_multiple_trailing_slashes() {
-        let remote = RemoteSearchIndex::new("http://example.com///").unwrap();
+        let remote = RemoteSearchIndex::new(
+            &test_settings(PathBuf::from("/tmp")),
+            "http://example.com///",
+        )
+        .unwrap();
         assert_eq!(
             remote.server_url, "http://example.com",
             "All trailing slashes should be trimmed"

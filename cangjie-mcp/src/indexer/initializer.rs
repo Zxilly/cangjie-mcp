@@ -195,22 +195,13 @@ mod tests {
 
     fn test_settings(data_dir: PathBuf) -> Settings {
         Settings {
-            docs_version: "dev".to_string(),
             docs_lang: DocLang::Zh,
             embedding_type: EmbeddingType::None,
-            local_model: String::new(),
             rerank_type: RerankType::None,
-            rerank_model: String::new(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
             data_dir,
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
-            prebuilt: PrebuiltMode::Off,
+            ..Settings::default()
         }
     }
 

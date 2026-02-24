@@ -7,8 +7,10 @@ use tracing::info;
 
 use cangjie_mcp::config::{
     self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
-    DEFAULT_DOCS_VERSION, DEFAULT_LOCAL_MODEL, DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL,
-    DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
+    DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2, DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS,
+    DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST, DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL,
+    DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL,
+    DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
 };
 use cangjie_mcp::indexer::search::LocalSearchIndex;
 
@@ -79,6 +81,22 @@ struct Cli {
     #[arg(long = "server-url", env = "CANGJIE_SERVER_URL")]
     server_url: Option<String>,
 
+    /// HTTP client pool idle timeout in seconds
+    #[arg(long = "http-pool-idle-timeout-secs", env = "CANGJIE_HTTP_POOL_IDLE_TIMEOUT_SECS", default_value_t = DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS)]
+    http_pool_idle_timeout_secs: u64,
+
+    /// Max idle HTTP connections per host
+    #[arg(long = "http-pool-max-idle-per-host", env = "CANGJIE_HTTP_POOL_MAX_IDLE_PER_HOST", default_value_t = DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST)]
+    http_pool_max_idle_per_host: usize,
+
+    /// TCP keepalive for outbound HTTP in seconds
+    #[arg(long = "http-tcp-keepalive-secs", env = "CANGJIE_HTTP_TCP_KEEPALIVE_SECS", default_value_t = DEFAULT_HTTP_TCP_KEEPALIVE_SECS)]
+    http_tcp_keepalive_secs: u64,
+
+    /// Enable HTTP/2 for outbound HTTP client
+    #[arg(long = "http2", env = "CANGJIE_HTTP2", default_value_t = DEFAULT_HTTP_ENABLE_HTTP2)]
+    http_enable_http2: bool,
+
     /// Log file path
     #[arg(long = "log-file", env = "CANGJIE_LOG_FILE")]
     log_file: Option<PathBuf>,
@@ -118,7 +136,11 @@ impl Cli {
             openai_api_key: self.openai_api_key.clone(),
             openai_base_url: self.openai_base_url.clone(),
             openai_model: self.openai_model.clone(),
-            prebuilt: cangjie_mcp::config::PrebuiltMode::Off,
+            http_pool_idle_timeout_secs: self.http_pool_idle_timeout_secs,
+            http_pool_max_idle_per_host: self.http_pool_max_idle_per_host,
+            http_tcp_keepalive_secs: self.http_tcp_keepalive_secs,
+            http_enable_http2: self.http_enable_http2,
+            ..Settings::default()
         }
     }
 }

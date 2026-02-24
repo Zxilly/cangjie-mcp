@@ -5,9 +5,9 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tracing::{info, warn};
 
-use crate::config::DocLang;
+use crate::config::{DocLang, Settings};
 use crate::indexer::document::loader::{extract_title_from_content, load_document_from_content};
-use crate::indexer::DocData;
+use crate::indexer::{build_http_client, DocData};
 
 // -- Document Source trait ---------------------------------------------------
 
@@ -793,12 +793,12 @@ pub struct RemoteDocumentSource {
 }
 
 impl RemoteDocumentSource {
-    pub fn new(server_url: &str) -> Self {
-        Self {
+    pub fn new(settings: &Settings, server_url: &str) -> Result<Self> {
+        Ok(Self {
             server_url: server_url.trim_end_matches('/').to_string(),
-            client: reqwest::Client::new(),
+            client: build_http_client(settings, std::time::Duration::from_secs(60))?,
             cache: tokio::sync::OnceCell::new(),
-        }
+        })
     }
 
     async fn fetch_topics(&self) -> Result<HashMap<String, Vec<TopicEntry>>> {

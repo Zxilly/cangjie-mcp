@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Result;
+use jieba_rs::Jieba;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
@@ -135,7 +136,7 @@ impl CangjieServer {
         info!("Initializing index...");
 
         let (search, index_info) = if let Some(ref url) = settings.server_url {
-            let remote = RemoteSearchIndex::new(url)?;
+            let remote = RemoteSearchIndex::new(&settings, url)?;
             let info = remote.init().await?;
             (SearchBackend::Remote(Arc::new(remote)), info)
         } else {
@@ -147,7 +148,7 @@ impl CangjieServer {
         crate::config::log_startup_info(&settings, &index_info);
 
         let docs: Arc<dyn DocumentSource> = if let Some(ref url) = settings.server_url {
-            Arc::new(RemoteDocumentSource::new(url))
+            Arc::new(RemoteDocumentSource::new(&settings, url)?)
         } else {
             let repo_dir = settings.docs_repo_dir();
             let lang = index_info.lang;
@@ -185,6 +186,177 @@ impl CangjieServer {
 
     fn has_package(result: &SearchResult, package: &str) -> bool {
         result.text.contains(package) || result.text.contains(&format!("import {package}"))
+    }
+
+    fn query_terms(query: &str) -> Vec<String> {
+        let jieba = Jieba::new();
+        let lower = query.to_lowercase();
+        let mut terms: Vec<String> = jieba
+            .cut_for_search(&lower, true)
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        for token in lower
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .filter(|t| !t.is_empty())
+        {
+            if !terms.iter().any(|t| t == token) {
+                terms.push(token.to_string());
+            }
+        }
+
+        terms
+    }
+
+    fn lexical_boost(query_terms: &[String], query: &str, item: &SearchResult) -> f64 {
+        let topic = item.metadata.topic.to_lowercase();
+        let title = item.metadata.title.to_lowercase();
+        let path = item.metadata.file_path.to_lowercase();
+        let text = item.text.to_lowercase();
+        let query_lc = query.to_lowercase();
+        let mut boost = 0.0;
+
+        for term in query_terms {
+            if topic == *term {
+                boost += 8.0;
+            } else if topic.contains(term) {
+                boost += 5.0;
+            }
+
+            if title == *term {
+                boost += 6.0;
+            } else if title.contains(term) {
+                boost += 4.0;
+            }
+
+            if path.contains(term) {
+                boost += 2.0;
+            }
+
+            if text.contains(term) {
+                boost += 1.5;
+            }
+        }
+
+        if !query_lc.is_empty() {
+            if topic.contains(&query_lc) {
+                boost += 6.0;
+            }
+            if title.contains(&query_lc) {
+                boost += 5.0;
+            }
+            if text.contains(&query_lc) {
+                boost += 2.0;
+            }
+        }
+
+        boost
+    }
+
+    fn rerank_and_dedup_results(
+        results: Vec<SearchResult>,
+        query: &str,
+        top_k: usize,
+        offset: usize,
+    ) -> Vec<SearchResult> {
+        let query_terms = Self::query_terms(query);
+        let mut scored: Vec<(SearchResult, f64)> = results
+            .into_iter()
+            .map(|r| {
+                let adjusted = r.score + Self::lexical_boost(&query_terms, query, &r);
+                (r, adjusted)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let per_doc_limit = if top_k <= 3 { 1 } else { 2 };
+        let limit = offset + top_k + 1;
+
+        // Strong duplicate suppression for near-identical snippets.
+        let mut seen_text_keys: HashSet<String> = HashSet::new();
+        let mut candidates: Vec<(SearchResult, f64)> = Vec::new();
+        for (result, adjusted) in scored {
+            let text_key = result
+                .text
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            if !seen_text_keys.insert(text_key) {
+                continue;
+            }
+            candidates.push((result, adjusted));
+        }
+
+        // Phase 1: maximize document coverage (at most one per document).
+        let mut selected: Vec<(SearchResult, f64)> = Vec::new();
+        let mut per_doc_count: HashMap<String, usize> = HashMap::new();
+        for (result, adjusted) in &candidates {
+            if selected.len() >= limit {
+                break;
+            }
+            let key = result.metadata.file_path.clone();
+            if per_doc_count.get(&key).copied().unwrap_or(0) == 0 {
+                selected.push((result.clone(), *adjusted));
+                per_doc_count.insert(key, 1);
+            }
+        }
+
+        // Phase 2: backfill with additional high-scoring snippets up to per-doc cap.
+        for (result, adjusted) in candidates {
+            if selected.len() >= limit {
+                break;
+            }
+            let key = result.metadata.file_path.clone();
+            let count = per_doc_count.get(&key).copied().unwrap_or(0);
+            if count >= per_doc_limit {
+                continue;
+            }
+            if count == 0 {
+                continue;
+            }
+            selected.push((result, adjusted));
+            per_doc_count.insert(key, count + 1);
+        }
+
+        selected.into_iter().map(|(result, _)| result).collect()
+    }
+
+    async fn build_topic_category_map(
+        docs: &Arc<dyn DocumentSource>,
+    ) -> Result<HashMap<String, Vec<String>>> {
+        let categories = docs.get_categories().await?;
+        let mut mapping: HashMap<String, Vec<String>> = HashMap::new();
+        for cat in categories {
+            let topics = docs.get_topics_in_category(&cat).await?;
+            for topic in topics {
+                mapping.entry(topic).or_default().push(cat.clone());
+            }
+        }
+        for cats in mapping.values_mut() {
+            cats.sort();
+            cats.dedup();
+        }
+        Ok(mapping)
+    }
+
+    fn topic_display_with_categories(
+        topic: &str,
+        topic_category_map: &HashMap<String, Vec<String>>,
+    ) -> String {
+        match topic_category_map.get(topic) {
+            Some(cats) if !cats.is_empty() => {
+                if cats.len() == 1 {
+                    format!("{topic} (in {})", cats[0])
+                } else {
+                    format!("{topic} (in {})", cats.join(", "))
+                }
+            }
+            _ => topic.to_string(),
+        }
     }
 }
 
@@ -260,17 +432,23 @@ impl CangjieServer {
         let category = params.category.as_deref().filter(|s| !s.is_empty());
         let package = params.package.as_deref().filter(|s| !s.is_empty());
 
+        // Retrieve extra candidates so lexical reranking and deduplication still
+        // has enough headroom for pagination.
+        let dedup_fetch_multiplier = 4;
         let fetch_multiplier = if package.is_some() {
             PACKAGE_FETCH_MULTIPLIER
         } else {
             1
         };
-        let fetch_count = (params.offset + top_k + 1) * fetch_multiplier;
+        let fetch_count = (params.offset + top_k + 1) * fetch_multiplier * dedup_fetch_multiplier;
 
-        let mut results = match self.do_search(&params.query, fetch_count, category).await {
+        let results = match self.do_search(&params.query, fetch_count, category).await {
             Ok(r) => r,
             Err(e) => return format!("Search error: {e}"),
         };
+
+        let mut results =
+            Self::rerank_and_dedup_results(results, &params.query, top_k, params.offset);
 
         if let Some(pkg) = package {
             results.retain(|r| Self::has_package(r, pkg));
@@ -366,6 +544,28 @@ impl CangjieServer {
                     .unwrap_or_else(|e| format!("Serialization error: {e}"))
             }
             Ok(None) => {
+                // If the provided category is wrong, fallback to cross-category search.
+                if category.is_some() {
+                    match docs.get_document_by_topic(topic, None).await {
+                        Ok(Some(doc)) => {
+                            let result = TopicResult {
+                                content: doc.text,
+                                file_path: doc.metadata.file_path,
+                                category: doc.metadata.category,
+                                topic: doc.metadata.topic,
+                                title: doc.metadata.title,
+                            };
+                            return serde_json::to_string_pretty(&result)
+                                .unwrap_or_else(|e| format!("Serialization error: {e}"));
+                        }
+                        Ok(None) => {}
+                        Err(e) => return format!("Error retrieving topic '{topic}': {e}"),
+                    }
+                }
+
+                let topic_category_map = Self::build_topic_category_map(&docs)
+                    .await
+                    .unwrap_or_default();
                 let all_topics = docs.get_all_topic_names().await.unwrap_or_default();
                 let mut suggestions: Vec<(String, f64)> = all_topics
                     .iter()
@@ -380,8 +580,23 @@ impl CangjieServer {
                 suggestions.truncate(MAX_SUGGESTIONS);
 
                 let mut msg = format!("Topic '{topic}' not found.");
+                if let Some(cat) = category {
+                    if let Some(cats) = topic_category_map.get(topic) {
+                        if !cats.iter().any(|c| c == cat) {
+                            msg.push_str(&format!(
+                                "\nTopic '{topic}' exists in category: {}.",
+                                cats.join(", ")
+                            ));
+                        }
+                    }
+                }
                 if !suggestions.is_empty() {
-                    let names: Vec<&str> = suggestions.iter().map(|(n, _)| n.as_str()).collect();
+                    let names: Vec<String> = suggestions
+                        .iter()
+                        .map(|(name, _)| {
+                            Self::topic_display_with_categories(name, &topic_category_map)
+                        })
+                        .collect();
                     msg.push_str(&format!("\nDid you mean: {}?", names.join(", ")));
                 }
                 msg
@@ -701,22 +916,11 @@ mod tests {
     fn test_get_info_without_cangjie_home() {
         temp_env::with_var("CANGJIE_HOME", None::<&str>, || {
             let settings = Settings {
-                docs_version: "dev".to_string(),
-                docs_lang: crate::config::DocLang::Zh,
-                embedding_type: crate::config::EmbeddingType::None,
-                local_model: String::new(),
-                rerank_type: crate::config::RerankType::None,
-                rerank_model: String::new(),
-                rerank_top_k: 5,
-                rerank_initial_k: 20,
-                rrf_k: 60,
                 chunk_max_size: 6000,
                 data_dir: std::path::PathBuf::from("/tmp/test-info"),
-                server_url: None,
-                openai_api_key: None,
                 openai_base_url: "https://api.example.com".to_string(),
                 openai_model: "test".to_string(),
-                prebuilt: crate::config::PrebuiltMode::Off,
+                ..Settings::default()
             };
 
             let server = CangjieServer::new(settings);
@@ -735,22 +939,11 @@ mod tests {
     fn test_get_info_with_cangjie_home() {
         temp_env::with_var("CANGJIE_HOME", Some("/some/path"), || {
             let settings = Settings {
-                docs_version: "dev".to_string(),
-                docs_lang: crate::config::DocLang::Zh,
-                embedding_type: crate::config::EmbeddingType::None,
-                local_model: String::new(),
-                rerank_type: crate::config::RerankType::None,
-                rerank_model: String::new(),
-                rerank_top_k: 5,
-                rerank_initial_k: 20,
-                rrf_k: 60,
                 chunk_max_size: 6000,
                 data_dir: std::path::PathBuf::from("/tmp/test-info"),
-                server_url: None,
-                openai_api_key: None,
                 openai_base_url: "https://api.example.com".to_string(),
                 openai_model: "test".to_string(),
-                prebuilt: crate::config::PrebuiltMode::Off,
+                ..Settings::default()
             };
 
             let server = CangjieServer::new(settings);
@@ -768,22 +961,11 @@ mod tests {
     #[tokio::test]
     async fn test_get_topic_not_initialized() {
         let settings = Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: crate::config::DocLang::Zh,
-            embedding_type: crate::config::EmbeddingType::None,
-            local_model: String::new(),
-            rerank_type: crate::config::RerankType::None,
-            rerank_model: String::new(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
             chunk_max_size: 6000,
             data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
-            prebuilt: crate::config::PrebuiltMode::Off,
+            ..Settings::default()
         };
 
         let server = CangjieServer::new(settings);
@@ -802,22 +984,11 @@ mod tests {
     #[tokio::test]
     async fn test_list_topics_not_initialized() {
         let settings = Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: crate::config::DocLang::Zh,
-            embedding_type: crate::config::EmbeddingType::None,
-            local_model: String::new(),
-            rerank_type: crate::config::RerankType::None,
-            rerank_model: String::new(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
             chunk_max_size: 6000,
             data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
-            prebuilt: crate::config::PrebuiltMode::Off,
+            ..Settings::default()
         };
 
         let server = CangjieServer::new(settings);

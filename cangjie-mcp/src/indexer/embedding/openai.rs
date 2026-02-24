@@ -1,9 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::info;
 
 use super::Embedder;
+use crate::config::Settings;
+use crate::indexer::build_http_client;
 
 pub struct OpenAIEmbedder {
     api_key: String,
@@ -13,15 +15,12 @@ pub struct OpenAIEmbedder {
 }
 
 impl OpenAIEmbedder {
-    pub fn new(api_key: &str, model: &str, base_url: &str) -> Result<Self> {
+    pub fn new(settings: &Settings, api_key: &str, model: &str, base_url: &str) -> Result<Self> {
         Ok(Self {
             api_key: api_key.to_string(),
             model: model.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .build()
-                .context("Failed to build HTTP client")?,
+            client: build_http_client(settings, std::time::Duration::from_secs(120))?,
         })
     }
 }

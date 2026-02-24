@@ -2,21 +2,25 @@ use anyhow::Result;
 use serde::Deserialize;
 use tracing::info;
 
+use crate::config::Settings;
+use crate::indexer::build_http_client;
 use crate::indexer::SearchResult;
 
 pub struct OpenAIReranker {
     api_key: String,
     model: String,
     base_url: String,
+    client: reqwest::Client,
 }
 
 impl OpenAIReranker {
-    pub fn new(api_key: &str, model: &str, base_url: &str) -> Self {
-        Self {
+    pub fn new(settings: &Settings, api_key: &str, model: &str, base_url: &str) -> Result<Self> {
+        Ok(Self {
             api_key: api_key.to_string(),
             model: model.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
-        }
+            client: build_http_client(settings, std::time::Duration::from_secs(30))?,
+        })
     }
 
     pub async fn rerank(
@@ -38,8 +42,8 @@ impl OpenAIReranker {
         let documents: Vec<&str> = results.iter().map(|r| r.text.as_str()).collect();
         let url = format!("{}/rerank", self.base_url);
 
-        let client = reqwest::Client::new();
-        let response = client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")

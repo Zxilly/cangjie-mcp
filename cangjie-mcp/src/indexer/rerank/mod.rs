@@ -48,10 +48,11 @@ pub async fn create_reranker(settings: &Settings) -> Result<RerankerKind> {
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("OpenAI API key required for openai reranking"))?;
             Ok(RerankerKind::OpenAI(openai::OpenAIReranker::new(
+                settings,
                 api_key,
                 &settings.rerank_model,
                 &settings.openai_base_url,
-            )))
+            )?))
         }
         RerankType::Local => {
             #[cfg(feature = "local")]
@@ -79,22 +80,14 @@ mod tests {
 
     fn test_settings(rerank_type: RerankType) -> Settings {
         Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: DocLang::Zh,
-            embedding_type: EmbeddingType::None,
-            local_model: "".to_string(),
             rerank_type,
             rerank_model: "test-model".to_string(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
             data_dir: std::path::PathBuf::from("/tmp"),
-            server_url: None,
-            openai_api_key: None,
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
-            prebuilt: crate::config::PrebuiltMode::Off,
+            docs_lang: DocLang::Zh,
+            embedding_type: EmbeddingType::None,
+            ..Settings::default()
         }
     }
 

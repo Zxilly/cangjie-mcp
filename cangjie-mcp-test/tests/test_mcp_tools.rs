@@ -1,6 +1,7 @@
 use cangjie_mcp::config::{MAX_TOP_K, MIN_TOP_K};
 use cangjie_mcp::indexer::search::bm25::BM25Store;
 use cangjie_mcp::indexer::search::LocalSearchIndex;
+use cangjie_mcp::indexer::{DocMetadata, TextChunk};
 use cangjie_mcp::server::tools::{
     CangjieServer, DocsSearchResult, GetTopicParams, ListTopicsParams, SearchDocsParams,
     TopicResult, TopicsListResult,
@@ -14,6 +15,19 @@ async fn build_test_server() -> (TempDir, CangjieServer) {
     let bm25_dir = tmp.path().join("bm25");
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(&sample_chunks()).await.unwrap();
+    let settings = test_settings(tmp.path().to_path_buf());
+    let docs = sample_documents();
+    let source = Box::new(MockDocumentSource::from_docs(&docs));
+    let search = LocalSearchIndex::with_bm25(settings.clone(), bm25).await;
+    let server = CangjieServer::with_local_state(settings, search, source);
+    (tmp, server)
+}
+
+async fn build_test_server_with_chunks(chunks: Vec<TextChunk>) -> (TempDir, CangjieServer) {
+    let tmp = TempDir::new().unwrap();
+    let bm25_dir = tmp.path().join("bm25");
+    let mut bm25 = BM25Store::new(bm25_dir);
+    bm25.build_from_chunks(&chunks).await.unwrap();
     let settings = test_settings(tmp.path().to_path_buf());
     let docs = sample_documents();
     let source = Box::new(MockDocumentSource::from_docs(&docs));
@@ -244,6 +258,152 @@ async fn test_get_topic_not_found_with_suggestions() {
     assert!(
         result.contains("functions"),
         "suggestions should include 'functions', got: {result}"
+    );
+}
+
+#[tokio::test]
+async fn test_get_topic_wrong_category_fallbacks_to_correct_category() {
+    let (_tmp, server) = build_test_server().await;
+
+    let result_json = server
+        .get_topic(Parameters(GetTopicParams {
+            topic: "functions".into(),
+            category: Some("stdlib".into()),
+        }))
+        .await;
+
+    let result: TopicResult =
+        serde_json::from_str(&result_json).expect("should parse as TopicResult");
+    assert_eq!(result.topic, "functions");
+    assert_eq!(
+        result.category, "syntax",
+        "tool should fallback to correct category when provided category is wrong"
+    );
+}
+
+#[tokio::test]
+async fn test_search_docs_allows_two_snippets_per_document_when_top_k_is_large() {
+    let chunks = vec![
+        TextChunk {
+            text: "HashMap get set 示例".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_hashmap.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_hashmap".to_string(),
+                title: "HashMap 用法".to_string(),
+                has_code: false,
+                code_block_count: 0,
+            },
+        },
+        TextChunk {
+            text: "HashMap 遍历与删除".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_hashmap.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_hashmap".to_string(),
+                title: "HashMap 用法".to_string(),
+                has_code: false,
+                code_block_count: 0,
+            },
+        },
+        TextChunk {
+            text: "ArrayList push pop 示例".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_arraylist.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_arraylist".to_string(),
+                title: "ArrayList 用法".to_string(),
+                has_code: false,
+                code_block_count: 0,
+            },
+        },
+    ];
+    let (_tmp, server) = build_test_server_with_chunks(chunks).await;
+
+    let result_json = server
+        .search_docs(Parameters(SearchDocsParams {
+            query: "HashMap".into(),
+            top_k: 10,
+            offset: 0,
+            extract_code: false,
+            category: None,
+            package: None,
+        }))
+        .await;
+
+    let result: DocsSearchResult =
+        serde_json::from_str(&result_json).expect("should parse as DocsSearchResult");
+    let same_doc_count = result
+        .items
+        .iter()
+        .filter(|item| item.file_path == "stdlib/collection_hashmap.md")
+        .count();
+    assert_eq!(
+        same_doc_count, 2,
+        "when top_k is large, results should keep up to two snippets per document"
+    );
+}
+
+#[tokio::test]
+async fn test_search_docs_limits_to_one_snippet_per_document_when_top_k_is_small() {
+    let chunks = vec![
+        TextChunk {
+            text: "HashMap get set 示例".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_hashmap.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_hashmap".to_string(),
+                title: "HashMap 用法".to_string(),
+                has_code: false,
+                code_block_count: 0,
+            },
+        },
+        TextChunk {
+            text: "HashMap 遍历与删除".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_hashmap.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_hashmap".to_string(),
+                title: "HashMap 用法".to_string(),
+                has_code: false,
+                code_block_count: 0,
+            },
+        },
+        TextChunk {
+            text: "ArrayList push pop 示例".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_arraylist.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_arraylist".to_string(),
+                title: "ArrayList 用法".to_string(),
+                has_code: false,
+                code_block_count: 0,
+            },
+        },
+    ];
+    let (_tmp, server) = build_test_server_with_chunks(chunks).await;
+
+    let result_json = server
+        .search_docs(Parameters(SearchDocsParams {
+            query: "HashMap".into(),
+            top_k: 3,
+            offset: 0,
+            extract_code: false,
+            category: None,
+            package: None,
+        }))
+        .await;
+
+    let result: DocsSearchResult =
+        serde_json::from_str(&result_json).expect("should parse as DocsSearchResult");
+    let same_doc_count = result
+        .items
+        .iter()
+        .filter(|item| item.file_path == "stdlib/collection_hashmap.md")
+        .count();
+    assert_eq!(
+        same_doc_count, 1,
+        "when top_k is small, only one snippet per document should be returned"
     );
 }
 

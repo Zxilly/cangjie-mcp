@@ -4,7 +4,12 @@ pub mod initializer;
 pub mod rerank;
 pub mod search;
 
+use std::time::Duration;
+
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::config::Settings;
 
 // -- Shared types ------------------------------------------------------------
 
@@ -36,6 +41,21 @@ pub struct IndexMetadata {
 
 fn default_search_mode() -> String {
     "bm25".to_string()
+}
+
+/// Build a shared HTTP client optimized for external API calls.
+pub(crate) fn build_http_client(settings: &Settings, timeout: Duration) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
+        .timeout(timeout)
+        .pool_idle_timeout(Duration::from_secs(settings.http_pool_idle_timeout_secs))
+        .pool_max_idle_per_host(settings.http_pool_max_idle_per_host)
+        .tcp_keepalive(Duration::from_secs(settings.http_tcp_keepalive_secs));
+
+    if settings.http_enable_http2 {
+        builder = builder.http2_adaptive_window(true);
+    }
+
+    builder.build().context("Failed to build HTTP client")
 }
 
 /// Lightweight document container (no framework dependency).
