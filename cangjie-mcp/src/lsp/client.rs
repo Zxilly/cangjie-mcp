@@ -16,12 +16,12 @@ use crate::lsp::transport::{
 };
 use crate::lsp::types::{
     CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    ClientCapabilities, ClientInfo, CompletionParams, DidOpenTextDocumentParams,
-    DocumentSymbolParams, GotoDefinitionParams, HoverParams, InitializeParams, InitializedParams,
-    Position, ReferenceContext, ReferenceParams, RenameParams, SignatureHelpParams,
-    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TraceValue,
-    TypeHierarchyPrepareParams, TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
-    WorkDoneProgressParams, WorkspaceFolder, WorkspaceSymbolParams,
+    ClientCapabilities, ClientInfo, DidOpenTextDocumentParams, DocumentSymbolParams,
+    GotoDefinitionParams, HoverParams, InitializeParams, InitializedParams, Position,
+    ReferenceContext, ReferenceParams, RenameParams, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
+    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri, WorkDoneProgressParams,
+    WorkspaceFolder, WorkspaceSymbolParams,
 };
 use crate::lsp::utils::path_to_uri;
 
@@ -757,22 +757,6 @@ impl CangjieClient {
         .await
     }
 
-    pub async fn completion(&self, file_path: &str, line: u32, character: u32) -> Result<Value> {
-        self.ensure_open(file_path).await?;
-        let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
-        self.document_request(
-            "textDocument/completion",
-            &CompletionParams {
-                text_document_position: make_td_position(uri.clone(), line, character),
-                context: None,
-                work_done_progress_params: WorkDoneProgressParams::default(),
-                partial_result_params: Default::default(),
-            },
-            &uri,
-        )
-        .await
-    }
-
     pub async fn document_symbol(&self, file_path: &str) -> Result<Value> {
         self.ensure_open(file_path).await?;
         let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
@@ -939,23 +923,6 @@ impl CangjieClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
         self.document_request("textDocument/rename", &params, &uri)
-            .await
-    }
-
-    pub async fn signature_help(
-        &self,
-        file_path: &str,
-        line: u32,
-        character: u32,
-    ) -> Result<Value> {
-        self.ensure_open(file_path).await?;
-        let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
-        let params = SignatureHelpParams {
-            text_document_position_params: make_td_position(uri.clone(), line, character),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            context: None,
-        };
-        self.document_request("textDocument/signatureHelp", &params, &uri)
             .await
     }
 

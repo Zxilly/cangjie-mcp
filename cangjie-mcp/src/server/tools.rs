@@ -409,6 +409,67 @@ impl CangjieServer {
         }
     }
 
+    /// Resolve a symbol name to 0-based (line, character) position via documentSymbol.
+    async fn resolve_symbol(
+        client: &crate::lsp::client::CangjieClient,
+        file_path: &str,
+        symbol: &str,
+        line_hint: Option<u32>,
+    ) -> Result<(u32, u32), String> {
+        let result = client
+            .document_symbol(file_path)
+            .await
+            .map_err(|e| format!("Failed to get symbols: {e}"))?;
+
+        let syms = crate::lsp::tools::process_symbols(&result, file_path);
+
+        // Collect all matching symbols (flatten hierarchy)
+        let mut matches: Vec<(u32, u32)> = Vec::new();
+        fn collect(
+            symbols: &[crate::lsp::tools::SymbolOutput],
+            name: &str,
+            out: &mut Vec<(u32, u32)>,
+        ) {
+            for s in symbols {
+                if s.name == name || s.name.starts_with(&format!("{name}(")) {
+                    out.push((s.line, s.character));
+                }
+                if let Some(ref kids) = s.children {
+                    collect(kids, name, out);
+                }
+            }
+        }
+        collect(&syms.symbols, symbol, &mut matches);
+
+        if matches.is_empty() {
+            let available: Vec<String> = syms.symbols.iter().map(|s| s.name.clone()).collect();
+            return Err(format!(
+                "Symbol '{}' not found in {}. Available: {:?}",
+                symbol, file_path, available
+            ));
+        }
+
+        let (line_1based, char_1based) = if matches.len() == 1 {
+            matches[0]
+        } else if let Some(hint) = line_hint {
+            // Pick the match closest to the hint line
+            *matches
+                .iter()
+                .min_by_key(|(l, _)| (*l as i64 - hint as i64).unsigned_abs())
+                .unwrap()
+        } else {
+            return Err(format!(
+                "Symbol '{}' appears {} times (lines: {:?}). Provide 'line' to disambiguate.",
+                symbol,
+                matches.len(),
+                matches.iter().map(|(l, _)| *l).collect::<Vec<_>>()
+            ));
+        };
+
+        // Convert to 0-based for LSP
+        Ok((line_1based - 1, char_1based - 1))
+    }
+
     fn lsp_unavailable_message() -> String {
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         if crate::lsp::detect_settings(Some(cwd)).is_none() {
@@ -463,13 +524,14 @@ pub struct ListTopicsParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct LspPositionParams {
+pub struct LspSymbolParams {
     /// Absolute path to the .cj source file
     pub file_path: String,
-    /// Line number (1-based)
-    pub line: u32,
-    /// Character position (1-based)
-    pub character: u32,
+    /// Symbol name to look up (e.g. "processArgs", "MyClass")
+    pub symbol: String,
+    /// Optional line number (1-based) to disambiguate when multiple symbols share the same name
+    #[serde(default)]
+    pub line: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -488,12 +550,13 @@ pub struct LspWorkspaceSymbolParams {
 pub struct LspRenameParams {
     /// Absolute path to the .cj source file
     pub file_path: String,
-    /// Line number (1-based)
-    pub line: u32,
-    /// Character position (1-based)
-    pub character: u32,
+    /// Symbol name to rename
+    pub symbol: String,
     /// New name for the symbol
     pub new_name: String,
+    /// Optional line number (1-based) to disambiguate when multiple symbols share the same name
+    #[serde(default)]
+    pub line: Option<u32>,
 }
 
 // ── Tool implementations ────────────────────────────────────────────────────
@@ -753,9 +816,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_definition",
-        description = "Jump to the definition of a symbol in a .cj source file. Navigate to where a variable, function, class, etc. is defined. Positions are 1-based."
+        description = "Jump to the definition of a symbol in a .cj source file. Navigate to where a variable, function, class, etc. is defined."
     )]
-    async fn lsp_definition(&self, Parameters(params): Parameters<LspPositionParams>) -> String {
+    async fn lsp_definition(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -771,10 +834,19 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
-        match client
-            .definition(&params.file_path, params.line - 1, params.character - 1)
-            .await
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
         {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
+        match client.definition(&params.file_path, line, character).await {
             Ok(result) => {
                 let def = lsp_tools::process_definition(&result);
                 serde_json::to_string_pretty(&def)
@@ -786,9 +858,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_references",
-        description = "Find all references to a symbol in a .cj source file. Locate all places where a symbol is used, including its definition. Positions are 1-based."
+        description = "Find all references to a symbol in a .cj source file. Locate all places where a symbol is used, including its definition."
     )]
-    async fn lsp_references(&self, Parameters(params): Parameters<LspPositionParams>) -> String {
+    async fn lsp_references(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -804,10 +876,19 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
-        match client
-            .references(&params.file_path, params.line - 1, params.character - 1)
-            .await
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
         {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
+        match client.references(&params.file_path, line, character).await {
             Ok(result) => {
                 let refs = lsp_tools::process_references(&result);
                 serde_json::to_string_pretty(&refs)
@@ -819,9 +900,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_hover",
-        description = "Get hover information (type info and documentation) for a symbol in a .cj source file. Positions are 1-based."
+        description = "Get hover information (type info and documentation) for a symbol in a .cj source file."
     )]
-    async fn lsp_hover(&self, Parameters(params): Parameters<LspPositionParams>) -> String {
+    async fn lsp_hover(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -837,44 +918,20 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
-        match client
-            .hover(&params.file_path, params.line - 1, params.character - 1)
-            .await
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
         {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
+        match client.hover(&params.file_path, line, character).await {
             Ok(result) => lsp_tools::process_hover(&result, &params.file_path),
-            Err(e) => format!("Error: {e}"),
-        }
-    }
-
-    #[tool(
-        name = "cangjie_lsp_completion",
-        description = "Get code completion suggestions at a position in a .cj source file. Positions are 1-based."
-    )]
-    async fn lsp_completion(&self, Parameters(params): Parameters<LspPositionParams>) -> String {
-        use crate::lsp::tools as lsp_tools;
-
-        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
-            return err;
-        }
-
-        let guard = crate::lsp::get_client().await;
-        let client = match guard {
-            Some(ref g) => match g.as_ref() {
-                Some(c) => c,
-                None => return Self::lsp_unavailable_message(),
-            },
-            None => return Self::lsp_unavailable_message(),
-        };
-
-        match client
-            .completion(&params.file_path, params.line - 1, params.character - 1)
-            .await
-        {
-            Ok(result) => {
-                let comp = lsp_tools::process_completion(&result);
-                serde_json::to_string_pretty(&comp)
-                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
-            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -970,12 +1027,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_incoming_calls",
-        description = "Find all functions/methods that call the function at the given position. Useful for understanding who uses a function. Positions are 1-based."
+        description = "Find all functions/methods that call the given function. Useful for understanding who uses a function."
     )]
-    async fn lsp_incoming_calls(
-        &self,
-        Parameters(params): Parameters<LspPositionParams>,
-    ) -> String {
+    async fn lsp_incoming_calls(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -991,8 +1045,20 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
+        {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
         match client
-            .incoming_calls(&params.file_path, params.line - 1, params.character - 1)
+            .incoming_calls(&params.file_path, line, character)
             .await
         {
             Ok(result) => {
@@ -1006,12 +1072,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_outgoing_calls",
-        description = "Find all functions/methods called by the function at the given position. Useful for understanding what a function depends on. Positions are 1-based."
+        description = "Find all functions/methods called by the given function. Useful for understanding what a function depends on."
     )]
-    async fn lsp_outgoing_calls(
-        &self,
-        Parameters(params): Parameters<LspPositionParams>,
-    ) -> String {
+    async fn lsp_outgoing_calls(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -1027,8 +1090,20 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
+        {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
         match client
-            .outgoing_calls(&params.file_path, params.line - 1, params.character - 1)
+            .outgoing_calls(&params.file_path, line, character)
             .await
         {
             Ok(result) => {
@@ -1042,12 +1117,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_type_supertypes",
-        description = "Find parent classes and implemented interfaces of the type at the given position. Useful for understanding inheritance hierarchy. Positions are 1-based."
+        description = "Find parent classes and implemented interfaces of the given type. Useful for understanding inheritance hierarchy."
     )]
-    async fn lsp_type_supertypes(
-        &self,
-        Parameters(params): Parameters<LspPositionParams>,
-    ) -> String {
+    async fn lsp_type_supertypes(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -1063,8 +1135,20 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
+        {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
         match client
-            .type_supertypes(&params.file_path, params.line - 1, params.character - 1)
+            .type_supertypes(&params.file_path, line, character)
             .await
         {
             Ok(result) => {
@@ -1078,9 +1162,9 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_type_subtypes",
-        description = "Find subclasses and implementations of the type at the given position. Useful for finding all concrete implementations of an interface or subclasses. Positions are 1-based."
+        description = "Find subclasses and implementations of the given type. Useful for finding all concrete implementations of an interface."
     )]
-    async fn lsp_type_subtypes(&self, Parameters(params): Parameters<LspPositionParams>) -> String {
+    async fn lsp_type_subtypes(&self, Parameters(params): Parameters<LspSymbolParams>) -> String {
         use crate::lsp::tools as lsp_tools;
 
         if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
@@ -1096,8 +1180,20 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
+        {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
         match client
-            .type_subtypes(&params.file_path, params.line - 1, params.character - 1)
+            .type_subtypes(&params.file_path, line, character)
             .await
         {
             Ok(result) => {
@@ -1111,7 +1207,7 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_lsp_rename",
-        description = "Rename a symbol across the workspace. Returns the list of file edits needed (does not apply them). Positions are 1-based."
+        description = "Rename a symbol across the workspace. Returns the list of file edits needed (does not apply them)."
     )]
     async fn lsp_rename(&self, Parameters(params): Parameters<LspRenameParams>) -> String {
         use crate::lsp::tools as lsp_tools;
@@ -1129,54 +1225,25 @@ impl CangjieServer {
             None => return Self::lsp_unavailable_message(),
         };
 
+        let (line, character) = match Self::resolve_symbol(
+            client,
+            &params.file_path,
+            &params.symbol,
+            params.line,
+        )
+        .await
+        {
+            Ok(pos) => pos,
+            Err(e) => return e,
+        };
+
         match client
-            .rename(
-                &params.file_path,
-                params.line - 1,
-                params.character - 1,
-                &params.new_name,
-            )
+            .rename(&params.file_path, line, character, &params.new_name)
             .await
         {
             Ok(result) => {
                 let rename = lsp_tools::process_rename(&result);
                 serde_json::to_string_pretty(&rename)
-                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
-            }
-            Err(e) => format!("Error: {e}"),
-        }
-    }
-
-    #[tool(
-        name = "cangjie_lsp_signature_help",
-        description = "Get function/method signature information at a position. Shows parameter names, types, and documentation. Useful when filling in function arguments. Positions are 1-based."
-    )]
-    async fn lsp_signature_help(
-        &self,
-        Parameters(params): Parameters<LspPositionParams>,
-    ) -> String {
-        use crate::lsp::tools as lsp_tools;
-
-        if let Some(err) = lsp_tools::get_validate_error(&params.file_path) {
-            return err;
-        }
-
-        let guard = crate::lsp::get_client().await;
-        let client = match guard {
-            Some(ref g) => match g.as_ref() {
-                Some(c) => c,
-                None => return Self::lsp_unavailable_message(),
-            },
-            None => return Self::lsp_unavailable_message(),
-        };
-
-        match client
-            .signature_help(&params.file_path, params.line - 1, params.character - 1)
-            .await
-        {
-            Ok(result) => {
-                let sig = lsp_tools::process_signature_help(&result);
-                serde_json::to_string_pretty(&sig)
                     .unwrap_or_else(|e| format!("Serialization error: {e}"))
             }
             Err(e) => format!("Error: {e}"),

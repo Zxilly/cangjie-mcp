@@ -1,8 +1,7 @@
 use crate::lsp::types::{
-    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CompletionItem,
-    CompletionItemKind, CompletionResponse, Diagnostic, DiagnosticSeverity, DocumentSymbol,
-    DocumentSymbolResponse, Documentation, GotoDefinitionResponse, Hover, HoverContents, Location,
-    LocationLink, MarkedString, NumberOrString, ParameterLabel, SignatureHelp, SymbolKind,
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, Diagnostic,
+    DiagnosticSeverity, DocumentSymbol, DocumentSymbolResponse, GotoDefinitionResponse, Hover,
+    HoverContents, Location, LocationLink, MarkedString, NumberOrString, SymbolKind,
     TypeHierarchyItem, WorkspaceEdit,
 };
 use serde::{Deserialize, Serialize};
@@ -81,25 +80,6 @@ pub struct DiagnosticsResult {
     pub warning_count: usize,
     pub info_count: usize,
     pub hint_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CompletionOutput {
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub documentation: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub insert_text: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CompletionResult {
-    pub items: Vec<CompletionOutput>,
-    pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -193,32 +173,6 @@ pub struct RenameResult {
     pub edit_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ParameterOutput {
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub documentation: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SignatureOutput {
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub documentation: Option<String>,
-    pub parameters: Vec<ParameterOutput>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_parameter: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SignatureHelpResult {
-    pub signatures: Vec<SignatureOutput>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_signature: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_parameter: Option<u32>,
-}
-
 // -- Helpers -----------------------------------------------------------------
 
 fn severity_name(severity: Option<DiagnosticSeverity>) -> &'static str {
@@ -295,37 +249,6 @@ fn symbol_kind_name_by_number(kind: u32) -> &'static str {
     }
 }
 
-fn completion_kind_name(kind: CompletionItemKind) -> &'static str {
-    match kind {
-        CompletionItemKind::TEXT => "text",
-        CompletionItemKind::METHOD => "method",
-        CompletionItemKind::FUNCTION => "function",
-        CompletionItemKind::CONSTRUCTOR => "constructor",
-        CompletionItemKind::FIELD => "field",
-        CompletionItemKind::VARIABLE => "variable",
-        CompletionItemKind::CLASS => "class",
-        CompletionItemKind::INTERFACE => "interface",
-        CompletionItemKind::MODULE => "module",
-        CompletionItemKind::PROPERTY => "property",
-        CompletionItemKind::UNIT => "unit",
-        CompletionItemKind::VALUE => "value",
-        CompletionItemKind::ENUM => "enum",
-        CompletionItemKind::KEYWORD => "keyword",
-        CompletionItemKind::SNIPPET => "snippet",
-        CompletionItemKind::COLOR => "color",
-        CompletionItemKind::FILE => "file",
-        CompletionItemKind::REFERENCE => "reference",
-        CompletionItemKind::FOLDER => "folder",
-        CompletionItemKind::ENUM_MEMBER => "enum member",
-        CompletionItemKind::CONSTANT => "constant",
-        CompletionItemKind::STRUCT => "struct",
-        CompletionItemKind::EVENT => "event",
-        CompletionItemKind::OPERATOR => "operator",
-        CompletionItemKind::TYPE_PARAMETER => "type parameter",
-        _ => "unknown",
-    }
-}
-
 fn validate_file_path(file_path: &str) -> Option<String> {
     let path = std::path::Path::new(file_path);
     if !path.exists() {
@@ -380,13 +303,6 @@ fn convert_document_symbol(sym: &DocumentSymbol) -> SymbolOutput {
         end_line: sym.range.end.line + 1,
         end_character: sym.range.end.character + 1,
         children,
-    }
-}
-
-fn extract_documentation(doc: &Documentation) -> String {
-    match doc {
-        Documentation::String(s) => s.clone(),
-        Documentation::MarkupContent(mc) => mc.value.clone(),
     }
 }
 
@@ -532,30 +448,6 @@ pub fn process_diagnostics(diags: &[Value]) -> DiagnosticsResult {
         info_count,
         hint_count,
     }
-}
-
-pub fn process_completion(result: &Value) -> CompletionResult {
-    let response: Option<CompletionResponse> = serde_json::from_value(result.clone()).ok();
-
-    let completion_items: Vec<CompletionItem> = match response {
-        Some(CompletionResponse::Array(items)) => items,
-        Some(CompletionResponse::List(list)) => list.items,
-        None => Vec::new(),
-    };
-
-    let items: Vec<CompletionOutput> = completion_items
-        .iter()
-        .map(|item| CompletionOutput {
-            label: item.label.clone(),
-            kind: item.kind.map(|k| completion_kind_name(k).to_string()),
-            detail: item.detail.clone(),
-            documentation: item.documentation.as_ref().map(extract_documentation),
-            insert_text: item.insert_text.clone(),
-        })
-        .collect();
-
-    let count = items.len();
-    CompletionResult { items, count }
 }
 
 pub fn process_workspace_symbols(result: &Value) -> WorkspaceSymbolResult {
@@ -730,54 +622,6 @@ pub fn process_rename(result: &Value) -> RenameResult {
         files,
         file_count,
         edit_count: total_edits,
-    }
-}
-
-fn extract_param_label(label: &ParameterLabel) -> String {
-    match label {
-        ParameterLabel::Simple(s) => s.clone(),
-        ParameterLabel::LabelOffsets([start, end]) => format!("[{}:{}]", start, end),
-    }
-}
-
-pub fn process_signature_help(result: &Value) -> SignatureHelpResult {
-    let help: Option<SignatureHelp> = serde_json::from_value(result.clone()).ok();
-    let help = match help {
-        Some(h) => h,
-        None => return SignatureHelpResult::default(),
-    };
-
-    let signatures: Vec<SignatureOutput> = help
-        .signatures
-        .iter()
-        .map(|sig| {
-            let parameters: Vec<ParameterOutput> = sig
-                .parameters
-                .as_ref()
-                .map(|params| {
-                    params
-                        .iter()
-                        .map(|p| ParameterOutput {
-                            label: extract_param_label(&p.label),
-                            documentation: p.documentation.as_ref().map(extract_documentation),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            SignatureOutput {
-                label: sig.label.clone(),
-                documentation: sig.documentation.as_ref().map(extract_documentation),
-                parameters,
-                active_parameter: sig.active_parameter,
-            }
-        })
-        .collect();
-
-    SignatureHelpResult {
-        signatures,
-        active_signature: help.active_signature,
-        active_parameter: help.active_parameter,
     }
 }
 
@@ -973,43 +817,6 @@ mod tests {
     }
 
     #[test]
-    fn test_process_completion() {
-        let result = json!({
-            "isIncomplete": false,
-            "items": [
-                {
-                    "label": "println",
-                    "kind": 3,
-                    "detail": "func println(msg: String)",
-                    "insertText": "println($1)"
-                },
-                {
-                    "label": "print",
-                    "kind": 3
-                }
-            ]
-        });
-        let comp = process_completion(&result);
-        assert_eq!(comp.count, 2);
-        assert_eq!(comp.items[0].label, "println");
-        assert_eq!(comp.items[0].kind, Some("function".to_string()));
-        assert_eq!(comp.items[0].insert_text, Some("println($1)".to_string()));
-        assert_eq!(comp.items[1].label, "print");
-    }
-
-    #[test]
-    fn test_process_completion_flat_array() {
-        let result = json!([
-            {"label": "item1", "kind": 6},
-            {"label": "item2", "kind": 7}
-        ]);
-        let comp = process_completion(&result);
-        assert_eq!(comp.count, 2);
-        assert_eq!(comp.items[0].kind, Some("variable".to_string()));
-        assert_eq!(comp.items[1].kind, Some("class".to_string()));
-    }
-
-    #[test]
     fn test_severity_name_all_variants() {
         assert_eq!(severity_name(Some(DiagnosticSeverity::ERROR)), "error");
         assert_eq!(severity_name(Some(DiagnosticSeverity::WARNING)), "warning");
@@ -1054,67 +861,6 @@ mod tests {
         );
         // SymbolKind is a newtype with private field, so we can't construct
         // an unknown variant for testing the default branch.
-    }
-
-    #[test]
-    fn test_completion_kind_name_coverage() {
-        assert_eq!(completion_kind_name(CompletionItemKind::TEXT), "text");
-        assert_eq!(completion_kind_name(CompletionItemKind::METHOD), "method");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::FUNCTION),
-            "function"
-        );
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::CONSTRUCTOR),
-            "constructor"
-        );
-        assert_eq!(completion_kind_name(CompletionItemKind::FIELD), "field");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::VARIABLE),
-            "variable"
-        );
-        assert_eq!(completion_kind_name(CompletionItemKind::CLASS), "class");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::INTERFACE),
-            "interface"
-        );
-        assert_eq!(completion_kind_name(CompletionItemKind::MODULE), "module");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::PROPERTY),
-            "property"
-        );
-        assert_eq!(completion_kind_name(CompletionItemKind::UNIT), "unit");
-        assert_eq!(completion_kind_name(CompletionItemKind::VALUE), "value");
-        assert_eq!(completion_kind_name(CompletionItemKind::ENUM), "enum");
-        assert_eq!(completion_kind_name(CompletionItemKind::KEYWORD), "keyword");
-        assert_eq!(completion_kind_name(CompletionItemKind::SNIPPET), "snippet");
-        assert_eq!(completion_kind_name(CompletionItemKind::COLOR), "color");
-        assert_eq!(completion_kind_name(CompletionItemKind::FILE), "file");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::REFERENCE),
-            "reference"
-        );
-        assert_eq!(completion_kind_name(CompletionItemKind::FOLDER), "folder");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::ENUM_MEMBER),
-            "enum member"
-        );
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::CONSTANT),
-            "constant"
-        );
-        assert_eq!(completion_kind_name(CompletionItemKind::STRUCT), "struct");
-        assert_eq!(completion_kind_name(CompletionItemKind::EVENT), "event");
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::OPERATOR),
-            "operator"
-        );
-        assert_eq!(
-            completion_kind_name(CompletionItemKind::TYPE_PARAMETER),
-            "type parameter"
-        );
-        // CompletionItemKind is a newtype with private field, so we can't
-        // construct an unknown variant for testing the default branch.
     }
 
     #[test]
@@ -1198,13 +944,6 @@ mod tests {
     }
 
     #[test]
-    fn test_process_completion_empty() {
-        let comp = process_completion(&json!(null));
-        assert_eq!(comp.count, 0);
-        assert!(comp.items.is_empty());
-    }
-
-    #[test]
     fn test_process_symbols_flat_response() {
         let result = json!([{
             "name": "globalVar",
@@ -1228,41 +967,6 @@ mod tests {
     fn test_process_symbols_empty() {
         let syms = process_symbols(&json!(null), "test.cj");
         assert_eq!(syms.count, 0);
-    }
-
-    #[test]
-    fn test_process_completion_with_documentation() {
-        let result = json!({
-            "isIncomplete": false,
-            "items": [{
-                "label": "myFunc",
-                "kind": 3,
-                "documentation": {"kind": "markdown", "value": "# My Function\nDoes things."}
-            }]
-        });
-        let comp = process_completion(&result);
-        assert_eq!(comp.count, 1);
-        assert_eq!(
-            comp.items[0].documentation,
-            Some("# My Function\nDoes things.".to_string())
-        );
-    }
-
-    #[test]
-    fn test_process_completion_with_string_documentation() {
-        let result = json!({
-            "isIncomplete": false,
-            "items": [{
-                "label": "myFunc",
-                "kind": 3,
-                "documentation": "Plain text docs"
-            }]
-        });
-        let comp = process_completion(&result);
-        assert_eq!(
-            comp.items[0].documentation,
-            Some("Plain text docs".to_string())
-        );
     }
 
     #[test]
