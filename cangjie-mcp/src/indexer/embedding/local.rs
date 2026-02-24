@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+#[cfg(feature = "legacy")]
+use once_cell::sync::OnceCell;
 use tracing::info;
 
 use super::Embedder;
@@ -14,6 +16,8 @@ pub struct LocalEmbedder {
 
 impl LocalEmbedder {
     pub async fn new(model_name: &str) -> Result<Self> {
+        init_ort_backend();
+
         let model_enum: EmbeddingModel = model_name.parse().map_err(|e: String| {
             anyhow::anyhow!("Unsupported embedding model '{}': {}", model_name, e)
         })?;
@@ -33,6 +37,18 @@ impl LocalEmbedder {
         })
     }
 }
+
+#[cfg(feature = "legacy")]
+pub(crate) fn init_ort_backend() {
+    static INIT: OnceCell<()> = OnceCell::new();
+    INIT.get_or_init(|| {
+        ort::set_api(ort_tract::api());
+        info!("Using legacy inference backend: ort-tract");
+    });
+}
+
+#[cfg(not(feature = "legacy"))]
+pub(crate) fn init_ort_backend() {}
 
 #[async_trait]
 impl Embedder for LocalEmbedder {

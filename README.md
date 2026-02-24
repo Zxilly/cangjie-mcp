@@ -39,6 +39,7 @@ pip install --no-binary cangjie-mcp cangjie-mcp \
 可用 feature（传给 `cangjie-mcp-cli`）：
 
 - `local`：本地向量化（CPU；默认构建的二进制已启用）
+- `legacy`：本地向量化改用 `ort-tract` 后端（适配旧 glibc 构建）
 - `local-cuda` / `local-cudnn`：启用 CUDA/CUDNN 后端
 - `local-metal`：启用 Apple Metal 后端
 - `local-mkl` / `local-accelerate`：启用 MKL / Accelerate 后端

@@ -12,6 +12,8 @@ pub struct LocalReranker {
 
 impl LocalReranker {
     pub async fn new() -> Result<Self> {
+        crate::indexer::embedding::local::init_ort_backend();
+
         info!("Loading local reranker model: BAAI/bge-reranker-v2-m3");
         let model = tokio::task::spawn_blocking(|| {
             TextRerank::try_new(

@@ -12,6 +12,7 @@ path = "src/main.rs"
 [features]
 default = []
 local = ["cangjie-mcp/local"]
+legacy = ["cangjie-mcp/legacy"]
 local-cuda = ["cangjie-mcp/local-cuda"]
 local-cudnn = ["cangjie-mcp/local-cudnn"]
 local-metal = ["cangjie-mcp/local-metal"]

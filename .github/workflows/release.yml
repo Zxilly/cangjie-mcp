@@ -11,20 +11,40 @@ permissions:
 
 jobs:
   linux:
-    name: Build Linux wheels
+    name: Build Linux wheels (${{ matrix.platform.flavor }}-${{ matrix.platform.artifact_suffix }})
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: ${{ github.event_name != 'workflow_dispatch' }}
       matrix:
         platform:
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             artifact_suffix: x86_64
-            manylinux: "2_17"
+            flavor: legacy
+            manylinux: "2014"
+            container: "on"
+            args: --release --features "local,legacy" --out dist --locked --compatibility pypi
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_suffix: aarch64
-            manylinux: "2_17"
+            flavor: legacy
+            manylinux: "2014"
+            container: "on"
+            args: --release --features "local,legacy" --out dist --locked --compatibility pypi
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            artifact_suffix: x86_64
+            flavor: modern
+            manylinux: "auto"
+            container: "off"
+            args: --release --features local --out dist --locked --compatibility pypi
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact_suffix: aarch64
+            flavor: modern
+            manylinux: "auto"
+            container: "off"
+            args: --release --features local --out dist --locked --compatibility pypi
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -33,7 +53,8 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
-          args: --release --features local --out dist
+          container: ${{ matrix.platform.container }}
+          args: ${{ matrix.platform.args }}
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           before-script-linux: |
             ARCH="$(uname -m)"
@@ -46,10 +67,12 @@ jobs:
               exit 1
             fi
             PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
+            PROTOC_DIR="${HOME}/.local"
             curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
-            python3 -m zipfile -e "${PROTOC_ZIP}" /usr/local
+            python3 -m zipfile -e "${PROTOC_ZIP}" "${PROTOC_DIR}"
             rm "${PROTOC_ZIP}"
-            chmod +x /usr/local/bin/protoc
+            chmod +x "${PROTOC_DIR}/bin/protoc"
+            export PATH="${PROTOC_DIR}/bin:${PATH}"
             protoc --version
 
       - name: Test wheel
@@ -61,7 +84,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: wheels-linux-${{ matrix.platform.artifact_suffix }}
+          name: wheels-linux-${{ matrix.platform.flavor }}-${{ matrix.platform.artifact_suffix }}
           path: dist
 
   windows:
@@ -141,7 +164,7 @@ jobs:
 
   sdist:
     name: Build sdist
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -166,7 +189,7 @@ jobs:
   publish:
     name: Publish to PyPI
     if: github.event_name == 'release'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [linux, windows, macos, sdist]
     permissions:
       contents: write
