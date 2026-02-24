@@ -19,6 +19,7 @@ jobs:
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
+          version: "33.5"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build sdist
@@ -35,13 +36,14 @@ jobs:
 
   macos-x86_64:
     name: Build macOS x86_64
-    runs-on: macos-14
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
+          version: "33.5"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build wheel
@@ -59,13 +61,14 @@ jobs:
 
   macos-aarch64:
     name: Build macOS aarch64
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
+          version: "33.5"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build wheel
@@ -96,6 +99,7 @@ jobs:
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
+          version: "33.5"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build wheel
@@ -131,9 +135,19 @@ jobs:
           args: --release --out dist
           sccache: "true"
           before-script-linux: |
-            curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v33.5/protoc-33.5-linux-x86_64.zip
-            python3 -m zipfile -e protoc-33.5-linux-x86_64.zip /usr/local
-            rm protoc-33.5-linux-x86_64.zip
+            ARCH="$(uname -m)"
+            if [ "$ARCH" = "x86_64" ]; then
+              PROTOC_ARCH="x86_64"
+            elif [ "$ARCH" = "aarch64" ]; then
+              PROTOC_ARCH="aarch_64"
+            else
+              echo "Unsupported architecture for protoc: $ARCH"
+              exit 1
+            fi
+            PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
+            curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
+            python3 -m zipfile -e "${PROTOC_ZIP}" /usr/local
+            rm "${PROTOC_ZIP}"
             chmod +x /usr/local/bin/protoc
             protoc --version
 
@@ -163,9 +177,19 @@ jobs:
           args: --release --out dist
           sccache: "true"
           before-script-linux: |
-            curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v33.5/protoc-33.5-linux-aarch_64.zip
-            python3 -m zipfile -e protoc-33.5-linux-aarch_64.zip /usr/local
-            rm protoc-33.5-linux-aarch_64.zip
+            ARCH="$(uname -m)"
+            if [ "$ARCH" = "x86_64" ]; then
+              PROTOC_ARCH="x86_64"
+            elif [ "$ARCH" = "aarch64" ]; then
+              PROTOC_ARCH="aarch_64"
+            else
+              echo "Unsupported architecture for protoc: $ARCH"
+              exit 1
+            fi
+            PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
+            curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
+            python3 -m zipfile -e "${PROTOC_ZIP}" /usr/local
+            rm "${PROTOC_ZIP}"
             chmod +x /usr/local/bin/protoc
             protoc --version
 
@@ -189,7 +213,21 @@ jobs:
           args: --release --out dist
           sccache: "true"
           before-script-linux: |
-            apk add protobuf-dev protoc
+            ARCH="$(uname -m)"
+            if [ "$ARCH" = "x86_64" ]; then
+              PROTOC_ARCH="x86_64"
+            elif [ "$ARCH" = "aarch64" ]; then
+              PROTOC_ARCH="aarch_64"
+            else
+              echo "Unsupported architecture for protoc: $ARCH"
+              exit 1
+            fi
+            PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
+            curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
+            python3 -m zipfile -e "${PROTOC_ZIP}" /usr/local
+            rm "${PROTOC_ZIP}"
+            chmod +x /usr/local/bin/protoc
+            protoc --version
 
       - name: Upload wheel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -211,7 +249,21 @@ jobs:
           args: --release --out dist
           sccache: "true"
           before-script-linux: |
-            apk add protobuf-dev protoc
+            ARCH="$(uname -m)"
+            if [ "$ARCH" = "x86_64" ]; then
+              PROTOC_ARCH="x86_64"
+            elif [ "$ARCH" = "aarch64" ]; then
+              PROTOC_ARCH="aarch_64"
+            else
+              echo "Unsupported architecture for protoc: $ARCH"
+              exit 1
+            fi
+            PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
+            curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
+            python3 -m zipfile -e "${PROTOC_ZIP}" /usr/local
+            rm "${PROTOC_ZIP}"
+            chmod +x /usr/local/bin/protoc
+            protoc --version
 
       - name: Upload wheel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
