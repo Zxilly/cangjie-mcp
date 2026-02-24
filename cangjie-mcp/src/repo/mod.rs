@@ -134,7 +134,7 @@ impl GitManager {
     fn resolve_after_checkout(repo: &gix::Repository) -> Result<String> {
         let mut head = repo.head().context("Failed to read HEAD")?;
         let commit = head
-            .peel_to_commit_in_place()
+            .peel_to_commit()
             .context("Failed to peel HEAD to commit")?;
         let short_hash = &commit.id().to_string()[..7];
 
@@ -272,7 +272,7 @@ fn sync_branch(repo: &mut gix::Repository) -> Result<()> {
     let remote_ref = format!("refs/remotes/origin/{branch_name}");
     if let Ok(mut remote_reference) = repo.find_reference(&remote_ref) {
         let remote_id = remote_reference
-            .peel_to_id_in_place()
+            .peel_to_id()
             .context("Failed to peel remote ref")?
             .detach();
         // Update local branch ref to match remote
@@ -293,7 +293,7 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
             let remote_ref = format!("refs/remotes/origin/{branch}");
             if let Ok(mut reference) = repo.find_reference(&remote_ref) {
                 let oid = reference
-                    .peel_to_id_in_place()
+                    .peel_to_id()
                     .context("Failed to peel remote ref")?
                     .detach();
 
@@ -326,7 +326,7 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
     let tag_ref = format!("refs/tags/{version}");
     if let Ok(mut reference) = repo.find_reference(&tag_ref) {
         let oid = reference
-            .peel_to_id_in_place()
+            .peel_to_id()
             .context("Failed to peel tag ref")?
             .detach();
         // Set HEAD detached to the tag's commit
@@ -339,7 +339,7 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
     let remote_ref = format!("refs/remotes/origin/{version}");
     if let Ok(mut reference) = repo.find_reference(&remote_ref) {
         let oid = reference
-            .peel_to_id_in_place()
+            .peel_to_id()
             .context("Failed to peel remote ref")?
             .detach();
         let local_ref = format!("refs/heads/{version}");

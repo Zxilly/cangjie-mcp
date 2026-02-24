@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use arrow_array::{
-    BooleanArray, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray,
+    BooleanArray, FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
 };
-use arrow_schema::{DataType, Field, Schema};
+use lancedb::arrow::arrow_schema::{DataType, Field, Schema};
 use lancedb::query::{ExecutableQuery, QueryBase};
 use tracing::info;
 
@@ -13,10 +13,32 @@ use crate::config::CATEGORY_FILTER_MULTIPLIER;
 use crate::indexer::embedding::Embedder;
 use crate::indexer::{SearchResult, SearchResultMetadata, TextChunk};
 
+const TABLE_NAME: &str = "chunks";
+const COL_VECTOR: &str = "vector";
+const COL_VECTOR_ITEM: &str = "item";
+const COL_TEXT: &str = "text";
+const COL_FILE_PATH: &str = "file_path";
+const COL_CATEGORY: &str = "category";
+const COL_TOPIC: &str = "topic";
+const COL_TITLE: &str = "title";
+const COL_HAS_CODE: &str = "has_code";
+const COL_DISTANCE: &str = "_distance";
+
 pub struct VectorStore {
     db: lancedb::Connection,
     table: Option<lancedb::Table>,
     dim: usize,
+    schema: Arc<Schema>,
+}
+
+struct SearchBatchCols<'a> {
+    text: &'a StringArray,
+    file_path: &'a StringArray,
+    category: &'a StringArray,
+    topic: &'a StringArray,
+    title: &'a StringArray,
+    has_code: &'a BooleanArray,
+    distance: Option<&'a Float32Array>,
 }
 
 impl VectorStore {
@@ -26,28 +48,161 @@ impl VectorStore {
             .await
             .context("Failed to open LanceDB")?;
 
-        let table = db.open_table("chunks").execute().await.ok();
+        let table = db.open_table(TABLE_NAME).execute().await.ok();
+        let schema = Self::build_schema(dim);
 
-        Ok(Self { db, table, dim })
+        Ok(Self {
+            db,
+            table,
+            dim,
+            schema,
+        })
     }
 
-    fn schema(dim: usize) -> Arc<Schema> {
+    fn build_schema(dim: usize) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
             Field::new(
-                "vector",
+                COL_VECTOR,
                 DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, true)),
+                    Arc::new(Field::new(COL_VECTOR_ITEM, DataType::Float32, true)),
                     dim as i32,
                 ),
                 false,
             ),
-            Field::new("text", DataType::Utf8, false),
-            Field::new("file_path", DataType::Utf8, false),
-            Field::new("category", DataType::Utf8, false),
-            Field::new("topic", DataType::Utf8, false),
-            Field::new("title", DataType::Utf8, false),
-            Field::new("has_code", DataType::Boolean, false),
+            Field::new(COL_TEXT, DataType::Utf8, false),
+            Field::new(COL_FILE_PATH, DataType::Utf8, false),
+            Field::new(COL_CATEGORY, DataType::Utf8, false),
+            Field::new(COL_TOPIC, DataType::Utf8, false),
+            Field::new(COL_TITLE, DataType::Utf8, false),
+            Field::new(COL_HAS_CODE, DataType::Boolean, false),
         ]))
+    }
+
+    fn build_batch(
+        schema: Arc<Schema>,
+        dim: usize,
+        batch_chunks: &[TextChunk],
+        embeddings: &[Vec<f32>],
+    ) -> Result<RecordBatch> {
+        let flat: Vec<f32> = embeddings.iter().flatten().copied().collect();
+        let values = Float32Array::from(flat);
+        let list_field = Arc::new(Field::new(COL_VECTOR_ITEM, DataType::Float32, true));
+        let vector_array =
+            FixedSizeListArray::try_new(list_field, dim as i32, Arc::new(values), None)?;
+
+        let text_array = StringArray::from(
+            batch_chunks
+                .iter()
+                .map(|c| c.text.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let file_path_array = StringArray::from(
+            batch_chunks
+                .iter()
+                .map(|c| c.metadata.file_path.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let category_array = StringArray::from(
+            batch_chunks
+                .iter()
+                .map(|c| c.metadata.category.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let topic_array = StringArray::from(
+            batch_chunks
+                .iter()
+                .map(|c| c.metadata.topic.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let title_array = StringArray::from(
+            batch_chunks
+                .iter()
+                .map(|c| c.metadata.title.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let has_code_array = BooleanArray::from(
+            batch_chunks
+                .iter()
+                .map(|c| c.metadata.has_code)
+                .collect::<Vec<_>>(),
+        );
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(vector_array),
+                Arc::new(text_array),
+                Arc::new(file_path_array),
+                Arc::new(category_array),
+                Arc::new(topic_array),
+                Arc::new(title_array),
+                Arc::new(has_code_array),
+            ],
+        )
+        .context("Failed to construct RecordBatch for vector store")
+    }
+
+    fn extract_search_columns(batch: &RecordBatch) -> Option<SearchBatchCols<'_>> {
+        let text = batch
+            .column_by_name(COL_TEXT)
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
+        let file_path = batch
+            .column_by_name(COL_FILE_PATH)
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
+        let category = batch
+            .column_by_name(COL_CATEGORY)
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
+        let topic = batch
+            .column_by_name(COL_TOPIC)
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
+        let title = batch
+            .column_by_name(COL_TITLE)
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())?;
+        let has_code = batch
+            .column_by_name(COL_HAS_CODE)
+            .and_then(|c| c.as_any().downcast_ref::<BooleanArray>())?;
+        let distance = batch
+            .column_by_name(COL_DISTANCE)
+            .and_then(|c| c.as_any().downcast_ref::<Float32Array>());
+
+        Some(SearchBatchCols {
+            text,
+            file_path,
+            category,
+            topic,
+            title,
+            has_code,
+            distance,
+        })
+    }
+
+    fn append_search_results(
+        batch: &RecordBatch,
+        cols: SearchBatchCols<'_>,
+        out: &mut Vec<SearchResult>,
+        top_k: usize,
+    ) {
+        for i in 0..batch.num_rows() {
+            let score = cols
+                .distance
+                .map(|d| 1.0 / (1.0 + d.value(i) as f64))
+                .unwrap_or(0.0);
+            out.push(SearchResult {
+                text: cols.text.value(i).to_string(),
+                score,
+                metadata: SearchResultMetadata {
+                    file_path: cols.file_path.value(i).to_string(),
+                    category: cols.category.value(i).to_string(),
+                    topic: cols.topic.value(i).to_string(),
+                    title: cols.title.value(i).to_string(),
+                    has_code: cols.has_code.value(i),
+                },
+            });
+
+            if out.len() >= top_k {
+                break;
+            }
+        }
     }
 
     pub async fn build_from_chunks(
@@ -63,9 +218,9 @@ impl VectorStore {
         );
 
         // Drop existing table if any
-        let _ = self.db.drop_table("chunks", &[]).await;
+        let _ = self.db.drop_table(TABLE_NAME, &[]).await;
 
-        let schema = Self::schema(self.dim);
+        let schema = self.schema.clone();
         let mut all_batches = Vec::new();
 
         for (i, batch_chunks) in chunks.chunks(batch_size).enumerate() {
@@ -79,62 +234,7 @@ impl VectorStore {
                 continue;
             }
 
-            // Flatten embeddings for FixedSizeListArray
-            let flat: Vec<f32> = embeddings.iter().flatten().copied().collect();
-            let values = arrow_array::Float32Array::from(flat);
-            let list_field = Arc::new(Field::new("item", DataType::Float32, true));
-            let vector_array =
-                FixedSizeListArray::try_new(list_field, self.dim as i32, Arc::new(values), None)?;
-
-            let text_array = StringArray::from(
-                batch_chunks
-                    .iter()
-                    .map(|c| c.text.as_str())
-                    .collect::<Vec<_>>(),
-            );
-            let file_path_array = StringArray::from(
-                batch_chunks
-                    .iter()
-                    .map(|c| c.metadata.file_path.as_str())
-                    .collect::<Vec<_>>(),
-            );
-            let category_array = StringArray::from(
-                batch_chunks
-                    .iter()
-                    .map(|c| c.metadata.category.as_str())
-                    .collect::<Vec<_>>(),
-            );
-            let topic_array = StringArray::from(
-                batch_chunks
-                    .iter()
-                    .map(|c| c.metadata.topic.as_str())
-                    .collect::<Vec<_>>(),
-            );
-            let title_array = StringArray::from(
-                batch_chunks
-                    .iter()
-                    .map(|c| c.metadata.title.as_str())
-                    .collect::<Vec<_>>(),
-            );
-            let has_code_array = BooleanArray::from(
-                batch_chunks
-                    .iter()
-                    .map(|c| c.metadata.has_code)
-                    .collect::<Vec<_>>(),
-            );
-
-            let batch = RecordBatch::try_new(
-                schema.clone(),
-                vec![
-                    Arc::new(vector_array),
-                    Arc::new(text_array),
-                    Arc::new(file_path_array),
-                    Arc::new(category_array),
-                    Arc::new(topic_array),
-                    Arc::new(title_array),
-                    Arc::new(has_code_array),
-                ],
-            )?;
+            let batch = Self::build_batch(schema.clone(), self.dim, batch_chunks, &embeddings)?;
 
             all_batches.push(batch);
             info!(
@@ -152,7 +252,7 @@ impl VectorStore {
         let batches = RecordBatchIterator::new(all_batches.into_iter().map(Ok), schema.clone());
         let table = self
             .db
-            .create_table("chunks", Box::new(batches))
+            .create_table(TABLE_NAME, Box::new(batches))
             .execute()
             .await
             .context("Failed to create LanceDB table")?;
@@ -197,53 +297,12 @@ impl VectorStore {
 
         let mut search_results = Vec::new();
         for batch in &batches {
-            let text_col = batch
-                .column_by_name("text")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
-            let fp_col = batch
-                .column_by_name("file_path")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
-            let cat_col = batch
-                .column_by_name("category")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
-            let topic_col = batch
-                .column_by_name("topic")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
-            let title_col = batch
-                .column_by_name("title")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
-            let code_col = batch
-                .column_by_name("has_code")
-                .and_then(|c| c.as_any().downcast_ref::<BooleanArray>());
-            let dist_col = batch
-                .column_by_name("_distance")
-                .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>());
+            if let Some(cols) = Self::extract_search_columns(batch) {
+                Self::append_search_results(batch, cols, &mut search_results, top_k);
+            }
 
-            let (text_col, fp_col, cat_col, topic_col, title_col, code_col) =
-                match (text_col, fp_col, cat_col, topic_col, title_col, code_col) {
-                    (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => (a, b, c, d, e, f),
-                    _ => continue,
-                };
-
-            for i in 0..batch.num_rows() {
-                let score = dist_col
-                    .map(|d| 1.0 / (1.0 + d.value(i) as f64))
-                    .unwrap_or(0.0);
-                search_results.push(SearchResult {
-                    text: text_col.value(i).to_string(),
-                    score,
-                    metadata: SearchResultMetadata {
-                        file_path: fp_col.value(i).to_string(),
-                        category: cat_col.value(i).to_string(),
-                        topic: topic_col.value(i).to_string(),
-                        title: title_col.value(i).to_string(),
-                        has_code: code_col.value(i),
-                    },
-                });
-
-                if search_results.len() >= top_k {
-                    break;
-                }
+            if search_results.len() >= top_k {
+                break;
             }
         }
 

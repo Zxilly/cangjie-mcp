@@ -699,71 +699,70 @@ mod tests {
 
     #[test]
     fn test_get_info_without_cangjie_home() {
-        std::env::remove_var("CANGJIE_HOME");
+        temp_env::with_var("CANGJIE_HOME", None::<&str>, || {
+            let settings = Settings {
+                docs_version: "dev".to_string(),
+                docs_lang: crate::config::DocLang::Zh,
+                embedding_type: crate::config::EmbeddingType::None,
+                local_model: String::new(),
+                rerank_type: crate::config::RerankType::None,
+                rerank_model: String::new(),
+                rerank_top_k: 5,
+                rerank_initial_k: 20,
+                rrf_k: 60,
+                chunk_max_size: 6000,
+                data_dir: std::path::PathBuf::from("/tmp/test-info"),
+                server_url: None,
+                openai_api_key: None,
+                openai_base_url: "https://api.example.com".to_string(),
+                openai_model: "test".to_string(),
+                prebuilt: crate::config::PrebuiltMode::Off,
+            };
 
-        let settings = Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: crate::config::DocLang::Zh,
-            embedding_type: crate::config::EmbeddingType::None,
-            local_model: String::new(),
-            rerank_type: crate::config::RerankType::None,
-            rerank_model: String::new(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
-            data_dir: std::path::PathBuf::from("/tmp/test-info"),
-            server_url: None,
-            openai_api_key: None,
-            openai_base_url: "https://api.example.com".to_string(),
-            openai_model: "test".to_string(),
-            prebuilt: crate::config::PrebuiltMode::Off,
-        };
+            let server = CangjieServer::new(settings);
+            let info = server.get_info();
 
-        let server = CangjieServer::new(settings);
-        let info = server.get_info();
-
-        assert!(
-            info.instructions.is_some(),
-            "instructions should be present"
-        );
-        let instructions = info.instructions.unwrap();
-        assert!(!instructions.is_empty(), "instructions should not be empty");
+            assert!(
+                info.instructions.is_some(),
+                "instructions should be present"
+            );
+            let instructions = info.instructions.unwrap();
+            assert!(!instructions.is_empty(), "instructions should not be empty");
+        });
     }
 
     #[test]
     fn test_get_info_with_cangjie_home() {
-        std::env::set_var("CANGJIE_HOME", "/some/path");
+        temp_env::with_var("CANGJIE_HOME", Some("/some/path"), || {
+            let settings = Settings {
+                docs_version: "dev".to_string(),
+                docs_lang: crate::config::DocLang::Zh,
+                embedding_type: crate::config::EmbeddingType::None,
+                local_model: String::new(),
+                rerank_type: crate::config::RerankType::None,
+                rerank_model: String::new(),
+                rerank_top_k: 5,
+                rerank_initial_k: 20,
+                rrf_k: 60,
+                chunk_max_size: 6000,
+                data_dir: std::path::PathBuf::from("/tmp/test-info"),
+                server_url: None,
+                openai_api_key: None,
+                openai_base_url: "https://api.example.com".to_string(),
+                openai_model: "test".to_string(),
+                prebuilt: crate::config::PrebuiltMode::Off,
+            };
 
-        let settings = Settings {
-            docs_version: "dev".to_string(),
-            docs_lang: crate::config::DocLang::Zh,
-            embedding_type: crate::config::EmbeddingType::None,
-            local_model: String::new(),
-            rerank_type: crate::config::RerankType::None,
-            rerank_model: String::new(),
-            rerank_top_k: 5,
-            rerank_initial_k: 20,
-            rrf_k: 60,
-            chunk_max_size: 6000,
-            data_dir: std::path::PathBuf::from("/tmp/test-info"),
-            server_url: None,
-            openai_api_key: None,
-            openai_base_url: "https://api.example.com".to_string(),
-            openai_model: "test".to_string(),
-            prebuilt: crate::config::PrebuiltMode::Off,
-        };
+            let server = CangjieServer::new(settings);
+            let info = server.get_info();
 
-        let server = CangjieServer::new(settings);
-        let info = server.get_info();
-
-        assert!(
-            info.instructions.is_some(),
-            "instructions should be present"
-        );
-        let instructions = info.instructions.unwrap();
-        assert!(!instructions.is_empty(), "instructions should not be empty");
-        std::env::remove_var("CANGJIE_HOME");
+            assert!(
+                info.instructions.is_some(),
+                "instructions should be present"
+            );
+            let instructions = info.instructions.unwrap();
+            assert!(!instructions.is_empty(), "instructions should not be empty");
+        });
     }
 
     #[tokio::test]

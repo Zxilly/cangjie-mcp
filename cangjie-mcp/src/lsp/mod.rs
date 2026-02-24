@@ -94,99 +94,60 @@ pub fn detect_settings(workspace_path: Option<PathBuf>) -> Option<LSPSettings> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_is_available_checks_env() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original = std::env::var("CANGJIE_HOME").ok();
-
-        std::env::set_var("CANGJIE_HOME", "/tmp/fake-cangjie-sdk");
-        assert!(is_available());
-
-        std::env::remove_var("CANGJIE_HOME");
-        assert!(!is_available());
-
-        if let Some(val) = original {
-            std::env::set_var("CANGJIE_HOME", val);
-        }
+        temp_env::with_var("CANGJIE_HOME", Some("/tmp/fake-cangjie-sdk"), || {
+            assert!(is_available());
+        });
+        temp_env::with_var("CANGJIE_HOME", None::<&str>, || {
+            assert!(!is_available());
+        });
     }
 
     #[test]
     fn test_detect_settings_no_cangjie_home() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original = std::env::var("CANGJIE_HOME").ok();
-
-        std::env::remove_var("CANGJIE_HOME");
-        let result = detect_settings(Some(PathBuf::from("/tmp/test")));
-        assert!(result.is_none());
-
-        if let Some(val) = original {
-            std::env::set_var("CANGJIE_HOME", val);
-        }
+        temp_env::with_var("CANGJIE_HOME", None::<&str>, || {
+            let result = detect_settings(Some(PathBuf::from("/tmp/test")));
+            assert!(result.is_none());
+        });
     }
 
     #[test]
     fn test_detect_settings_with_cangjie_home() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original = std::env::var("CANGJIE_HOME").ok();
+        temp_env::with_var("CANGJIE_HOME", Some("/tmp/fake-cangjie-sdk"), || {
+            let result = detect_settings(Some(PathBuf::from("/tmp/workspace")));
+            assert!(result.is_some());
 
-        std::env::set_var("CANGJIE_HOME", "/tmp/fake-cangjie-sdk");
-        let result = detect_settings(Some(PathBuf::from("/tmp/workspace")));
-        assert!(result.is_some());
-
-        let settings = result.unwrap();
-        assert_eq!(settings.sdk_path, PathBuf::from("/tmp/fake-cangjie-sdk"));
-        assert_eq!(settings.workspace_path, PathBuf::from("/tmp/workspace"));
-        assert!(!settings.log_enabled);
-        assert!(settings.log_path.is_none());
-        assert_eq!(settings.init_timeout_ms, 45000);
-        assert!(settings.disable_auto_import);
-
-        if let Some(val) = original {
-            std::env::set_var("CANGJIE_HOME", val);
-        } else {
-            std::env::remove_var("CANGJIE_HOME");
-        }
+            let settings = result.unwrap();
+            assert_eq!(settings.sdk_path, PathBuf::from("/tmp/fake-cangjie-sdk"));
+            assert_eq!(settings.workspace_path, PathBuf::from("/tmp/workspace"));
+            assert!(!settings.log_enabled);
+            assert!(settings.log_path.is_none());
+            assert_eq!(settings.init_timeout_ms, 45000);
+            assert!(settings.disable_auto_import);
+        });
     }
 
     #[test]
     fn test_detect_settings_with_workspace() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original = std::env::var("CANGJIE_HOME").ok();
-
-        std::env::set_var("CANGJIE_HOME", "/tmp/fake-cangjie-sdk");
-        let workspace = PathBuf::from("/my/custom/workspace");
-        let result = detect_settings(Some(workspace.clone()));
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().workspace_path, workspace);
-
-        if let Some(val) = original {
-            std::env::set_var("CANGJIE_HOME", val);
-        } else {
-            std::env::remove_var("CANGJIE_HOME");
-        }
+        temp_env::with_var("CANGJIE_HOME", Some("/tmp/fake-cangjie-sdk"), || {
+            let workspace = PathBuf::from("/my/custom/workspace");
+            let result = detect_settings(Some(workspace.clone()));
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().workspace_path, workspace);
+        });
     }
 
     #[test]
     fn test_detect_settings_default_workspace() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original = std::env::var("CANGJIE_HOME").ok();
+        temp_env::with_var("CANGJIE_HOME", Some("/tmp/fake-cangjie-sdk"), || {
+            let result = detect_settings(None);
+            assert!(result.is_some());
 
-        std::env::set_var("CANGJIE_HOME", "/tmp/fake-cangjie-sdk");
-        let result = detect_settings(None);
-        assert!(result.is_some());
-
-        let settings = result.unwrap();
-        let expected = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        assert_eq!(settings.workspace_path, expected);
-
-        if let Some(val) = original {
-            std::env::set_var("CANGJIE_HOME", val);
-        } else {
-            std::env::remove_var("CANGJIE_HOME");
-        }
+            let settings = result.unwrap();
+            let expected = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            assert_eq!(settings.workspace_path, expected);
+        });
     }
 }

@@ -295,9 +295,9 @@ mod tests {
 
     #[test]
     fn test_get_real_path_with_env_var() {
-        std::env::set_var("TEST_CANGJIE_VAR", "/resolved");
-        assert_eq!(get_real_path("${TEST_CANGJIE_VAR}/sub"), "/resolved/sub");
-        std::env::remove_var("TEST_CANGJIE_VAR");
+        temp_env::with_var("TEST_CANGJIE_VAR", Some("/resolved"), || {
+            assert_eq!(get_real_path("${TEST_CANGJIE_VAR}/sub"), "/resolved/sub");
+        });
     }
 
     #[test]
@@ -465,18 +465,19 @@ commitId = "abc123"
     #[test]
     fn test_get_cjpm_config_path_default() {
         // Without CJPM_CONFIG set, should use home dir
-        std::env::remove_var("CJPM_CONFIG");
-        let path = get_cjpm_config_path("git");
-        assert!(path.to_string_lossy().contains(".cjpm"));
-        assert!(path.to_string_lossy().ends_with("git"));
+        temp_env::with_var("CJPM_CONFIG", None::<&str>, || {
+            let path = get_cjpm_config_path("git");
+            assert!(path.to_string_lossy().contains(".cjpm"));
+            assert!(path.to_string_lossy().ends_with("git"));
+        });
     }
 
     #[test]
     fn test_get_cjpm_config_path_custom() {
-        std::env::set_var("CJPM_CONFIG", "/custom/config");
-        let path = get_cjpm_config_path("repository");
-        assert_eq!(path, PathBuf::from("/custom/config/repository"));
-        std::env::remove_var("CJPM_CONFIG");
+        temp_env::with_var("CJPM_CONFIG", Some("/custom/config"), || {
+            let path = get_cjpm_config_path("repository");
+            assert_eq!(path, PathBuf::from("/custom/config/repository"));
+        });
     }
 
     #[test]

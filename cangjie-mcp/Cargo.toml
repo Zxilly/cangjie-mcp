@@ -35,7 +35,7 @@ tantivy = "0.25"
 jieba-rs = "0.8"
 
 # Git operations
-gix = { version = "0.70", default-features = false, features = [
+gix = { version = "0.80", default-features = false, features = [
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
     "worktree-mutation",
@@ -67,7 +67,6 @@ text-splitter = { version = "0.29", features = ["markdown"] }
 # Vector database
 lancedb = "0.26"
 arrow-array = "57"
-arrow-schema = "57"
 
 # LSP support
 toml = "1.0"
@@ -79,3 +78,4 @@ fastembed = { version = "5", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+temp-env = "0.3"
