@@ -1,5 +1,6 @@
 pub mod bm25;
 pub mod fusion;
+mod sqlite_vec_ext;
 pub mod vector;
 
 use anyhow::{Context, Result};

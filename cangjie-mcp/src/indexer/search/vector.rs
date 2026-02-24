@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use tracing::info;
 use zerocopy::IntoBytes;
 
+use super::sqlite_vec_ext::register_sqlite_vec;
 use crate::config::CATEGORY_FILTER_MULTIPLIER;
 use crate::indexer::embedding::Embedder;
 use crate::indexer::{SearchResult, SearchResultMetadata, TextChunk};
@@ -14,24 +15,6 @@ pub struct VectorStore {
     conn: Arc<std::sync::Mutex<Connection>>,
     ready: bool,
     dim: usize,
-}
-
-/// Load the sqlite-vec extension via `sqlite3_auto_extension` before any
-/// connection is opened.  This is safe to call multiple times — SQLite
-/// de-duplicates auto-extensions internally.
-fn register_sqlite_vec() {
-    unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
-            *const (),
-            unsafe extern "C" fn(
-                *mut rusqlite::ffi::sqlite3,
-                *mut *mut i8,
-                *const rusqlite::ffi::sqlite3_api_routines,
-            ) -> i32,
-        >(
-            sqlite_vec::sqlite3_vec_init as *const ()
-        )));
-    }
 }
 
 impl VectorStore {
@@ -47,7 +30,7 @@ impl VectorStore {
         std::fs::create_dir_all(path)
             .with_context(|| format!("Failed to create vector store dir: {path:?}"))?;
 
-        register_sqlite_vec();
+        register_sqlite_vec()?;
 
         let db_path = path.join("vectors.db");
         let conn = Connection::open(&db_path)
