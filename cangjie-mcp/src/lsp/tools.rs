@@ -282,8 +282,8 @@ fn location_link_to_result(link: &LocationLink) -> LocationResult {
         file_path: uri_to_path(link.target_uri.as_str())
             .to_string_lossy()
             .to_string(),
-        line: link.target_range.start.line + 1,
-        character: link.target_range.start.character + 1,
+        line: link.target_selection_range.start.line + 1,
+        character: link.target_selection_range.start.character + 1,
         end_line: Some(link.target_range.end.line + 1),
         end_character: Some(link.target_range.end.character + 1),
     }
@@ -298,8 +298,8 @@ fn convert_document_symbol(sym: &DocumentSymbol) -> SymbolOutput {
     SymbolOutput {
         name: sym.name.clone(),
         kind: symbol_kind_name(sym.kind).to_string(),
-        line: sym.range.start.line + 1,
-        character: sym.range.start.character + 1,
+        line: sym.selection_range.start.line + 1,
+        character: sym.selection_range.start.character + 1,
         end_line: sym.range.end.line + 1,
         end_character: sym.range.end.character + 1,
         children,
