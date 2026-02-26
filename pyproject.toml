@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cangjie-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server for Cangjie programming language - documentation search and code intelligence"
 authors = [{ name = "Zxilly" }]
 readme = "README.md"
