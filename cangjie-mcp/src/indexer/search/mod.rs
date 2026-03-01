@@ -241,26 +241,53 @@ impl RemoteSearchIndex {
     pub async fn init(&self) -> Result<IndexInfo> {
         let url = format!("{}/info", self.server_url);
         info!("Connecting to remote server: {}", self.server_url);
-        let resp = self
-            .client
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(30))
-            .send()
-            .await
-            .context("Failed to connect to remote server")?;
-        let data: RemoteInfoResponse = resp.json().await.context("Invalid /info response")?;
 
-        let lang = match data.lang.as_str() {
-            "en" => DocLang::En,
-            _ => DocLang::Zh,
-        };
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_BACKOFF_SECS: u64 = 2;
 
-        Ok(IndexInfo {
-            version: data.version,
-            lang,
-            embedding_model_name: data.embedding_model,
-            data_dir: crate::config::get_default_data_dir(),
-        })
+        let mut last_err = None;
+        for attempt in 1..=MAX_RETRIES {
+            match self
+                .client
+                .get(&url)
+                .timeout(std::time::Duration::from_secs(30))
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    let data: RemoteInfoResponse =
+                        resp.json().await.context("Invalid /info response")?;
+                    let lang = match data.lang.as_str() {
+                        "en" => DocLang::En,
+                        _ => DocLang::Zh,
+                    };
+                    return Ok(IndexInfo {
+                        version: data.version,
+                        lang,
+                        embedding_model_name: data.embedding_model,
+                        data_dir: crate::config::get_default_data_dir(),
+                    });
+                }
+                Err(e) => {
+                    warn!(
+                        "Remote server connection attempt {}/{} failed: {}",
+                        attempt, MAX_RETRIES, e
+                    );
+                    last_err = Some(e);
+                    if attempt < MAX_RETRIES {
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            RETRY_BACKOFF_SECS * attempt as u64,
+                        ))
+                        .await;
+                    }
+                }
+            }
+        }
+
+        Err(last_err
+            .map(|e| anyhow::anyhow!(e))
+            .unwrap_or_else(|| anyhow::anyhow!("Failed to connect to remote server"))
+            .context("Failed to connect to remote server after retries"))
     }
 
     pub async fn query(

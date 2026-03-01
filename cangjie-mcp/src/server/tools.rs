@@ -239,7 +239,8 @@ impl CangjieServer {
     }
 
     fn query_terms(query: &str) -> Vec<String> {
-        let jieba = Jieba::new();
+        static JIEBA: std::sync::LazyLock<Jieba> = std::sync::LazyLock::new(Jieba::new);
+        let jieba = &*JIEBA;
         let lower = query.to_lowercase();
         let mut terms: Vec<String> = jieba
             .cut_for_search(&lower, true)

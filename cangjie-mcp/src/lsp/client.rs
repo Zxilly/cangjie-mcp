@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -23,7 +24,7 @@ use crate::lsp::types::{
     TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri, WorkDoneProgressParams,
     WorkspaceFolder, WorkspaceSymbolParams,
 };
-use crate::lsp::utils::path_to_uri;
+use crate::lsp::utils::{path_to_uri, uri_to_path};
 
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -489,6 +490,7 @@ fn build_windows_direct_command(
 pub struct CangjieClient {
     client: jsonrpsee::core::client::Client,
     open_files: Mutex<HashMap<String, i32>>,
+    file_hashes: Mutex<HashMap<String, u64>>,
     diagnostics: Arc<Mutex<HashMap<String, Vec<Value>>>>,
     initialized: AtomicBool,
     running: Arc<AtomicBool>,
@@ -553,6 +555,7 @@ impl CangjieClient {
         let client = Self {
             client: rpc_client,
             open_files: Mutex::new(HashMap::new()),
+            file_hashes: Mutex::new(HashMap::new()),
             diagnostics,
             initialized: AtomicBool::new(false),
             running,
@@ -678,12 +681,52 @@ impl CangjieClient {
 
     // -- File management -----------------------------------------------------
 
+    fn hash_content(content: &str) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        hasher.finish()
+    }
+
     async fn ensure_open(&self, file_path: &str) -> Result<()> {
         let uri_str = path_to_uri(Path::new(file_path));
 
         {
             let open_files = self.open_files.lock().await;
             if open_files.contains_key(&uri_str) {
+                // File already open — check if content changed on disk
+                let content = tokio::fs::read_to_string(file_path)
+                    .await
+                    .context("Failed to read file")?;
+                let new_hash = Self::hash_content(&content);
+
+                let mut hashes = self.file_hashes.lock().await;
+                let old_hash = hashes.get(&uri_str).copied().unwrap_or(0);
+                if new_hash != old_hash {
+                    drop(open_files);
+                    // Content changed: close and re-open with fresh content
+                    let close_params = serde_json::json!({
+                        "textDocument": { "uri": uri_str }
+                    });
+                    debug!("[LSP] textDocument/didClose (re-open): {}", uri_str);
+                    self.notify("textDocument/didClose", &close_params).await?;
+
+                    let mut open_files = self.open_files.lock().await;
+                    let version = open_files.get(&uri_str).copied().unwrap_or(1) + 1;
+
+                    let params = DidOpenTextDocumentParams {
+                        text_document: TextDocumentItem {
+                            uri: parse_uri(&uri_str)?,
+                            language_id: "Cangjie".to_string(),
+                            version,
+                            text: content,
+                        },
+                    };
+                    debug!("[LSP] textDocument/didOpen (re-open): {}", uri_str);
+                    self.notify("textDocument/didOpen", &params).await?;
+
+                    open_files.insert(uri_str.clone(), version);
+                    hashes.insert(uri_str, new_hash);
+                }
                 return Ok(());
             }
         }
@@ -691,6 +734,7 @@ impl CangjieClient {
         let content = tokio::fs::read_to_string(file_path)
             .await
             .context("Failed to read file")?;
+        let content_hash = Self::hash_content(&content);
 
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
@@ -704,7 +748,8 @@ impl CangjieClient {
         debug!("[LSP] textDocument/didOpen: {}", uri_str);
         self.notify("textDocument/didOpen", &params).await?;
 
-        self.open_files.lock().await.insert(uri_str, 1);
+        self.open_files.lock().await.insert(uri_str.clone(), 1);
+        self.file_hashes.lock().await.insert(uri_str, content_hash);
         Ok(())
     }
 
@@ -928,11 +973,47 @@ impl CangjieClient {
 
     pub async fn get_diagnostics(&self, file_path: &str) -> Result<Vec<Value>> {
         self.ensure_open(file_path).await?;
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
 
-        let path_str = Path::new(file_path).to_string_lossy().to_string();
+        // Send a documentSymbol request to kick the LSP server's ReadyForDiagnostics pipeline
+        let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
+        let _ = self
+            .document_request(
+                "textDocument/documentSymbol",
+                &DocumentSymbolParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    partial_result_params: Default::default(),
+                },
+                &uri,
+            )
+            .await;
+
+        // Normalize the lookup key via uri_to_path(path_to_uri(...)) roundtrip
+        // to match the key format used by publishDiagnostics handler in transport.rs
+        let lookup_key = uri_to_path(path_to_uri(Path::new(file_path)).as_str())
+            .to_string_lossy()
+            .to_string();
+
+        // Poll for diagnostics with 200ms intervals, up to 10s total
+        const POLL_INTERVAL_MS: u64 = 200;
+        const MAX_WAIT_MS: u64 = 10_000;
+        let mut elapsed = 0u64;
+
+        while elapsed < MAX_WAIT_MS {
+            tokio::time::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
+            elapsed += POLL_INTERVAL_MS;
+
+            let diags = self.diagnostics.lock().await;
+            if let Some(d) = diags.get(&lookup_key) {
+                if !d.is_empty() {
+                    return Ok(d.clone());
+                }
+            }
+        }
+
+        // Timeout reached — return whatever we have (possibly empty)
         let diags = self.diagnostics.lock().await;
-        Ok(diags.get(&path_str).cloned().unwrap_or_default())
+        Ok(diags.get(&lookup_key).cloned().unwrap_or_default())
     }
 
     pub async fn shutdown(&self) -> Result<()> {

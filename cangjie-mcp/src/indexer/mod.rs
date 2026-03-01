@@ -47,6 +47,9 @@ fn default_search_mode() -> String {
 pub(crate) fn build_http_client(settings: &Settings, timeout: Duration) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .timeout(timeout)
+        .connect_timeout(Duration::from_secs(
+            crate::config::DEFAULT_HTTP_CONNECT_TIMEOUT_SECS,
+        ))
         .pool_idle_timeout(Duration::from_secs(settings.http_pool_idle_timeout_secs))
         .pool_max_idle_per_host(settings.http_pool_max_idle_per_host)
         .tcp_keepalive(Duration::from_secs(settings.http_tcp_keepalive_secs));

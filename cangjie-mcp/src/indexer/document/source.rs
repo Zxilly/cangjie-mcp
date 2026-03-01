@@ -110,16 +110,19 @@ fn collect_md_files_recursive(
     Ok(())
 }
 
-fn build_topic_index(repo_dir: &Path, docs_base_path: &str) -> Result<HashMap<String, String>> {
+fn build_topic_index(
+    repo_dir: &Path,
+    docs_base_path: &str,
+) -> Result<HashMap<String, Vec<String>>> {
     let categories = list_dirs(repo_dir, docs_base_path)?;
-    let mut mapping = HashMap::new();
+    let mut mapping: HashMap<String, Vec<String>> = HashMap::new();
     for cat in &categories {
         let path = format!("{docs_base_path}/{cat}");
         match list_md_files(repo_dir, &path) {
             Ok(files) => {
                 for f in &files {
                     if let Some(topic) = topic_name_from_md_path(f) {
-                        mapping.entry(topic).or_insert_with(|| cat.clone());
+                        mapping.entry(topic).or_default().push(cat.clone());
                     }
                 }
             }
@@ -143,7 +146,7 @@ fn build_topic_index(repo_dir: &Path, docs_base_path: &str) -> Result<HashMap<St
 pub struct GitDocumentSource {
     repo_dir: PathBuf,
     docs_base_path: String,
-    topic_index: tokio::sync::OnceCell<HashMap<String, String>>,
+    topic_index: tokio::sync::OnceCell<HashMap<String, Vec<String>>>,
 }
 
 impl GitDocumentSource {
@@ -157,7 +160,7 @@ impl GitDocumentSource {
         })
     }
 
-    async fn get_cached_topic_index(&self) -> &HashMap<String, String> {
+    async fn get_cached_topic_index(&self) -> &HashMap<String, Vec<String>> {
         self.topic_index
             .get_or_init(|| async {
                 let repo_dir = self.repo_dir.clone();
@@ -209,7 +212,10 @@ impl DocumentSource for GitDocumentSource {
         let category = match category {
             Some(c) => c.to_string(),
             None => match self.get_cached_topic_index().await.get(topic) {
-                Some(c) => c.clone(),
+                Some(cats) => match cats.first() {
+                    Some(c) => c.clone(),
+                    None => return Ok(None),
+                },
                 None => return Ok(None),
             },
         };
@@ -622,9 +628,12 @@ mod tests {
         let tmp = create_test_repo();
 
         let index = build_topic_index(tmp.path(), "docs/dev-guide/source_zh_cn").unwrap();
-        assert_eq!(index.get("functions").unwrap(), "syntax");
-        assert_eq!(index.get("variables").unwrap(), "syntax");
-        assert_eq!(index.get("collections").unwrap(), "stdlib");
+        assert_eq!(index.get("functions").unwrap(), &vec!["syntax".to_string()]);
+        assert_eq!(index.get("variables").unwrap(), &vec!["syntax".to_string()]);
+        assert_eq!(
+            index.get("collections").unwrap(),
+            &vec!["stdlib".to_string()]
+        );
         assert_eq!(index.len(), 3);
     }
 
