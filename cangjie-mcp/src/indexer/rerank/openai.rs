@@ -1,10 +1,9 @@
 use anyhow::Result;
 use tracing::info;
 
+use crate::api::client::ApiClient;
+use crate::api::types::RerankResponse;
 use crate::config::Settings;
-use crate::indexer::api_client::ApiClient;
-use crate::indexer::api_types::RerankResponse;
-use crate::indexer::build_http_client;
 use crate::indexer::SearchResult;
 
 pub struct OpenAIReranker {
@@ -13,9 +12,14 @@ pub struct OpenAIReranker {
 
 impl OpenAIReranker {
     pub fn new(settings: &Settings, api_key: &str, model: &str, base_url: &str) -> Result<Self> {
-        let client = build_http_client(settings, std::time::Duration::from_secs(30))?;
         Ok(Self {
-            api: ApiClient::new(client, api_key, model, base_url),
+            api: ApiClient::new(
+                settings,
+                api_key,
+                model,
+                base_url,
+                std::time::Duration::from_secs(30),
+            )?,
         })
     }
 

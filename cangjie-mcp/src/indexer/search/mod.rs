@@ -15,8 +15,8 @@ use tracing::{info, warn};
 /// Global Jieba instance shared across all search components.
 pub static GLOBAL_JIEBA: LazyLock<Arc<Jieba>> = LazyLock::new(|| Arc::new(Jieba::new()));
 
+use crate::api::client::HttpClient;
 use crate::config::{DocLang, IndexInfo, Settings, DEFAULT_EMBEDDING_DIM};
-use crate::indexer::build_http_client;
 use crate::indexer::embedding::{self, EmbedKind, Embedder};
 use crate::indexer::rerank::{self, RerankerKind};
 use crate::indexer::search::bm25::BM25Store;
@@ -329,68 +329,34 @@ struct RemoteSearchResultItem {
 // -- Remote Search Index -----------------------------------------------------
 
 pub struct RemoteSearchIndex {
-    server_url: String,
-    client: reqwest::Client,
+    http: HttpClient,
 }
 
 impl RemoteSearchIndex {
     pub fn new(settings: &Settings, server_url: &str) -> Result<Self> {
         Ok(Self {
-            server_url: server_url.trim_end_matches('/').to_string(),
-            client: build_http_client(settings, std::time::Duration::from_secs(60))?,
+            http: HttpClient::new(settings, server_url, std::time::Duration::from_secs(60))?,
         })
     }
 
+    pub fn base_url(&self) -> &str {
+        self.http.base_url()
+    }
+
     pub async fn init(&self) -> Result<IndexInfo> {
-        let url = format!("{}/info", self.server_url);
-        info!("Connecting to remote server: {}", self.server_url);
+        info!("Connecting to remote server: {}", self.http.base_url());
 
-        const MAX_RETRIES: u32 = 3;
-        const RETRY_BACKOFF_SECS: u64 = 2;
-
-        let mut last_err = None;
-        for attempt in 1..=MAX_RETRIES {
-            match self
-                .client
-                .get(&url)
-                .timeout(std::time::Duration::from_secs(30))
-                .send()
-                .await
-            {
-                Ok(resp) => {
-                    let data: RemoteInfoResponse =
-                        resp.json().await.context("Invalid /info response")?;
-                    let lang = match data.lang.as_str() {
-                        "en" => DocLang::En,
-                        _ => DocLang::Zh,
-                    };
-                    return Ok(IndexInfo {
-                        version: data.version,
-                        lang,
-                        embedding_model_name: data.embedding_model,
-                        data_dir: crate::config::get_default_data_dir(),
-                    });
-                }
-                Err(e) => {
-                    warn!(
-                        "Remote server connection attempt {}/{} failed: {}",
-                        attempt, MAX_RETRIES, e
-                    );
-                    last_err = Some(e);
-                    if attempt < MAX_RETRIES {
-                        tokio::time::sleep(std::time::Duration::from_secs(
-                            RETRY_BACKOFF_SECS * attempt as u64,
-                        ))
-                        .await;
-                    }
-                }
-            }
-        }
-
-        Err(last_err
-            .map(|e| anyhow::anyhow!(e))
-            .unwrap_or_else(|| anyhow::anyhow!("Failed to connect to remote server"))
-            .context("Failed to connect to remote server after retries"))
+        let data: RemoteInfoResponse = self.http.get_with_retry("info", 3).await?;
+        let lang = match data.lang.as_str() {
+            "en" => DocLang::En,
+            _ => DocLang::Zh,
+        };
+        Ok(IndexInfo {
+            version: data.version,
+            lang,
+            embedding_model_name: data.embedding_model,
+            data_dir: crate::config::get_default_data_dir(),
+        })
     }
 
     pub async fn query(
@@ -400,7 +366,6 @@ impl RemoteSearchIndex {
         category: Option<&str>,
         rerank: bool,
     ) -> Result<Vec<SearchResult>> {
-        let url = format!("{}/search", self.server_url);
         let payload = RemoteSearchRequest {
             query: query.to_string(),
             top_k,
@@ -408,7 +373,7 @@ impl RemoteSearchIndex {
             category: category.map(|s| s.to_string()),
         };
 
-        let resp = self.client.post(&url).json(&payload).send().await?;
+        let resp = self.http.post("search").json(&payload).send().await?;
         let data: RemoteSearchResponse = resp.json().await.context("Invalid /search response")?;
 
         Ok(data
@@ -567,7 +532,7 @@ mod tests {
             "http://localhost:8765",
         )
         .unwrap();
-        assert_eq!(remote.server_url, "http://localhost:8765");
+        assert_eq!(remote.base_url(), "http://localhost:8765");
     }
 
     #[test]
@@ -578,7 +543,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            remote.server_url, "http://localhost:8765",
+            remote.base_url(),
+            "http://localhost:8765",
             "Trailing slash should be trimmed"
         );
     }
@@ -591,7 +557,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            remote.server_url, "http://example.com",
+            remote.base_url(),
+            "http://example.com",
             "All trailing slashes should be trimmed"
         );
     }

@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use tracing::info;
 
-use crate::indexer::api_client::ApiClient;
-use crate::indexer::api_types::ChatResponse;
+use crate::api::client::ApiClient;
+use crate::api::types::ChatResponse;
 
 /// Chunk context summarizer that calls an OpenAI-compatible Chat API.
 #[derive(Clone)]

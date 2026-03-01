@@ -5,9 +5,10 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tracing::{info, warn};
 
+use crate::api::client::HttpClient;
 use crate::config::{DocLang, Settings};
 use crate::indexer::document::loader::{extract_title_from_content, load_document_from_content};
-use crate::indexer::{build_http_client, DocData};
+use crate::indexer::DocData;
 
 // -- Document Source trait ---------------------------------------------------
 
@@ -796,23 +797,20 @@ struct RemoteHealthResponse {
 // -- Remote Document Source --------------------------------------------------
 
 pub struct RemoteDocumentSource {
-    server_url: String,
-    client: reqwest::Client,
+    http: HttpClient,
     cache: tokio::sync::OnceCell<HashMap<String, Vec<TopicEntry>>>,
 }
 
 impl RemoteDocumentSource {
     pub fn new(settings: &Settings, server_url: &str) -> Result<Self> {
         Ok(Self {
-            server_url: server_url.trim_end_matches('/').to_string(),
-            client: build_http_client(settings, std::time::Duration::from_secs(60))?,
+            http: HttpClient::new(settings, server_url, std::time::Duration::from_secs(60))?,
             cache: tokio::sync::OnceCell::new(),
         })
     }
 
     async fn fetch_topics(&self) -> Result<HashMap<String, Vec<TopicEntry>>> {
-        let url = format!("{}/topics", self.server_url);
-        let resp = self.client.get(&url).send().await?;
+        let resp = self.http.get("topics").send().await?;
         let data: RemoteTopicsResponse = resp.json().await.context("Invalid /topics response")?;
         Ok(data.categories)
     }
@@ -827,8 +825,7 @@ impl RemoteDocumentSource {
 #[async_trait]
 impl DocumentSource for RemoteDocumentSource {
     async fn is_available(&self) -> bool {
-        let url = format!("{}/health", self.server_url);
-        let resp = match self.client.get(&url).send().await {
+        let resp = match self.http.get("health").send().await {
             Ok(r) => r,
             Err(_) => return false,
         };
@@ -876,8 +873,11 @@ impl DocumentSource for RemoteDocumentSource {
             }
         };
 
-        let url = format!("{}/topics/{}/{}", self.server_url, category, topic);
-        let resp = self.client.get(&url).send().await?;
+        let resp = self
+            .http
+            .get(&format!("topics/{}/{}", category, topic))
+            .send()
+            .await?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }

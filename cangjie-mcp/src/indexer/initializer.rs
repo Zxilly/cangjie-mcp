@@ -60,14 +60,13 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
     if let Some(ref summary_model) = settings.summary_model {
         if let Some(ref api_key) = settings.openai_api_key {
             info!("Generating context summaries with model: {}", summary_model);
-            let http_client =
-                crate::indexer::build_http_client(settings, std::time::Duration::from_secs(120))?;
-            let api = crate::indexer::api_client::ApiClient::new(
-                http_client,
+            let api = crate::api::client::ApiClient::new(
+                settings,
                 api_key,
                 summary_model,
                 &settings.openai_base_url,
-            );
+                std::time::Duration::from_secs(120),
+            )?;
             let summarizer = crate::indexer::document::summarizer::ChunkSummarizer::new(api);
             let cache_path = index_info.index_dir().join("context_cache.json");
 

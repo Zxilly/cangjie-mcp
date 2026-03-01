@@ -3,10 +3,9 @@ use async_trait::async_trait;
 use tracing::info;
 
 use super::{EmbedKind, Embedder};
+use crate::api::client::ApiClient;
+use crate::api::types::EmbeddingsResponse;
 use crate::config::Settings;
-use crate::indexer::api_client::ApiClient;
-use crate::indexer::api_types::EmbeddingsResponse;
-use crate::indexer::build_http_client;
 
 pub struct OpenAIEmbedder {
     api: ApiClient,
@@ -14,9 +13,14 @@ pub struct OpenAIEmbedder {
 
 impl OpenAIEmbedder {
     pub fn new(settings: &Settings, api_key: &str, model: &str, base_url: &str) -> Result<Self> {
-        let client = build_http_client(settings, std::time::Duration::from_secs(120))?;
         Ok(Self {
-            api: ApiClient::new(client, api_key, model, base_url),
+            api: ApiClient::new(
+                settings,
+                api_key,
+                model,
+                base_url,
+                std::time::Duration::from_secs(120),
+            )?,
         })
     }
 }
