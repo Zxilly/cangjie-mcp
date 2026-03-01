@@ -7,8 +7,9 @@ use tracing::info;
 
 use cangjie_mcp::config::{
     self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
-    DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2, DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS,
-    DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST, DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL,
+    DEFAULT_CHUNK_OVERLAP, DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2,
+    DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS, DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST,
+    DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL, DEFAULT_MAX_PER_FILE,
     DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL,
     DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
 };
@@ -69,6 +70,18 @@ struct Cli {
     #[arg(long = "chunk-size", env = "CANGJIE_CHUNK_MAX_SIZE", default_value_t = DEFAULT_CHUNK_MAX_SIZE)]
     chunk_max_size: usize,
 
+    /// Chunk overlap in characters
+    #[arg(long = "chunk-overlap", env = "CANGJIE_CHUNK_OVERLAP", default_value_t = DEFAULT_CHUNK_OVERLAP)]
+    chunk_overlap: usize,
+
+    /// Maximum search results per file
+    #[arg(long = "max-per-file", env = "CANGJIE_MAX_PER_FILE", default_value_t = DEFAULT_MAX_PER_FILE)]
+    max_per_file: usize,
+
+    /// LLM model for generating chunk context summaries (e.g. deepseek-ai/DeepSeek-V3.2)
+    #[arg(long = "summary-model", env = "CANGJIE_SUMMARY_MODEL")]
+    summary_model: Option<String>,
+
     /// RRF constant k for hybrid search fusion
     #[arg(long = "rrf-k", env = "CANGJIE_RRF_K", default_value_t = DEFAULT_RRF_K)]
     rrf_k: u32,
@@ -128,6 +141,9 @@ impl Cli {
             rerank_initial_k: self.rerank_initial_k,
             rrf_k: self.rrf_k,
             chunk_max_size: self.chunk_max_size,
+            chunk_overlap: self.chunk_overlap,
+            max_per_file: self.max_per_file,
+            summary_model: self.summary_model.clone(),
             data_dir: self
                 .data_dir
                 .clone()

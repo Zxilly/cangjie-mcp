@@ -7,7 +7,7 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use once_cell::sync::OnceCell;
 use tracing::info;
 
-use super::Embedder;
+use super::{EmbedKind, Embedder};
 
 pub struct LocalEmbedder {
     model: Arc<Mutex<TextEmbedding>>,
@@ -52,7 +52,7 @@ pub(crate) fn init_ort_backend() {}
 
 #[async_trait]
 impl Embedder for LocalEmbedder {
-    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    async fn embed(&self, texts: &[&str], _kind: EmbedKind) -> Result<Vec<Vec<f32>>> {
         let docs: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
         let model = Arc::clone(&self.model);
         tokio::task::spawn_blocking(move || {

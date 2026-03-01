@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -627,6 +627,7 @@ dependencies = [
  "gix",
  "jieba-rs",
  "jsonrpsee",
+ "lru",
  "lsp-types",
  "once_cell",
  "ort",
@@ -656,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp-cli"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "cangjie-mcp",
@@ -669,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp-server"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "axum",

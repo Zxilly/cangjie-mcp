@@ -4,13 +4,14 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use jieba_rs::Jieba;
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{BooleanQuery, Occur, QueryParser, TermQuery};
 use tantivy::schema::*;
 use tantivy::tokenizer::*;
-use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 use tracing::{info, warn};
 
-use crate::config::{CATEGORY_FILTER_MULTIPLIER, INDEX_WRITER_HEAP_BYTES};
+use super::{synonyms, GLOBAL_JIEBA};
+use crate::config::INDEX_WRITER_HEAP_BYTES;
 use crate::indexer::{SearchResult, SearchResultMetadata, TextChunk};
 
 const TOKENIZER_NAME: &str = "jieba";
@@ -25,7 +26,7 @@ struct JiebaTokenizer {
 impl JiebaTokenizer {
     fn new() -> Self {
         Self {
-            jieba: Arc::new(Jieba::new()),
+            jieba: Arc::clone(&GLOBAL_JIEBA),
         }
     }
 }
@@ -101,6 +102,7 @@ pub struct BM25Store {
     field_topic: Field,
     field_title: Field,
     field_has_code: Field,
+    field_chunk_id: Field,
 }
 
 impl BM25Store {
@@ -121,6 +123,7 @@ impl BM25Store {
         let field_topic = schema_builder.add_text_field("topic", STRING | STORED);
         let field_title = schema_builder.add_text_field("title", STRING | STORED);
         let field_has_code = schema_builder.add_text_field("has_code", STRING | STORED);
+        let field_chunk_id = schema_builder.add_text_field("chunk_id", STRING | STORED);
 
         let schema = schema_builder.build();
 
@@ -135,6 +138,7 @@ impl BM25Store {
             field_topic,
             field_title,
             field_has_code,
+            field_chunk_id,
         }
     }
 
@@ -164,6 +168,7 @@ impl BM25Store {
         let fto = self.field_topic;
         let fti = self.field_title;
         let fhc = self.field_has_code;
+        let fci = self.field_chunk_id;
 
         let (index, reader) =
             tokio::task::spawn_blocking(move || -> Result<(Index, IndexReader)> {
@@ -193,6 +198,7 @@ impl BM25Store {
                             "false"
                         },
                     );
+                    doc.add_text(fci, &chunk.metadata.chunk_id);
                     writer.add_document(doc)?;
                 }
 
@@ -263,10 +269,11 @@ impl BM25Store {
         let field_topic = self.field_topic;
         let field_title = self.field_title;
         let field_has_code = self.field_has_code;
+        let field_chunk_id = self.field_chunk_id;
+        let jieba = Arc::clone(&GLOBAL_JIEBA);
 
         tokio::task::spawn_blocking(move || {
             // Tokenize query with jieba for better CJK search
-            let jieba = Jieba::new();
             let query_lower = query.to_lowercase();
             let tokens: Vec<&str> = jieba
                 .cut_for_search(&query_lower, true)
@@ -278,22 +285,29 @@ impl BM25Store {
                 return Ok(Vec::new());
             }
 
-            let query_str = tokens.join(" ");
-            let retrieve_k = if category.is_some() {
-                top_k * CATEGORY_FILTER_MULTIPLIER
-            } else {
-                top_k
-            };
+            let query_str = synonyms::expand_query(&tokens);
 
             let searcher = reader.searcher();
             let query_parser = QueryParser::for_index(&index, vec![field_text]);
 
-            let tantivy_query = query_parser
+            let text_query = query_parser
                 .parse_query(&query_str)
                 .unwrap_or_else(|_| Box::new(tantivy::query::AllQuery));
 
+            // When category is specified, use BooleanQuery to pre-filter at the index level
+            let final_query: Box<dyn tantivy::query::Query> = if let Some(ref cat) = category {
+                let category_term = Term::from_field_text(field_category, cat);
+                let category_query = TermQuery::new(category_term, IndexRecordOption::Basic);
+                Box::new(BooleanQuery::new(vec![
+                    (Occur::Must, text_query),
+                    (Occur::Must, Box::new(category_query)),
+                ]))
+            } else {
+                text_query
+            };
+
             let top_docs = searcher
-                .search(&tantivy_query, &TopDocs::with_limit(retrieve_k))
+                .search(&final_query, &TopDocs::with_limit(top_k))
                 .context("Search failed")?;
 
             let mut results = Vec::new();
@@ -330,13 +344,11 @@ impl BM25Store {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-
-                // Apply category filter
-                if let Some(ref filter_cat) = category {
-                    if cat != *filter_cat {
-                        continue;
-                    }
-                }
+                let chunk_id = doc
+                    .get_first(field_chunk_id)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
 
                 results.push(SearchResult {
                     text,
@@ -347,12 +359,9 @@ impl BM25Store {
                         topic,
                         title,
                         has_code,
+                        chunk_id,
                     },
                 });
-
-                if results.len() >= top_k {
-                    break;
-                }
             }
 
             Ok(results)

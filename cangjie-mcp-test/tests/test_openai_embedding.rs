@@ -53,6 +53,7 @@ fn make_result(text: &str, score: f64) -> SearchResult {
             topic: "test".to_string(),
             title: "Test".to_string(),
             has_code: false,
+            chunk_id: String::new(),
         },
     }
 }
@@ -79,7 +80,10 @@ async fn test_openai_embed_single_text() {
         .unwrap();
 
     let texts = &["仓颉编程语言函数定义"];
-    let embeddings = embedder.embed(texts).await.unwrap();
+    let embeddings = embedder
+        .embed(texts, embedding::EmbedKind::Query)
+        .await
+        .unwrap();
 
     assert_eq!(embeddings.len(), 1);
     assert!(
@@ -100,7 +104,10 @@ async fn test_openai_embed_multiple_texts() {
         .unwrap();
 
     let texts = &["函数定义", "变量声明", "错误处理"];
-    let embeddings = embedder.embed(texts).await.unwrap();
+    let embeddings = embedder
+        .embed(texts, embedding::EmbedKind::Document)
+        .await
+        .unwrap();
 
     assert_eq!(embeddings.len(), 3);
     // All should have the same dimension

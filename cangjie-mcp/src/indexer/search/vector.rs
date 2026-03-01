@@ -7,8 +7,8 @@ use tracing::info;
 use zerocopy::IntoBytes;
 
 use super::sqlite_vec_ext::register_sqlite_vec;
-use crate::config::CATEGORY_FILTER_MULTIPLIER;
-use crate::indexer::embedding::Embedder;
+use crate::config::{CATEGORY_FILTER_MULTIPLIER, DEFAULT_MIN_VECTOR_SCORE};
+use crate::indexer::embedding::{EmbedKind, Embedder};
 use crate::indexer::{SearchResult, SearchResultMetadata, TextChunk};
 
 pub struct VectorStore {
@@ -75,7 +75,7 @@ impl VectorStore {
         for (i, batch_chunks) in chunks.chunks(batch_size).enumerate() {
             let texts: Vec<&str> = batch_chunks.iter().map(|c| c.text.as_str()).collect();
             let embeddings = embedder
-                .embed(&texts)
+                .embed(&texts, EmbedKind::Document)
                 .await
                 .context("Embedding batch failed")?;
             all_embeddings.extend(embeddings);
@@ -94,7 +94,7 @@ impl VectorStore {
         // Phase 2: insert into SQLite (blocking)
         let conn = Arc::clone(&self.conn);
         let dim = self.dim;
-        let chunks_owned: Vec<(String, String, String, String, String, bool)> = chunks
+        let chunks_owned: Vec<(String, String, String, String, String, bool, String)> = chunks
             .iter()
             .map(|c| {
                 (
@@ -104,6 +104,7 @@ impl VectorStore {
                     c.metadata.topic.clone(),
                     c.metadata.title.clone(),
                     c.metadata.has_code,
+                    c.metadata.chunk_id.clone(),
                 )
             })
             .collect();
@@ -123,9 +124,11 @@ impl VectorStore {
                     category  TEXT NOT NULL,
                     topic     TEXT NOT NULL,
                     title     TEXT NOT NULL,
-                    has_code  INTEGER NOT NULL
+                    has_code  INTEGER NOT NULL,
+                    chunk_id  TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX idx_chunks_category ON chunks(category);
+                CREATE INDEX idx_chunks_chunk_id ON chunks(chunk_id);
                 CREATE VIRTUAL TABLE chunks_vec USING vec0(
                     embedding float[{dim}]
                 );"
@@ -136,8 +139,8 @@ impl VectorStore {
 
             let mut insert_chunk = conn
                 .prepare_cached(
-                    "INSERT INTO chunks (id, text, file_path, category, topic, title, has_code)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    "INSERT INTO chunks (id, text, file_path, category, topic, title, has_code, chunk_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 )
                 .context("Failed to prepare chunk insert")?;
 
@@ -145,7 +148,7 @@ impl VectorStore {
                 .prepare_cached("INSERT INTO chunks_vec (rowid, embedding) VALUES (?1, ?2)")
                 .context("Failed to prepare vec insert")?;
 
-            for (idx, ((text, file_path, category, topic, title, has_code), emb)) in
+            for (idx, ((text, file_path, category, topic, title, has_code, chunk_id), emb)) in
                 chunks_owned.iter().zip(all_embeddings.iter()).enumerate()
             {
                 let rowid = (idx + 1) as i64;
@@ -157,6 +160,7 @@ impl VectorStore {
                     topic,
                     title,
                     *has_code as i32,
+                    chunk_id,
                 ])?;
                 insert_vec.execute(rusqlite::params![rowid, emb.as_bytes()])?;
             }
@@ -217,7 +221,7 @@ impl VectorStore {
 
             let mut meta_stmt = conn
                 .prepare_cached(
-                    "SELECT text, file_path, category, topic, title, has_code
+                    "SELECT text, file_path, category, topic, title, has_code, chunk_id
                      FROM chunks WHERE id = ?1",
                 )
                 .context("Failed to prepare metadata query")?;
@@ -232,10 +236,11 @@ impl VectorStore {
                         r.get::<_, String>(3)?,
                         r.get::<_, String>(4)?,
                         r.get::<_, bool>(5)?,
+                        r.get::<_, String>(6)?,
                     ))
                 });
 
-                if let Ok((text, file_path, cat, topic, title, has_code)) = row {
+                if let Ok((text, file_path, cat, topic, title, has_code, chunk_id)) = row {
                     // Category filter
                     if let Some(ref filter_cat) = category_owned {
                         if cat != *filter_cat {
@@ -244,6 +249,15 @@ impl VectorStore {
                     }
 
                     let score = 1.0 / (1.0 + *distance as f64);
+                    if score < DEFAULT_MIN_VECTOR_SCORE {
+                        continue;
+                    }
+                    // Use stored chunk_id, fall back to synthesized one for legacy data
+                    let chunk_id = if chunk_id.is_empty() {
+                        format!("{}#{}", file_path, rowid - 1)
+                    } else {
+                        chunk_id
+                    };
                     results.push(SearchResult {
                         text,
                         score,
@@ -253,6 +267,7 @@ impl VectorStore {
                             topic,
                             title,
                             has_code,
+                            chunk_id,
                         },
                     });
 
@@ -267,4 +282,77 @@ impl VectorStore {
         .await
         .context("spawn_blocking join error")?
     }
+
+    /// Fetch chunk text by its chunk_id (e.g. "file_path#idx").
+    pub async fn get_chunk_text(&self, chunk_id: &str) -> Option<String> {
+        if !self.ready {
+            return None;
+        }
+        let conn = Arc::clone(&self.conn);
+        let chunk_id = chunk_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().expect("mutex poisoned");
+            let mut stmt = conn
+                .prepare_cached("SELECT text FROM chunks WHERE chunk_id = ?1")
+                .ok()?;
+            stmt.query_row([&chunk_id], |r| r.get::<_, String>(0)).ok()
+        })
+        .await
+        .ok()?
+    }
+}
+
+/// Parse chunk_id format `"file_path#idx"`.
+fn parse_chunk_id(chunk_id: &str) -> Option<(&str, usize)> {
+    let hash_pos = chunk_id.rfind('#')?;
+    let idx: usize = chunk_id[hash_pos + 1..].parse().ok()?;
+    Some((&chunk_id[..hash_pos], idx))
+}
+
+/// Expand search results with adjacent chunk context (sentence window).
+///
+/// For each result, fetches `±window` neighboring chunks by chunk_id
+/// and prepends/appends their text to provide surrounding context.
+pub async fn expand_with_window(
+    results: Vec<SearchResult>,
+    vector_store: &VectorStore,
+    window: usize,
+) -> Vec<SearchResult> {
+    if window == 0 {
+        return results;
+    }
+
+    let mut expanded = Vec::with_capacity(results.len());
+    for mut result in results {
+        if let Some((file_path, idx)) = parse_chunk_id(&result.metadata.chunk_id) {
+            let mut parts: Vec<String> = Vec::new();
+
+            // Fetch preceding chunks
+            for w in (1..=window).rev() {
+                if idx >= w {
+                    let neighbor_id = format!("{}#{}", file_path, idx - w);
+                    if let Some(text) = vector_store.get_chunk_text(&neighbor_id).await {
+                        parts.push(text);
+                    }
+                }
+            }
+
+            // Current chunk
+            parts.push(result.text.clone());
+
+            // Fetch following chunks
+            for w in 1..=window {
+                let neighbor_id = format!("{}#{}", file_path, idx + w);
+                if let Some(text) = vector_store.get_chunk_text(&neighbor_id).await {
+                    parts.push(text);
+                }
+            }
+
+            if parts.len() > 1 {
+                result.text = parts.join("\n\n");
+            }
+        }
+        expanded.push(result);
+    }
+    expanded
 }

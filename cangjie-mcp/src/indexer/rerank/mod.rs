@@ -101,6 +101,7 @@ mod tests {
                 topic: "test".to_string(),
                 title: "Test".to_string(),
                 has_code: false,
+                chunk_id: String::new(),
             },
         }
     }

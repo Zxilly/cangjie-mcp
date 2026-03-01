@@ -46,7 +46,10 @@ impl LocalReranker {
         let query = query.to_string();
 
         tokio::task::spawn_blocking(move || {
-            let documents: Vec<&str> = results.iter().map(|r| r.text.as_str()).collect();
+            let documents: Vec<&str> = results
+                .iter()
+                .map(|r| crate::indexer::document::chunker::strip_chunk_artifacts(&r.text))
+                .collect();
             let mut model = model
                 .lock()
                 .map_err(|e| anyhow::anyhow!("Reranker model lock poisoned: {}", e))?;

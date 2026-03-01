@@ -13,6 +13,7 @@ pub const DEFAULT_RERANK_MODEL: &str = "BAAI/bge-reranker-v2-m3";
 pub const DEFAULT_RERANK_TOP_K: usize = 5;
 pub const DEFAULT_RERANK_INITIAL_K: usize = 20;
 pub const DEFAULT_CHUNK_MAX_SIZE: usize = 6000;
+pub const DEFAULT_CHUNK_OVERLAP: usize = 200;
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.siliconflow.cn/v1";
 pub const DEFAULT_OPENAI_MODEL: &str = "BAAI/bge-m3";
 pub const DEFAULT_DATA_DIR_NAME: &str = ".cangjie-mcp";
@@ -24,6 +25,8 @@ pub const DEFAULT_HTTP_TCP_KEEPALIVE_SECS: u64 = 60;
 pub const DEFAULT_HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub const DEFAULT_HTTP_ENABLE_HTTP2: bool = true;
 pub const DEFAULT_SERVER_ENABLE_HTTP2: bool = true;
+pub const DEFAULT_MAX_PER_FILE: usize = 2;
+pub const DEFAULT_MIN_VECTOR_SCORE: f64 = 0.3;
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -159,6 +162,10 @@ pub struct Settings {
     pub http_tcp_keepalive_secs: u64,
     pub http_enable_http2: bool,
     pub server_enable_http2: bool,
+    pub chunk_overlap: usize,
+    pub max_per_file: usize,
+    /// LLM model for generating chunk context summaries (contextual retrieval).
+    pub summary_model: Option<String>,
     /// Pre-built index mode. Skips all git operations.
     pub prebuilt: PrebuiltMode,
 }
@@ -186,6 +193,9 @@ impl Default for Settings {
             http_tcp_keepalive_secs: DEFAULT_HTTP_TCP_KEEPALIVE_SECS,
             http_enable_http2: DEFAULT_HTTP_ENABLE_HTTP2,
             server_enable_http2: DEFAULT_SERVER_ENABLE_HTTP2,
+            chunk_overlap: DEFAULT_CHUNK_OVERLAP,
+            max_per_file: DEFAULT_MAX_PER_FILE,
+            summary_model: None,
             prebuilt: PrebuiltMode::Off,
         }
     }

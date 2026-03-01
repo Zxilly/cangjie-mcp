@@ -7,10 +7,19 @@ use crate::config::{EmbeddingType, Settings};
 
 // -- Embedder trait ----------------------------------------------------------
 
+/// Distinguish query embedding from document embedding for asymmetric retrieval models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbedKind {
+    /// User query
+    Query,
+    /// Indexed document content
+    Document,
+}
+
 /// Async embedding trait.
 #[async_trait]
 pub trait Embedder: Send + Sync {
-    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
+    async fn embed(&self, texts: &[&str], kind: EmbedKind) -> Result<Vec<Vec<f32>>>;
     fn model_name(&self) -> &str;
 }
 

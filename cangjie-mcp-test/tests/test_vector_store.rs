@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use anyhow::Result;
 use async_trait::async_trait;
 
-use cangjie_mcp::indexer::embedding::Embedder;
+use cangjie_mcp::indexer::embedding::{EmbedKind, Embedder};
 use cangjie_mcp::indexer::search::vector::VectorStore;
 use cangjie_mcp::indexer::{DocMetadata, TextChunk};
 
@@ -39,7 +39,7 @@ impl MockEmbedder {
 
 #[async_trait]
 impl Embedder for MockEmbedder {
-    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    async fn embed(&self, texts: &[&str], _kind: EmbedKind) -> Result<Vec<Vec<f32>>> {
         Ok(texts.iter().map(|t| Self::hash_to_vec(t)).collect())
     }
     fn model_name(&self) -> &str {
@@ -59,6 +59,7 @@ fn make_chunk(text: &str, category: &str, topic: &str) -> TextChunk {
             title: topic.to_string(),
             has_code: false,
             code_block_count: 0,
+            chunk_id: String::new(),
         },
     }
 }

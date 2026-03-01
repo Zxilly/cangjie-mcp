@@ -3,8 +3,23 @@ use std::collections::HashMap;
 use crate::indexer::{SearchResult, SearchResultMetadata};
 
 fn dedup_key(result: &SearchResult) -> String {
-    let text_prefix: String = result.text.chars().take(200).collect();
-    format!("{}|{}", result.metadata.file_path, text_prefix)
+    result.metadata.chunk_id.clone()
+}
+
+/// Limit results so that no single file contributes more than `max_per_file` results.
+/// Results are processed in order; once a file reaches the limit, further results from
+/// that file are dropped while preserving the relative order of kept results.
+pub fn enforce_diversity(results: Vec<SearchResult>, max_per_file: usize) -> Vec<SearchResult> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut out = Vec::with_capacity(results.len());
+    for r in results {
+        let count = counts.entry(r.metadata.file_path.clone()).or_insert(0);
+        *count += 1;
+        if *count <= max_per_file {
+            out.push(r);
+        }
+    }
+    out
 }
 
 /// Merge multiple ranked result lists using Reciprocal Rank Fusion.
@@ -56,6 +71,7 @@ pub fn reciprocal_rank_fusion(
                     topic: original.metadata.topic.clone(),
                     title: original.metadata.title.clone(),
                     has_code: original.metadata.has_code,
+                    chunk_id: original.metadata.chunk_id.clone(),
                 },
             })
         })
@@ -66,7 +82,7 @@ pub fn reciprocal_rank_fusion(
 mod tests {
     use super::*;
 
-    fn make_result(text: &str, score: f64, file: &str) -> SearchResult {
+    fn make_result(text: &str, score: f64, file: &str, chunk_id: &str) -> SearchResult {
         SearchResult {
             text: text.to_string(),
             score,
@@ -76,6 +92,7 @@ mod tests {
                 topic: "test".to_string(),
                 title: "Test".to_string(),
                 has_code: false,
+                chunk_id: chunk_id.to_string(),
             },
         }
     }
@@ -89,8 +106,8 @@ mod tests {
     #[test]
     fn test_rrf_single_list() {
         let list = vec![
-            make_result("doc1", 0.9, "a.md"),
-            make_result("doc2", 0.8, "b.md"),
+            make_result("doc1", 0.9, "a.md", "a.md#0"),
+            make_result("doc2", 0.8, "b.md", "b.md#0"),
         ];
         let result = reciprocal_rank_fusion(&[list], 60, 5);
         assert_eq!(result.len(), 2);
@@ -100,12 +117,12 @@ mod tests {
     #[test]
     fn test_rrf_overlap_boosts_score() {
         let list1 = vec![
-            make_result("shared doc", 0.9, "a.md"),
-            make_result("only in list1", 0.8, "b.md"),
+            make_result("shared doc", 0.9, "a.md", "a.md#0"),
+            make_result("only in list1", 0.8, "b.md", "b.md#0"),
         ];
         let list2 = vec![
-            make_result("shared doc", 0.7, "a.md"),
-            make_result("only in list2", 0.6, "c.md"),
+            make_result("shared doc", 0.7, "a.md", "a.md#0"),
+            make_result("only in list2", 0.6, "c.md", "c.md#0"),
         ];
         let result = reciprocal_rank_fusion(&[list1, list2], 60, 5);
         // "shared doc" appears in both lists, so it should have the highest RRF score
@@ -115,19 +132,80 @@ mod tests {
     #[test]
     fn test_rrf_respects_top_k() {
         let list = vec![
-            make_result("doc1", 0.9, "a.md"),
-            make_result("doc2", 0.8, "b.md"),
-            make_result("doc3", 0.7, "c.md"),
+            make_result("doc1", 0.9, "a.md", "a.md#0"),
+            make_result("doc2", 0.8, "b.md", "b.md#0"),
+            make_result("doc3", 0.7, "c.md", "c.md#0"),
         ];
         let result = reciprocal_rank_fusion(&[list], 60, 2);
         assert_eq!(result.len(), 2);
     }
 
     #[test]
-    fn test_rrf_deduplicates() {
-        let list1 = vec![make_result("same text", 0.9, "a.md")];
-        let list2 = vec![make_result("same text", 0.8, "a.md")];
+    fn test_rrf_deduplicates_by_chunk_id() {
+        let list1 = vec![make_result("text variant A", 0.9, "a.md", "a.md#0")];
+        let list2 = vec![make_result("text variant B", 0.8, "a.md", "a.md#0")];
         let result = reciprocal_rank_fusion(&[list1, list2], 60, 5);
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.len(), 1, "Same chunk_id should dedup to one result");
+    }
+
+    #[test]
+    fn test_rrf_different_chunk_ids_not_deduped() {
+        let list1 = vec![make_result("text A", 0.9, "a.md", "a.md#0")];
+        let list2 = vec![make_result("text B", 0.8, "a.md", "a.md#1")];
+        let result = reciprocal_rank_fusion(&[list1, list2], 60, 5);
+        assert_eq!(result.len(), 2, "Different chunk_ids should not be deduped");
+    }
+
+    #[test]
+    fn test_enforce_diversity_limits_per_file() {
+        let results = vec![
+            make_result("r1", 0.9, "a.md", "a.md#0"),
+            make_result("r2", 0.8, "a.md", "a.md#1"),
+            make_result("r3", 0.7, "a.md", "a.md#2"),
+            make_result("r4", 0.6, "b.md", "b.md#0"),
+        ];
+        let diverse = enforce_diversity(results, 2);
+        assert_eq!(diverse.len(), 3);
+        let a_count = diverse
+            .iter()
+            .filter(|r| r.metadata.file_path == "a.md")
+            .count();
+        assert_eq!(a_count, 2, "At most 2 results per file");
+    }
+
+    #[test]
+    fn test_enforce_diversity_preserves_order() {
+        let results = vec![
+            make_result("r1", 0.9, "a.md", "a.md#0"),
+            make_result("r2", 0.8, "b.md", "b.md#0"),
+            make_result("r3", 0.7, "a.md", "a.md#1"),
+            make_result("r4", 0.6, "a.md", "a.md#2"),
+            make_result("r5", 0.5, "b.md", "b.md#1"),
+        ];
+        let diverse = enforce_diversity(results, 2);
+        assert_eq!(diverse.len(), 4);
+        assert_eq!(diverse[0].text, "r1");
+        assert_eq!(diverse[1].text, "r2");
+        assert_eq!(diverse[2].text, "r3");
+        assert_eq!(diverse[3].text, "r5");
+    }
+
+    #[test]
+    fn test_enforce_diversity_empty() {
+        let diverse = enforce_diversity(Vec::new(), 2);
+        assert!(diverse.is_empty());
+    }
+
+    #[test]
+    fn test_enforce_diversity_max_one() {
+        let results = vec![
+            make_result("r1", 0.9, "a.md", "a.md#0"),
+            make_result("r2", 0.8, "a.md", "a.md#1"),
+            make_result("r3", 0.7, "b.md", "b.md#0"),
+        ];
+        let diverse = enforce_diversity(results, 1);
+        assert_eq!(diverse.len(), 2);
+        assert_eq!(diverse[0].text, "r1");
+        assert_eq!(diverse[1].text, "r3");
     }
 }

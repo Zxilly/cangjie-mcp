@@ -1,3 +1,5 @@
+pub mod api_client;
+pub mod api_types;
 pub mod document;
 pub mod embedding;
 pub mod initializer;
@@ -20,6 +22,8 @@ pub struct SearchResultMetadata {
     pub topic: String,
     pub title: String,
     pub has_code: bool,
+    #[serde(default)]
+    pub chunk_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +81,7 @@ pub struct DocMetadata {
     pub title: String,
     pub code_block_count: usize,
     pub has_code: bool,
+    pub chunk_id: String,
 }
 
 /// A text chunk produced by the chunker with its metadata.
@@ -101,6 +106,7 @@ mod tests {
                 topic: "hello_world".to_string(),
                 title: "Hello World".to_string(),
                 has_code: true,
+                chunk_id: "test.md#0".to_string(),
             },
         };
         let json = serde_json::to_value(&result).unwrap();

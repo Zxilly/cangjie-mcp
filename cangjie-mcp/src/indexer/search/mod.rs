@@ -1,20 +1,66 @@
 pub mod bm25;
 pub mod fusion;
 mod sqlite_vec_ext;
+pub mod synonyms;
 pub mod vector;
 
+use std::num::NonZeroUsize;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
+
 use anyhow::{Context, Result};
+use jieba_rs::Jieba;
+use lru::LruCache;
 use tracing::{info, warn};
+
+/// Global Jieba instance shared across all search components.
+pub static GLOBAL_JIEBA: LazyLock<Arc<Jieba>> = LazyLock::new(|| Arc::new(Jieba::new()));
 
 use crate::config::{DocLang, IndexInfo, Settings, DEFAULT_EMBEDDING_DIM};
 use crate::indexer::build_http_client;
-use crate::indexer::embedding::{self, Embedder};
+use crate::indexer::embedding::{self, EmbedKind, Embedder};
 use crate::indexer::rerank::{self, RerankerKind};
 use crate::indexer::search::bm25::BM25Store;
 use crate::indexer::search::fusion::reciprocal_rank_fusion;
 use crate::indexer::search::vector::VectorStore;
 use crate::indexer::SearchResult;
 use crate::indexer::SearchResultMetadata;
+
+/// Generate query variants using synonym expansion, returning up to `max_variants`
+/// (including the original query).
+fn generate_query_variants(query: &str, max_variants: usize) -> Vec<String> {
+    use crate::indexer::search::synonyms::SYNONYM_MAP;
+
+    let lower = query.to_lowercase();
+    let tokens: Vec<&str> = GLOBAL_JIEBA
+        .cut_for_search(&lower, true)
+        .into_iter()
+        .filter(|w| !w.trim().is_empty())
+        .collect();
+
+    let mut variants = vec![query.to_string()];
+
+    for (i, &token) in tokens.iter().enumerate() {
+        let trimmed = token.trim();
+        if let Some(group) = SYNONYM_MAP.get(trimmed) {
+            for &synonym in group.iter().filter(|&&s| s != trimmed) {
+                let mut new_tokens = tokens.clone();
+                new_tokens[i] = synonym;
+                let variant = new_tokens.join("");
+                if !variants.contains(&variant) {
+                    variants.push(variant);
+                }
+                if variants.len() >= max_variants {
+                    return variants;
+                }
+            }
+        }
+        if variants.len() >= max_variants {
+            break;
+        }
+    }
+
+    variants
+}
 
 // -- Local Search Index ------------------------------------------------------
 
@@ -24,6 +70,7 @@ pub struct LocalSearchIndex {
     vector_store: Option<VectorStore>,
     embedder: Option<Box<dyn Embedder>>,
     reranker: RerankerKind,
+    embedding_cache: StdMutex<LruCache<String, Vec<f32>>>,
 }
 
 impl LocalSearchIndex {
@@ -42,6 +89,7 @@ impl LocalSearchIndex {
             vector_store: None,
             embedder: None,
             reranker,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         }
     }
 
@@ -64,6 +112,7 @@ impl LocalSearchIndex {
             vector_store: None,
             embedder,
             reranker,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         }
     }
 
@@ -95,7 +144,7 @@ impl LocalSearchIndex {
         let vector_dir = index_info.vector_db_dir();
         // Determine embedding dimension by doing a test embed
         let dim = if let Some(ref embedder) = self.embedder {
-            let test = embedder.embed(&["test"]).await?;
+            let test = embedder.embed(&["test"], EmbedKind::Document).await?;
             test.first()
                 .map(|v| v.len())
                 .unwrap_or(DEFAULT_EMBEDDING_DIM)
@@ -128,61 +177,115 @@ impl LocalSearchIndex {
             return Ok(Vec::new());
         }
 
-        // Hybrid search: BM25 + Vector → RRF fusion
-        if has_bm25 && has_vector {
+        let fetch_k = if rerank && self.reranker.is_enabled() {
+            self.settings.rerank_initial_k.max(top_k)
+        } else {
+            top_k
+        };
+
+        let results = if has_bm25 && has_vector {
+            // Hybrid search: BM25 + Vector → RRF fusion (parallel)
             let bm25 = self
                 .bm25_store
                 .as_ref()
                 .context("BM25 store not initialized")?;
-            let bm25_results = bm25.search(query, top_k, category).await?;
-
             let embedder = self.embedder.as_ref().context("Embedder not initialized")?;
-            let query_emb = embedder.embed(&[query]).await?;
             let vector_store = self
                 .vector_store
                 .as_ref()
                 .context("Vector store not initialized")?;
-            let vector_results = vector_store.search(&query_emb[0], top_k, category).await?;
 
-            let mut fused =
-                reciprocal_rank_fusion(&[bm25_results, vector_results], self.settings.rrf_k, top_k);
+            let variants = generate_query_variants(query, 3);
+            let bm25_future = async {
+                let mut bm25_lists = Vec::with_capacity(variants.len());
+                for variant in &variants {
+                    let results = bm25.search(variant, fetch_k, category).await?;
+                    bm25_lists.push(results);
+                }
+                Ok::<Vec<SearchResult>, anyhow::Error>(reciprocal_rank_fusion(
+                    &bm25_lists,
+                    self.settings.rrf_k,
+                    fetch_k,
+                ))
+            };
+            let vector_future = async {
+                let query_emb = {
+                    let cached = self.embedding_cache.lock().unwrap().get(query).cloned();
+                    if let Some(emb) = cached {
+                        emb
+                    } else {
+                        let emb = embedder.embed(&[query], EmbedKind::Query).await?;
+                        let vec = emb.into_iter().next().context("Empty embedding result")?;
+                        self.embedding_cache
+                            .lock()
+                            .unwrap()
+                            .put(query.to_string(), vec.clone());
+                        vec
+                    }
+                };
+                vector_store.search(&query_emb, fetch_k, category).await
+            };
+
+            let (bm25_res, vector_res) = tokio::join!(bm25_future, vector_future);
+            let bm25_results = bm25_res?;
+            let vector_results = vector_res?;
+
+            let mut fused = reciprocal_rank_fusion(
+                &[bm25_results, vector_results],
+                self.settings.rrf_k,
+                fetch_k,
+            );
 
             if rerank && self.reranker.is_enabled() && !fused.is_empty() {
+                let fallback = fused.clone();
                 fused = self
                     .reranker
                     .rerank(query, fused, top_k)
                     .await
                     .unwrap_or_else(|e| {
-                        warn!("Reranking failed: {}", e);
-                        Vec::new()
+                        warn!("Reranking failed, returning fused results: {}", e);
+                        fallback
                     });
             }
 
-            return Ok(fused);
-        }
-
-        // BM25 only
-        if has_bm25 {
+            fused
+        } else if has_bm25 {
+            // BM25 only (with multi-query synonym expansion)
             let bm25 = self
                 .bm25_store
                 .as_ref()
                 .context("BM25 store not initialized")?;
-            let results = bm25.search(query, top_k, category).await?;
+            let variants = generate_query_variants(query, 3);
+            let mut bm25_lists = Vec::with_capacity(variants.len());
+            for variant in &variants {
+                let res = bm25.search(variant, fetch_k, category).await?;
+                bm25_lists.push(res);
+            }
+            let results = reciprocal_rank_fusion(&bm25_lists, self.settings.rrf_k, fetch_k);
 
             if rerank && self.reranker.is_enabled() && !results.is_empty() {
-                match self.reranker.rerank(query, results, top_k).await {
-                    Ok(reranked) => return Ok(reranked),
+                match self.reranker.rerank(query, results.clone(), top_k).await {
+                    Ok(reranked) => reranked,
                     Err(e) => {
                         warn!("Reranking failed, returning BM25 results: {}", e);
-                        return bm25.search(query, top_k, category).await;
+                        results
                     }
                 }
+            } else {
+                results
             }
+        } else {
+            Vec::new()
+        };
 
-            return Ok(results);
-        }
+        // Sentence window expansion: fetch adjacent chunks for context
+        let results = if let Some(ref vs) = self.vector_store {
+            vector::expand_with_window(results, vs, 1).await
+        } else {
+            results
+        };
 
-        Ok(Vec::new())
+        Ok(results)
     }
 }
 
@@ -341,15 +444,17 @@ mod tests {
 
     fn make_chunk(text: &str, category: &str, topic: &str) -> TextChunk {
         use crate::indexer::DocMetadata;
+        let file_path = format!("{category}/{topic}.md");
         TextChunk {
             text: text.to_string(),
             metadata: DocMetadata {
-                file_path: format!("{category}/{topic}.md"),
+                file_path: file_path.clone(),
                 category: category.to_string(),
                 topic: topic.to_string(),
                 title: topic.to_string(),
                 has_code: false,
                 code_block_count: 0,
+                chunk_id: format!("{file_path}#0"),
             },
         }
     }
@@ -386,6 +491,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         };
 
         let results = index.query("test", 5, None, false).await.unwrap();
@@ -407,6 +513,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         };
 
         let results = index.query("变量", 3, None, false).await.unwrap();
@@ -428,6 +535,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         };
 
         // Search with category filter for "basics"
@@ -565,6 +673,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         };
 
         // Request top_k=2, should not return more than 2 results
@@ -600,6 +709,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
+            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
         };
 
         let results = index

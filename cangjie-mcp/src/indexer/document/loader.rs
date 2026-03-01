@@ -1,6 +1,7 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use super::{CODE_BLOCK_RE, HEADING_RE};
 use crate::indexer::{DocData, DocMetadata};
 
 // -- Code Block --------------------------------------------------------------
@@ -26,11 +27,6 @@ pub fn extract_title_from_content(content: &str) -> String {
 
 // -- Code block extraction ---------------------------------------------------
 
-static CODE_BLOCK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)```(\w*)\n(.*?)```").unwrap());
-
-static HEADING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)(^#{1,6}\s+.+$)").unwrap());
-
 pub fn extract_code_blocks(content: &str) -> Vec<CodeBlock> {
     let mut blocks = Vec::new();
 
@@ -52,8 +48,7 @@ pub fn extract_code_blocks(content: &str) -> Vec<CodeBlock> {
         let context = HEADING_RE
             .captures_iter(preceding)
             .last()
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
+            .map(|c| c.get(0).unwrap().as_str().to_string())
             .unwrap_or_default();
 
         blocks.push(CodeBlock {
@@ -90,6 +85,7 @@ pub fn load_document_from_content(
             title,
             code_block_count: code_blocks.len(),
             has_code: !code_blocks.is_empty(),
+            chunk_id: String::new(),
         },
         doc_id: relative_path.to_string(),
     })

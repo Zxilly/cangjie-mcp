@@ -40,9 +40,48 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
     }
     info!("Loaded {} documents", documents.len());
 
+    // Capture doc texts before consuming documents (avoids a second load_all_documents call)
+    let needs_summaries = settings.summary_model.is_some() && settings.openai_api_key.is_some();
+    let doc_texts: std::collections::HashMap<String, String> = if needs_summaries {
+        documents
+            .iter()
+            .map(|d| (d.metadata.file_path.clone(), d.text.clone()))
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
     info!("Chunking documents...");
-    let chunks = chunk_documents(documents, settings.chunk_max_size).await;
+    let mut chunks =
+        chunk_documents(documents, settings.chunk_max_size, settings.chunk_overlap).await;
     info!("Created {} chunks", chunks.len());
+
+    // Contextual retrieval: generate LLM summaries if summary_model is configured
+    if let Some(ref summary_model) = settings.summary_model {
+        if let Some(ref api_key) = settings.openai_api_key {
+            info!("Generating context summaries with model: {}", summary_model);
+            let http_client =
+                crate::indexer::build_http_client(settings, std::time::Duration::from_secs(120))?;
+            let api = crate::indexer::api_client::ApiClient::new(
+                http_client,
+                api_key,
+                summary_model,
+                &settings.openai_base_url,
+            );
+            let summarizer = crate::indexer::document::summarizer::ChunkSummarizer::new(api);
+            let cache_path = index_info.index_dir().join("context_cache.json");
+
+            crate::indexer::document::summarizer::apply_context_summaries(
+                &mut chunks,
+                &doc_texts,
+                &summarizer,
+                &cache_path,
+            )
+            .await?;
+        } else {
+            tracing::warn!("summary_model set but no API key provided, skipping context summaries");
+        }
+    }
 
     info!("Building BM25 index...");
     let mut bm25 = BM25Store::new(index_info.bm25_index_dir());
@@ -55,7 +94,9 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
             emb.model_name()
         );
         let dim = {
-            let test = emb.embed(&["test"]).await?;
+            let test = emb
+                .embed(&["test"], crate::indexer::embedding::EmbedKind::Document)
+                .await?;
             test.first()
                 .map(|v| v.len())
                 .unwrap_or(DEFAULT_EMBEDDING_DIM)

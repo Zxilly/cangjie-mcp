@@ -14,6 +14,7 @@ fn make_result(text: &str, score: f64, file: &str, category: &str) -> SearchResu
             topic: "test".to_string(),
             title: "Test".to_string(),
             has_code: false,
+            chunk_id: format!("{}#0", file),
         },
     }
 }

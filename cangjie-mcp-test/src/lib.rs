@@ -31,6 +31,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "函数定义".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -42,6 +43,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "变量与常量".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -53,6 +55,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "控制流".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -64,6 +67,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "类型系统".to_string(),
                 code_block_count: 0,
                 has_code: false,
+                ..Default::default()
             },
         },
         // ── stdlib category ────────────────────────────────────────────
@@ -76,6 +80,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "集合类型".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -87,6 +92,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "IO 操作".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -98,6 +104,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "字符串处理".to_string(),
                 code_block_count: 0,
                 has_code: false,
+                ..Default::default()
             },
         },
         // ── cjpm category ──────────────────────────────────────────────
@@ -110,6 +117,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "包管理器 CJPM".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -121,6 +129,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "依赖管理".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -132,6 +141,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "项目结构".to_string(),
                 code_block_count: 0,
                 has_code: false,
+                ..Default::default()
             },
         },
         TextChunk {
@@ -143,6 +153,7 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 title: "错误处理".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
         },
     ]
@@ -160,6 +171,7 @@ pub fn sample_documents() -> Vec<DocData> {
                 title: "函数定义".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
             doc_id: "syntax/functions.md".to_string(),
         },
@@ -172,6 +184,7 @@ pub fn sample_documents() -> Vec<DocData> {
                 title: "变量与常量".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
             doc_id: "syntax/variables.md".to_string(),
         },
@@ -184,6 +197,7 @@ pub fn sample_documents() -> Vec<DocData> {
                 title: "集合类型".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
             doc_id: "stdlib/collections.md".to_string(),
         },
@@ -196,6 +210,7 @@ pub fn sample_documents() -> Vec<DocData> {
                 title: "包管理器 CJPM".to_string(),
                 code_block_count: 1,
                 has_code: true,
+                ..Default::default()
             },
             doc_id: "cjpm/getting_started.md".to_string(),
         },

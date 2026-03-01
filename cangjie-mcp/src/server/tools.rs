@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Result;
-use jieba_rs::Jieba;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
@@ -15,6 +14,7 @@ use crate::config::{
     Settings, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER,
     SIMILARITY_THRESHOLD,
 };
+use crate::indexer::document::chunker::strip_chunk_artifacts;
 use crate::indexer::document::loader::extract_code_blocks;
 use crate::indexer::document::source::{DocumentSource, GitDocumentSource, RemoteDocumentSource};
 use crate::indexer::search::{LocalSearchIndex, RemoteSearchIndex};
@@ -79,6 +79,46 @@ pub struct TopicsListResult {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_categories: Option<Vec<String>>,
+}
+
+/// Format search results as compact Markdown for LLM consumption.
+fn format_results_markdown(result: &DocsSearchResult) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    let start = result.offset + 1;
+    let end = result.offset + result.count;
+    writeln!(
+        out,
+        "Found {} results (showing {start}-{end}):\n",
+        result.total
+    )
+    .unwrap();
+
+    for (i, item) in result.items.iter().enumerate() {
+        let rank = result.offset + i + 1;
+        writeln!(out, "---").unwrap();
+        writeln!(
+            out,
+            "### [{rank}] {} ({}/{})\n",
+            item.title, item.category, item.topic
+        )
+        .unwrap();
+        writeln!(out, "{}\n", item.content).unwrap();
+    }
+
+    if result.has_more {
+        if let Some(next) = result.next_offset {
+            writeln!(out, "---").unwrap();
+            writeln!(
+                out,
+                "_More results available. Use offset={next} to see next page._"
+            )
+            .unwrap();
+        }
+    }
+
+    out
 }
 
 // ── Internal state ──────────────────────────────────────────────────────────
@@ -239,8 +279,7 @@ impl CangjieServer {
     }
 
     fn query_terms(query: &str) -> Vec<String> {
-        static JIEBA: std::sync::LazyLock<Jieba> = std::sync::LazyLock::new(Jieba::new);
-        let jieba = &*JIEBA;
+        let jieba = &**crate::indexer::search::GLOBAL_JIEBA;
         let lower = query.to_lowercase();
         let mut terms: Vec<String> = jieba
             .cut_for_search(&lower, true)
@@ -312,11 +351,25 @@ impl CangjieServer {
         top_k: usize,
         offset: usize,
     ) -> Vec<SearchResult> {
+        /// Maximum possible boost per query term (topic exact 8 + title exact 6 + text 1.5)
+        const MAX_BOOST_PER_TERM: f64 = 15.5;
+        /// Maximum whole-query boost (topic 6 + title 5 + text 2)
+        const MAX_WHOLE_QUERY_BOOST: f64 = 13.0;
+        /// Weight cap for lexical boost in final score
+        const BOOST_WEIGHT: f64 = 0.3;
+
         let query_terms = Self::query_terms(query);
+        let max_possible = query_terms.len() as f64 * MAX_BOOST_PER_TERM + MAX_WHOLE_QUERY_BOOST;
         let mut scored: Vec<(SearchResult, f64)> = results
             .into_iter()
             .map(|r| {
-                let adjusted = r.score + Self::lexical_boost(&query_terms, query, &r);
+                let raw_boost = Self::lexical_boost(&query_terms, query, &r);
+                let normalized_boost = if max_possible > 0.0 {
+                    raw_boost / max_possible
+                } else {
+                    0.0
+                };
+                let adjusted = r.score + BOOST_WEIGHT * normalized_boost;
                 (r, adjusted)
             })
             .collect();
@@ -624,7 +677,7 @@ impl CangjieServer {
                     None
                 };
                 SearchResultItem {
-                    content: r.text,
+                    content: strip_chunk_artifacts(&r.text).to_string(),
                     score: r.score,
                     file_path: r.metadata.file_path,
                     category: r.metadata.category,
@@ -650,8 +703,7 @@ impl CangjieServer {
             },
         };
 
-        serde_json::to_string_pretty(&result)
-            .unwrap_or_else(|e| format!("Serialization error: {e}"))
+        format_results_markdown(&result)
     }
 
     #[tool(
