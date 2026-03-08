@@ -183,11 +183,53 @@ impl CangjieServer {
         }
     }
 
+    fn docs_tool_router() -> ToolRouter<Self> {
+        ToolRouter::<Self>::new()
+            .with_route((Self::search_docs_tool_attr(), Self::search_docs))
+            .with_route((Self::get_topic_tool_attr(), Self::get_topic))
+            .with_route((Self::list_topics_tool_attr(), Self::list_topics))
+    }
+
+    fn lsp_tool_router() -> ToolRouter<Self> {
+        ToolRouter::<Self>::new()
+            .with_route((Self::lsp_definition_tool_attr(), Self::lsp_definition))
+            .with_route((Self::lsp_references_tool_attr(), Self::lsp_references))
+            .with_route((Self::lsp_hover_tool_attr(), Self::lsp_hover))
+            .with_route((Self::lsp_symbols_tool_attr(), Self::lsp_symbols))
+            .with_route((Self::lsp_diagnostics_tool_attr(), Self::lsp_diagnostics))
+            .with_route((
+                Self::lsp_workspace_symbol_tool_attr(),
+                Self::lsp_workspace_symbol,
+            ))
+            .with_route((
+                Self::lsp_incoming_calls_tool_attr(),
+                Self::lsp_incoming_calls,
+            ))
+            .with_route((
+                Self::lsp_outgoing_calls_tool_attr(),
+                Self::lsp_outgoing_calls,
+            ))
+            .with_route((
+                Self::lsp_type_supertypes_tool_attr(),
+                Self::lsp_type_supertypes,
+            ))
+            .with_route((Self::lsp_type_subtypes_tool_attr(), Self::lsp_type_subtypes))
+            .with_route((Self::lsp_rename_tool_attr(), Self::lsp_rename))
+    }
+
+    fn build_tool_router() -> ToolRouter<Self> {
+        let mut router = Self::docs_tool_router();
+        if crate::lsp::is_available() {
+            router.merge(Self::lsp_tool_router());
+        }
+        router
+    }
+
     pub fn new(settings: Settings) -> Self {
         Self {
             state: Arc::new(RwLock::new(None)),
             settings,
-            tool_router: Self::tool_router(),
+            tool_router: Self::build_tool_router(),
         }
     }
 
@@ -205,7 +247,7 @@ impl CangjieServer {
         Self {
             state: Arc::new(RwLock::new(Some(inner))),
             settings,
-            tool_router: Self::tool_router(),
+            tool_router: Self::build_tool_router(),
         }
     }
 
@@ -1373,6 +1415,17 @@ mod tests {
             );
             let instructions = info.instructions.unwrap();
             assert!(!instructions.is_empty(), "instructions should not be empty");
+
+            let tools = server.tool_router.list_all();
+            let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+            assert!(
+                !tool_names.iter().any(|n| n.starts_with("cangjie_lsp_")),
+                "No LSP tools should be registered without CANGJIE_HOME, but found: {:?}",
+                tool_names
+                    .iter()
+                    .filter(|n| n.starts_with("cangjie_lsp_"))
+                    .collect::<Vec<_>>()
+            );
         });
     }
 
@@ -1396,6 +1449,13 @@ mod tests {
             );
             let instructions = info.instructions.unwrap();
             assert!(!instructions.is_empty(), "instructions should not be empty");
+
+            let tools = server.tool_router.list_all();
+            let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+            assert!(
+                tool_names.iter().any(|n| n.starts_with("cangjie_lsp_")),
+                "LSP tools should be registered when CANGJIE_HOME is set"
+            );
         });
     }
 

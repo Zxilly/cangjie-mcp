@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp-cli"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "cangjie-mcp",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp-server"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "axum",
