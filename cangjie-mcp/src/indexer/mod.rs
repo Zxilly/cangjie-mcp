@@ -26,18 +26,31 @@ pub struct SearchResult {
     pub metadata: SearchResultMetadata,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    #[default]
+    Bm25,
+    Hybrid,
+}
+
+impl std::fmt::Display for SearchMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bm25 => write!(f, "bm25"),
+            Self::Hybrid => write!(f, "hybrid"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexMetadata {
     pub version: String,
     pub lang: String,
     pub embedding_model: String,
     pub document_count: usize,
-    #[serde(default = "default_search_mode")]
-    pub search_mode: String,
-}
-
-fn default_search_mode() -> String {
-    "bm25".to_string()
+    #[serde(default)]
+    pub search_mode: SearchMode,
 }
 
 /// Lightweight document container (no framework dependency).
@@ -99,14 +112,14 @@ mod tests {
         assert_eq!(meta.version, "0.55.3");
         assert_eq!(meta.lang, "zh");
         assert_eq!(meta.document_count, 100);
-        assert_eq!(meta.search_mode, "bm25"); // default
+        assert_eq!(meta.search_mode, SearchMode::Bm25); // default
     }
 
     #[test]
     fn test_index_metadata_with_search_mode() {
         let json = r#"{"version":"dev","lang":"en","embedding_model":"openai:bge","document_count":50,"search_mode":"hybrid"}"#;
         let meta: IndexMetadata = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.search_mode, "hybrid");
+        assert_eq!(meta.search_mode, SearchMode::Hybrid);
     }
 
     #[test]

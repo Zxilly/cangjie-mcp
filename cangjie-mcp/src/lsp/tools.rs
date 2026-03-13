@@ -4,7 +4,7 @@ use crate::lsp::types::{
     HoverContents, Location, LocationLink, MarkedString, NumberOrString, SymbolKind,
     TypeHierarchyItem, WorkspaceEdit,
 };
-use lsp_types::{CompletionItem, CompletionResponse};
+use crate::lsp::types::{CompletionItem, CompletionResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

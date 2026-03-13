@@ -132,6 +132,14 @@ fn empty_data() -> Value {
     json!({})
 }
 
+fn status_from_count(count: usize) -> LspResponseStatus {
+    if count == 0 {
+        LspResponseStatus::Empty
+    } else {
+        LspResponseStatus::Ok
+    }
+}
+
 fn serialize_response(response: &LspResponse) -> String {
     serde_json::to_string_pretty(response).unwrap_or_else(|e| {
         format!("{{\"status\":\"error\",\"message\":\"Serialization error: {e}\"}}")
@@ -383,12 +391,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_definition(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -405,12 +414,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_references(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -452,12 +462,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
         {
             Ok(result) => {
                 let data = lsp_tools::process_symbols(&result, file_path.expect("validated file"));
-                let status = if data.count == 0 {
-                    LspResponseStatus::Empty
-                } else {
-                    LspResponseStatus::Ok
-                };
-                response_with_data(params.operation, status, None, &data, None)
+                response_with_data(
+                    params.operation,
+                    status_from_count(data.count),
+                    None,
+                    &data,
+                    None,
+                )
             }
             Err(error) => error_response(params.operation, format!("Error: {error}")),
         },
@@ -489,12 +500,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
         {
             Ok(result) => {
                 let data = lsp_tools::process_workspace_symbols(&result);
-                let status = if data.count == 0 {
-                    LspResponseStatus::Empty
-                } else {
-                    LspResponseStatus::Ok
-                };
-                response_with_data(params.operation, status, None, &data, None)
+                response_with_data(
+                    params.operation,
+                    status_from_count(data.count),
+                    None,
+                    &data,
+                    None,
+                )
             }
             Err(error) => error_response(params.operation, format!("Error: {error}")),
         },
@@ -510,12 +522,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_incoming_calls(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -532,12 +545,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_outgoing_calls(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -554,12 +568,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_type_hierarchy(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -576,12 +591,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_type_hierarchy(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -599,12 +615,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_rename(&result);
-                    let status = if data.edit_count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.edit_count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
@@ -621,12 +638,13 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
             {
                 Ok(result) => {
                     let data = lsp_tools::process_completion(&result);
-                    let status = if data.count == 0 {
-                        LspResponseStatus::Empty
-                    } else {
-                        LspResponseStatus::Ok
-                    };
-                    response_with_data(params.operation, status, resolved_target, &data, None)
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
                 }
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }

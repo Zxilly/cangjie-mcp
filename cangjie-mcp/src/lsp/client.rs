@@ -22,9 +22,9 @@ use crate::lsp::types::{
     ClientCapabilities, ClientInfo, CompletionParams, DidChangeTextDocumentParams,
     DidOpenTextDocumentParams, DocumentSymbolParams, GotoDefinitionParams, HoverParams,
     InitializeParams, InitializeResult, InitializedParams, Position, ReferenceContext,
-    ReferenceParams, RenameParams, ServerCapabilities, TextDocumentContentChangeEvent,
-    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TraceValue,
-    TypeHierarchyPrepareParams, TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
+    ReferenceParams, RenameParams, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+    TextDocumentItem, TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
+    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
     VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceFolder,
     WorkspaceSymbolParams,
 };
@@ -36,10 +36,7 @@ const DIAGNOSTIC_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone)]
 enum ClientRuntimeState {
     Starting,
-    Ready {
-        _capabilities: Box<ServerCapabilities>,
-        raw_capabilities: Box<Value>,
-    },
+    Ready { raw_capabilities: Box<Value> },
     Shutdown,
 }
 
@@ -710,7 +707,7 @@ impl CangjieClient {
             .request("initialize", LspParams::new(&init_params)?)
             .await
             .map_err(|e| anyhow::anyhow!("LSP initialization failed: {e}"))?;
-        let init_result: InitializeResult = serde_json::from_value(init_result_value.clone())
+        let _init_result: InitializeResult = serde_json::from_value(init_result_value.clone())
             .map_err(|e| anyhow::anyhow!("Failed to decode initialize result: {e}"))?;
 
         debug!("[LSP] initialized");
@@ -725,7 +722,6 @@ impl CangjieClient {
             .unwrap_or(Value::Null);
         let mut runtime = self.runtime.write().unwrap_or_else(|e| e.into_inner());
         *runtime = ClientRuntimeState::Ready {
-            _capabilities: Box::new(init_result.capabilities),
             raw_capabilities: Box::new(raw_capabilities),
         };
         info!("LSP client initialized successfully");

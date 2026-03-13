@@ -315,12 +315,11 @@ impl CangjieServer {
         terms
     }
 
-    fn lexical_boost(query_terms: &[String], query: &str, item: &SearchResult) -> f64 {
+    fn lexical_boost(query_terms: &[String], query_lc: &str, item: &SearchResult) -> f64 {
         let topic = item.metadata.topic.to_lowercase();
         let title = item.metadata.title.to_lowercase();
         let path = item.metadata.file_path.to_lowercase();
         let text = item.text.to_lowercase();
-        let query_lc = query.to_lowercase();
         let mut boost = 0.0;
 
         for term in query_terms {
@@ -346,13 +345,13 @@ impl CangjieServer {
         }
 
         if !query_lc.is_empty() {
-            if topic.contains(&query_lc) {
+            if topic.contains(query_lc) {
                 boost += 6.0;
             }
-            if title.contains(&query_lc) {
+            if title.contains(query_lc) {
                 boost += 5.0;
             }
-            if text.contains(&query_lc) {
+            if text.contains(query_lc) {
                 boost += 2.0;
             }
         }
@@ -374,11 +373,12 @@ impl CangjieServer {
         const BOOST_WEIGHT: f64 = 0.3;
 
         let query_terms = Self::query_terms(query);
+        let query_lc = query.to_lowercase();
         let max_possible = query_terms.len() as f64 * MAX_BOOST_PER_TERM + MAX_WHOLE_QUERY_BOOST;
         let mut scored: Vec<(SearchResult, f64)> = results
             .into_iter()
             .map(|r| {
-                let raw_boost = Self::lexical_boost(&query_terms, query, &r);
+                let raw_boost = Self::lexical_boost(&query_terms, &query_lc, &r);
                 let normalized_boost = if max_possible > 0.0 {
                     raw_boost / max_possible
                 } else {

@@ -15,6 +15,12 @@ use tracing::{info, warn};
 /// Global Jieba instance shared across all search components.
 pub static GLOBAL_JIEBA: LazyLock<Arc<Jieba>> = LazyLock::new(|| Arc::new(Jieba::new()));
 
+const EMBEDDING_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(64).unwrap();
+
+fn new_embedding_cache() -> StdMutex<LruCache<String, Vec<f32>>> {
+    StdMutex::new(LruCache::new(EMBEDDING_CACHE_SIZE))
+}
+
 use crate::api::client::HttpClient;
 use crate::config::{DocLang, IndexInfo, Settings, DEFAULT_EMBEDDING_DIM};
 use crate::indexer::embedding::{self, EmbedKind, Embedder};
@@ -62,6 +68,22 @@ fn generate_query_variants(query: &str, max_variants: usize) -> Vec<String> {
     variants
 }
 
+async fn bm25_multi_query_search(
+    bm25: &BM25Store,
+    query: &str,
+    fetch_k: usize,
+    category: Option<&str>,
+    rrf_k: u32,
+) -> Result<Vec<SearchResult>> {
+    let variants = generate_query_variants(query, 3);
+    let mut bm25_lists = Vec::with_capacity(variants.len());
+    for variant in &variants {
+        let results = bm25.search(variant, fetch_k, category).await?;
+        bm25_lists.push(results);
+    }
+    Ok(reciprocal_rank_fusion(&bm25_lists, rrf_k, fetch_k))
+}
+
 // -- Local Search Index ------------------------------------------------------
 
 pub struct LocalSearchIndex {
@@ -89,7 +111,7 @@ impl LocalSearchIndex {
             vector_store: None,
             embedder: None,
             reranker,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         }
     }
 
@@ -112,7 +134,7 @@ impl LocalSearchIndex {
             vector_store: None,
             embedder,
             reranker,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         }
     }
 
@@ -195,19 +217,8 @@ impl LocalSearchIndex {
                 .as_ref()
                 .context("Vector store not initialized")?;
 
-            let variants = generate_query_variants(query, 3);
-            let bm25_future = async {
-                let mut bm25_lists = Vec::with_capacity(variants.len());
-                for variant in &variants {
-                    let results = bm25.search(variant, fetch_k, category).await?;
-                    bm25_lists.push(results);
-                }
-                Ok::<Vec<SearchResult>, anyhow::Error>(reciprocal_rank_fusion(
-                    &bm25_lists,
-                    self.settings.rrf_k,
-                    fetch_k,
-                ))
-            };
+            let bm25_future =
+                bm25_multi_query_search(bm25, query, fetch_k, category, self.settings.rrf_k);
             let vector_future = async {
                 let query_emb = {
                     let cached = self.embedding_cache.lock().unwrap().get(query).cloned();
@@ -255,13 +266,9 @@ impl LocalSearchIndex {
                 .bm25_store
                 .as_ref()
                 .context("BM25 store not initialized")?;
-            let variants = generate_query_variants(query, 3);
-            let mut bm25_lists = Vec::with_capacity(variants.len());
-            for variant in &variants {
-                let res = bm25.search(variant, fetch_k, category).await?;
-                bm25_lists.push(res);
-            }
-            let results = reciprocal_rank_fusion(&bm25_lists, self.settings.rrf_k, fetch_k);
+            let results =
+                bm25_multi_query_search(bm25, query, fetch_k, category, self.settings.rrf_k)
+                    .await?;
 
             if rerank && self.reranker.is_enabled() && !results.is_empty() {
                 match self.reranker.rerank(query, results.clone(), top_k).await {
@@ -456,7 +463,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         };
 
         let results = index.query("test", 5, None, false).await.unwrap();
@@ -478,7 +485,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         };
 
         let results = index.query("变量", 3, None, false).await.unwrap();
@@ -500,7 +507,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         };
 
         // Search with category filter for "basics"
@@ -640,7 +647,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         };
 
         // Request top_k=2, should not return more than 2 results
@@ -676,7 +683,7 @@ mod tests {
             vector_store: None,
             embedder: None,
             reranker: RerankerKind::NoOp,
-            embedding_cache: StdMutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            embedding_cache: new_embedding_cache(),
         };
 
         let results = index

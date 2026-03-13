@@ -7,7 +7,7 @@ use crate::indexer::document::source::{DocumentSource, GitDocumentSource};
 use crate::indexer::embedding;
 use crate::indexer::search::bm25::BM25Store;
 use crate::indexer::search::vector::VectorStore;
-use crate::indexer::IndexMetadata;
+use crate::indexer::{IndexMetadata, SearchMode};
 
 /// Check if a valid index exists by reading the metadata file.
 async fn index_is_ready(index_info: &IndexInfo) -> bool {
@@ -105,13 +105,17 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
             .await?;
     }
 
-    let search_mode = if embedder.is_some() { "hybrid" } else { "bm25" };
+    let search_mode = if embedder.is_some() {
+        SearchMode::Hybrid
+    } else {
+        SearchMode::Bm25
+    };
     let metadata = IndexMetadata {
         version: index_info.version.clone(),
         lang: index_info.lang.to_string(),
         embedding_model: settings.embedding_model_name(),
         document_count: chunks.len(),
-        search_mode: search_mode.to_string(),
+        search_mode,
     };
     let metadata_path = index_info.index_dir().join("index_metadata.json");
     tokio::fs::create_dir_all(metadata_path.parent().context("Invalid metadata path")?).await?;
@@ -263,7 +267,7 @@ mod tests {
             lang: lang.to_string(),
             embedding_model: "none".to_string(),
             document_count: doc_count,
-            search_mode: "bm25".to_string(),
+            search_mode: SearchMode::Bm25,
         };
         let json = serde_json::to_string_pretty(&metadata).unwrap();
         let metadata_path = index_dir.join("index_metadata.json");
@@ -345,7 +349,7 @@ mod tests {
             lang: "en".to_string(), // wrong lang
             embedding_model: "none".to_string(),
             document_count: 100,
-            search_mode: "bm25".to_string(),
+            search_mode: SearchMode::Bm25,
         };
         let json = serde_json::to_string_pretty(&metadata).unwrap();
         tokio::fs::write(index_dir.join("index_metadata.json"), json)

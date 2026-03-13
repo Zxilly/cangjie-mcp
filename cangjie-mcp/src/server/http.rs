@@ -74,7 +74,7 @@ struct InfoResponse {
     lang: String,
     embedding_model: String,
     document_count: usize,
-    search_mode: String,
+    search_mode: crate::indexer::SearchMode,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,7 +103,7 @@ async fn info_handler(State(state): State<Arc<AppState>>) -> Json<InfoResponse> 
         lang: state.index_metadata.lang.clone(),
         embedding_model: state.index_metadata.embedding_model.clone(),
         document_count: state.index_metadata.document_count,
-        search_mode: state.index_metadata.search_mode.clone(),
+        search_mode: state.index_metadata.search_mode,
     })
 }
 

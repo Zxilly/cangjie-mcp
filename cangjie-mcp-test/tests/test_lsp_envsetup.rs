@@ -1,3 +1,6 @@
+// The std::sync::Mutex guard is intentionally held across await points to
+// serialize LSP tests (only one LSP server can run at a time).
+#![allow(clippy::await_holding_lock)]
 //! Integration tests for the LSP envsetup-based launch flow.
 //!
 //! These tests require a real Cangjie SDK installation:
@@ -71,9 +74,7 @@ fn detect_cjc_version(settings: &LSPSettings) -> String {
         if let Some(ver_start) = stdout.find(": ") {
             let ver_str = &stdout[ver_start + 2..];
             // Take up to the first '-' or space to get major.minor.patch
-            let end = ver_str
-                .find(|c: char| c == '-' || c == ' ')
-                .unwrap_or(ver_str.len());
+            let end = ver_str.find(['-', ' ']).unwrap_or(ver_str.len());
             let version = ver_str[..end].trim().to_string();
             if !version.is_empty() {
                 return version;

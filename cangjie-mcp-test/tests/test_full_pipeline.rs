@@ -12,7 +12,7 @@ use cangjie_mcp::indexer::document::chunker::chunk_documents;
 use cangjie_mcp::indexer::document::source::{DocumentSource, GitDocumentSource};
 use cangjie_mcp::indexer::search::bm25::BM25Store;
 use cangjie_mcp::indexer::search::LocalSearchIndex;
-use cangjie_mcp::indexer::IndexMetadata;
+use cangjie_mcp::indexer::{IndexMetadata, SearchMode};
 use cangjie_mcp::repo::GitManager;
 use cangjie_mcp::server::http::create_http_app;
 use http_body_util::BodyExt;
@@ -161,7 +161,7 @@ async fn test_real_docs_http_app_search() {
         lang: "zh".to_string(),
         embedding_model: "none".to_string(),
         document_count: docs.len(),
-        search_mode: "bm25".to_string(),
+        search_mode: SearchMode::Bm25,
     };
 
     let app = create_http_app(search_index, doc_source, metadata).await;
