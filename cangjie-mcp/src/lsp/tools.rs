@@ -4,6 +4,7 @@ use crate::lsp::types::{
     HoverContents, Location, LocationLink, MarkedString, NumberOrString, SymbolKind,
     TypeHierarchyItem, WorkspaceEdit,
 };
+use lsp_types::{CompletionItem, CompletionResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -39,6 +40,26 @@ pub struct HoverOutput {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<LocationResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CompletionItemOutput {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insert_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CompletionResult {
+    pub items: Vec<CompletionItemOutput>,
+    pub count: usize,
+    pub is_incomplete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -313,6 +334,37 @@ fn extract_diagnostic_code(code: &NumberOrString) -> String {
     }
 }
 
+fn completion_kind_name(kind: lsp_types::CompletionItemKind) -> &'static str {
+    match kind {
+        lsp_types::CompletionItemKind::TEXT => "text",
+        lsp_types::CompletionItemKind::METHOD => "method",
+        lsp_types::CompletionItemKind::FUNCTION => "function",
+        lsp_types::CompletionItemKind::CONSTRUCTOR => "constructor",
+        lsp_types::CompletionItemKind::FIELD => "field",
+        lsp_types::CompletionItemKind::VARIABLE => "variable",
+        lsp_types::CompletionItemKind::CLASS => "class",
+        lsp_types::CompletionItemKind::INTERFACE => "interface",
+        lsp_types::CompletionItemKind::MODULE => "module",
+        lsp_types::CompletionItemKind::PROPERTY => "property",
+        lsp_types::CompletionItemKind::UNIT => "unit",
+        lsp_types::CompletionItemKind::VALUE => "value",
+        lsp_types::CompletionItemKind::ENUM => "enum",
+        lsp_types::CompletionItemKind::KEYWORD => "keyword",
+        lsp_types::CompletionItemKind::SNIPPET => "snippet",
+        lsp_types::CompletionItemKind::COLOR => "color",
+        lsp_types::CompletionItemKind::FILE => "file",
+        lsp_types::CompletionItemKind::REFERENCE => "reference",
+        lsp_types::CompletionItemKind::FOLDER => "folder",
+        lsp_types::CompletionItemKind::ENUM_MEMBER => "enum_member",
+        lsp_types::CompletionItemKind::CONSTANT => "constant",
+        lsp_types::CompletionItemKind::STRUCT => "struct",
+        lsp_types::CompletionItemKind::EVENT => "event",
+        lsp_types::CompletionItemKind::OPERATOR => "operator",
+        lsp_types::CompletionItemKind::TYPE_PARAMETER => "type_parameter",
+        _ => "unknown",
+    }
+}
+
 // -- Tool execution functions ------------------------------------------------
 
 pub fn process_definition(result: &Value) -> DefinitionResult {
@@ -338,19 +390,8 @@ pub fn process_references(result: &Value) -> ReferencesResult {
     ReferencesResult { locations, count }
 }
 
-pub fn process_hover(result: &Value, file_path: &str) -> String {
-    let hover: Option<Hover> = serde_json::from_value(result.clone()).ok();
-
-    let hover = match hover {
-        Some(h) => h,
-        None => {
-            let output = HoverOutput {
-                content: "No hover information available".to_string(),
-                range: None,
-            };
-            return serde_json::to_string_pretty(&output).unwrap();
-        }
-    };
+pub fn parse_hover(result: &Value, file_path: &str) -> Option<HoverOutput> {
+    let hover: Hover = serde_json::from_value(result.clone()).ok()?;
 
     let content = match hover.contents {
         HoverContents::Scalar(marked) => match marked {
@@ -378,7 +419,14 @@ pub fn process_hover(result: &Value, file_path: &str) -> String {
         end_character: Some(r.end.character + 1),
     });
 
-    let output = HoverOutput { content, range };
+    Some(HoverOutput { content, range })
+}
+
+pub fn process_hover(result: &Value, file_path: &str) -> String {
+    let output = parse_hover(result, file_path).unwrap_or_else(|| HoverOutput {
+        content: "No hover information available".to_string(),
+        range: None,
+    });
     serde_json::to_string_pretty(&output).unwrap_or_else(|e| format!("Serialization error: {e}"))
 }
 
@@ -452,7 +500,8 @@ pub fn process_diagnostics(diags: &[Value]) -> DiagnosticsResult {
 
 pub fn process_workspace_symbols(result: &Value) -> WorkspaceSymbolResult {
     // workspace/symbol can return SymbolInformation[] or WorkspaceSymbol[]
-    let arr = result.as_array().cloned().unwrap_or_default();
+    let empty = [];
+    let arr: &[Value] = result.as_array().map(Vec::as_slice).unwrap_or(&empty);
     let symbols: Vec<WorkspaceSymbolOutput> = arr
         .iter()
         .filter_map(|item| {
@@ -622,6 +671,39 @@ pub fn process_rename(result: &Value) -> RenameResult {
         files,
         file_count,
         edit_count: total_edits,
+    }
+}
+
+fn completion_item_to_output(item: &CompletionItem) -> CompletionItemOutput {
+    let documentation = item.documentation.as_ref().map(|docs| match docs {
+        lsp_types::Documentation::String(text) => text.clone(),
+        lsp_types::Documentation::MarkupContent(content) => content.value.clone(),
+    });
+
+    CompletionItemOutput {
+        label: item.label.clone(),
+        kind: item.kind.map(completion_kind_name).map(str::to_string),
+        detail: item.detail.clone(),
+        documentation,
+        insert_text: item.insert_text.clone(),
+    }
+}
+
+pub fn process_completion(result: &Value) -> CompletionResult {
+    let response: Option<CompletionResponse> = serde_json::from_value(result.clone()).ok();
+
+    match response {
+        Some(CompletionResponse::Array(items)) => CompletionResult {
+            count: items.len(),
+            items: items.iter().map(completion_item_to_output).collect(),
+            is_incomplete: false,
+        },
+        Some(CompletionResponse::List(list)) => CompletionResult {
+            count: list.items.len(),
+            items: list.items.iter().map(completion_item_to_output).collect(),
+            is_incomplete: list.is_incomplete,
+        },
+        None => CompletionResult::default(),
     }
 }
 
@@ -941,6 +1023,25 @@ mod tests {
         let refs = process_references(&json!([]));
         assert_eq!(refs.count, 0);
         assert!(refs.locations.is_empty());
+    }
+
+    #[test]
+    fn test_process_completion_list() {
+        let result = json!({
+            "isIncomplete": false,
+            "items": [
+                {
+                    "label": "println",
+                    "kind": 3,
+                    "detail": "func println(value: String)",
+                    "insertText": "println"
+                }
+            ]
+        });
+        let completion = process_completion(&result);
+        assert_eq!(completion.count, 1);
+        assert_eq!(completion.items[0].label, "println");
+        assert_eq!(completion.items[0].kind.as_deref(), Some("function"));
     }
 
     #[test]

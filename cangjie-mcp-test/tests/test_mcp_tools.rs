@@ -2,6 +2,7 @@ use cangjie_mcp::config::{MAX_TOP_K, MIN_TOP_K};
 use cangjie_mcp::indexer::search::bm25::BM25Store;
 use cangjie_mcp::indexer::search::LocalSearchIndex;
 use cangjie_mcp::indexer::{DocMetadata, TextChunk};
+use cangjie_mcp::server::lsp_tools::{LspOperation, LspRequest, LspTarget};
 use cangjie_mcp::server::tools::{
     CangjieServer, GetTopicParams, ListTopicsParams, SearchDocsParams, TopicResult,
     TopicsListResult,
@@ -61,6 +62,58 @@ async fn test_search_docs_basic() {
         !result_json.is_empty(),
         "result content should not be empty"
     );
+}
+
+#[tokio::test]
+async fn test_unified_lsp_tool_reports_validation_error() {
+    let (_tmp, server) = build_test_server().await;
+
+    let result_json = server
+        .lsp(Parameters(LspRequest {
+            operation: LspOperation::WorkspaceSymbol,
+            file_path: None,
+            target: None,
+            query: None,
+            new_name: None,
+        }))
+        .await;
+
+    let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+    assert_eq!(result["operation"], "workspace_symbol");
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("query is required"));
+}
+
+#[tokio::test]
+async fn test_unified_lsp_tool_requires_position_for_completion() {
+    let (_tmp, server) = build_test_server().await;
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("main.cj");
+    std::fs::write(&file_path, "main() {}").unwrap();
+
+    let result_json = server
+        .lsp(Parameters(LspRequest {
+            operation: LspOperation::Completion,
+            file_path: Some(file_path.to_string_lossy().to_string()),
+            target: Some(LspTarget::Symbol {
+                symbol: "main".to_string(),
+                line_hint: None,
+            }),
+            query: None,
+            new_name: None,
+        }))
+        .await;
+
+    let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+    assert_eq!(result["operation"], "completion");
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("target.kind=position"));
 }
 
 #[tokio::test]

@@ -1,23 +1,38 @@
-You have access to Cangjie LSP tools for code intelligence on .cj source files.
+You have access to a unified Cangjie LSP tool for code intelligence on .cj source files.
 
-## Available Tools
+## Available Tool
 
-- `cangjie_lsp_definition`: Jump to symbol definition
-- `cangjie_lsp_references`: Find all references to a symbol
-- `cangjie_lsp_hover`: Get type info and documentation
-- `cangjie_lsp_symbols`: List all symbols in a document
-- `cangjie_lsp_diagnostics`: Get errors and warnings
-- `cangjie_lsp_completion`: Get code completion suggestions
+- `cangjie_lsp`: Run one of the supported LSP operations by setting `operation`
+
+## Supported Operations
+
+- `definition`: Jump to symbol definition
+- `references`: Find all references to a symbol
+- `hover`: Get type info and documentation
+- `document_symbol`: List all symbols in a document
+- `diagnostics`: Get errors and warnings
+- `workspace_symbol`: Search for symbols across the workspace
+- `incoming_calls`: Find callers of a function or method
+- `outgoing_calls`: Find callees of a function or method
+- `type_supertypes`: Find parent types and implemented interfaces
+- `type_subtypes`: Find child types and implementations
+- `rename`: Preview workspace edits for renaming a symbol
+- `completion`: Get code completion suggestions at a position
 
 ## Usage
 
-- All positions are 1-based (line and character)
-- File paths must be absolute paths to .cj files
+- All line and character positions are 1-based
+- `file_path` must be an absolute path to a `.cj` file for document-scoped operations
+- Use `target.kind = "position"` when you already know the exact cursor location
+- Use `target.kind = "symbol"` when you know the symbol name but not the exact position
+- `workspace_symbol` requires `query`
+- `rename` requires `new_name`
+- `completion` only supports `target.kind = "position"`
 
 ## Workflow
 
-1. `cangjie_lsp_symbols` - explore file structure
-2. `cangjie_lsp_hover` - understand symbol types
-3. `cangjie_lsp_definition` - navigate to definitions
-4. `cangjie_lsp_references` - find all usages
-5. `cangjie_lsp_diagnostics` - check for errors
+1. Use `document_symbol` to inspect file structure
+2. Use `hover`, `definition`, or `references` to understand symbols
+3. Use `diagnostics` to inspect compile errors
+4. Use `workspace_symbol` when the file is unknown
+5. Use `rename` only to preview edits, not to apply them automatically

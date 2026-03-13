@@ -5,7 +5,7 @@ use std::sync::Arc;
 use jsonrpsee::core::client::{ReceivedMessage, TransportReceiverT, TransportSenderT};
 use serde_json::{json, value::RawValue, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
 use tracing::{debug, error, info, warn};
 
 pub(crate) const CONTENT_LENGTH_HEADER: &str = "Content-Length: ";
@@ -56,6 +56,8 @@ pub(crate) struct LspReceiver {
     pub(crate) incoming_rx: mpsc::UnboundedReceiver<String>,
     pub(crate) outbound_tx: mpsc::UnboundedSender<String>,
     pub(crate) diagnostics: Arc<Mutex<HashMap<String, Vec<Value>>>>,
+    pub(crate) diagnostic_versions: Arc<Mutex<HashMap<String, u64>>>,
+    pub(crate) diagnostics_notify: Arc<Notify>,
 }
 
 impl TransportReceiverT for LspReceiver {
@@ -147,6 +149,14 @@ impl LspReceiver {
                         .cloned()
                         .unwrap_or_default();
                     self.diagnostics.lock().await.insert(path, diags);
+                    let mut versions = self.diagnostic_versions.lock().await;
+                    let entry = versions.entry(
+                        crate::lsp::utils::uri_to_path(uri)
+                            .to_string_lossy()
+                            .to_string(),
+                    );
+                    *entry.or_insert(0) += 1;
+                    self.diagnostics_notify.notify_waiters();
                 }
             }
         }

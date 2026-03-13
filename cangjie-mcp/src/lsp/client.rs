@@ -3,12 +3,14 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::RwLock as StdRwLock;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use jsonrpsee::core::client::ClientT;
 use serde_json::Value;
 use tokio::process::Command;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
 use tracing::{debug, info, warn};
 
 use crate::lsp::config::{LSPInitOptions, LSPSettings};
@@ -17,16 +19,58 @@ use crate::lsp::transport::{
 };
 use crate::lsp::types::{
     CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    ClientCapabilities, ClientInfo, DidOpenTextDocumentParams, DocumentSymbolParams,
-    GotoDefinitionParams, HoverParams, InitializeParams, InitializedParams, Position,
-    ReferenceContext, ReferenceParams, RenameParams, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
-    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri, WorkDoneProgressParams,
-    WorkspaceFolder, WorkspaceSymbolParams,
+    ClientCapabilities, ClientInfo, CompletionParams, DidChangeTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentSymbolParams, GotoDefinitionParams, HoverParams,
+    InitializeParams, InitializeResult, InitializedParams, Position, ReferenceContext,
+    ReferenceParams, RenameParams, ServerCapabilities, TextDocumentContentChangeEvent,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TraceValue,
+    TypeHierarchyPrepareParams, TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
+    VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceFolder,
+    WorkspaceSymbolParams,
 };
 use crate::lsp::utils::{path_to_uri, uri_to_path};
 
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const DIAGNOSTIC_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone)]
+enum ClientRuntimeState {
+    Starting,
+    Ready {
+        _capabilities: Box<ServerCapabilities>,
+        raw_capabilities: Box<Value>,
+    },
+    Shutdown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportedOperation {
+    Definition,
+    References,
+    Hover,
+    DocumentSymbol,
+    Diagnostics,
+    WorkspaceSymbol,
+    IncomingCalls,
+    OutgoingCalls,
+    TypeSupertypes,
+    TypeSubtypes,
+    Rename,
+    Completion,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DiagnosticsStatus {
+    #[default]
+    Ready,
+    Timeout,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DiagnosticsResponse {
+    pub diagnostics: Vec<Value>,
+    pub status: DiagnosticsStatus,
+}
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -353,6 +397,57 @@ fn build_client_capabilities() -> ClientCapabilities {
     serde_json::from_value(caps_json).unwrap_or_default()
 }
 
+fn json_capability_enabled(raw_capabilities: &Value, key: &str) -> bool {
+    raw_capabilities
+        .get(key)
+        .is_some_and(|value| !value.is_null() && *value != Value::Bool(false))
+}
+
+fn supports_capability(raw_capabilities: &Value, operation: SupportedOperation) -> bool {
+    match operation {
+        SupportedOperation::Definition => {
+            json_capability_enabled(raw_capabilities, "definitionProvider")
+        }
+        SupportedOperation::References => {
+            json_capability_enabled(raw_capabilities, "referencesProvider")
+        }
+        SupportedOperation::Hover => json_capability_enabled(raw_capabilities, "hoverProvider"),
+        SupportedOperation::DocumentSymbol | SupportedOperation::Diagnostics => {
+            json_capability_enabled(raw_capabilities, "documentSymbolProvider")
+        }
+        SupportedOperation::WorkspaceSymbol => {
+            json_capability_enabled(raw_capabilities, "workspaceSymbolProvider")
+        }
+        SupportedOperation::IncomingCalls | SupportedOperation::OutgoingCalls => {
+            json_capability_enabled(raw_capabilities, "callHierarchyProvider")
+        }
+        SupportedOperation::TypeSupertypes | SupportedOperation::TypeSubtypes => {
+            json_capability_enabled(raw_capabilities, "typeHierarchyProvider")
+        }
+        SupportedOperation::Rename => json_capability_enabled(raw_capabilities, "renameProvider"),
+        SupportedOperation::Completion => {
+            json_capability_enabled(raw_capabilities, "completionProvider")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileSyncAction {
+    DidOpen { version: i32 },
+    DidChange { version: i32 },
+    Noop,
+}
+
+fn next_file_sync_action(previous_version: Option<i32>, content_changed: bool) -> FileSyncAction {
+    match (previous_version, content_changed) {
+        (None, _) => FileSyncAction::DidOpen { version: 1 },
+        (Some(version), true) => FileSyncAction::DidChange {
+            version: version + 1,
+        },
+        (Some(_), false) => FileSyncAction::Noop,
+    }
+}
+
 // -- Shell wrapper -----------------------------------------------------------
 
 fn build_shell_command(settings: &LSPSettings, require_path: &str) -> Result<Command> {
@@ -492,7 +587,9 @@ pub struct CangjieClient {
     open_files: Mutex<HashMap<String, i32>>,
     file_hashes: Mutex<HashMap<String, u64>>,
     diagnostics: Arc<Mutex<HashMap<String, Vec<Value>>>>,
-    initialized: AtomicBool,
+    diagnostic_versions: Arc<Mutex<HashMap<String, u64>>>,
+    diagnostics_notify: Arc<Notify>,
+    runtime: StdRwLock<ClientRuntimeState>,
     running: Arc<AtomicBool>,
 }
 
@@ -524,6 +621,8 @@ impl CangjieClient {
         let (outbound_tx, outbound_rx) = mpsc::unbounded_channel::<String>();
         let (incoming_tx, incoming_rx) = mpsc::unbounded_channel::<String>();
         let diagnostics = Arc::new(Mutex::new(HashMap::<String, Vec<Value>>::new()));
+        let diagnostic_versions = Arc::new(Mutex::new(HashMap::<String, u64>::new()));
+        let diagnostics_notify = Arc::new(Notify::new());
         let running = Arc::new(AtomicBool::new(true));
 
         // Stdout reader task: continuously reads from LSP stdout into unbounded buffer
@@ -537,6 +636,8 @@ impl CangjieClient {
             incoming_rx,
             outbound_tx: outbound_tx.clone(),
             diagnostics: diagnostics.clone(),
+            diagnostic_versions: diagnostic_versions.clone(),
+            diagnostics_notify: diagnostics_notify.clone(),
         };
 
         let rpc_client = jsonrpsee::core::client::ClientBuilder::default()
@@ -557,7 +658,9 @@ impl CangjieClient {
             open_files: Mutex::new(HashMap::new()),
             file_hashes: Mutex::new(HashMap::new()),
             diagnostics,
-            initialized: AtomicBool::new(false),
+            diagnostic_versions,
+            diagnostics_notify,
+            runtime: StdRwLock::new(ClientRuntimeState::Starting),
             running,
         };
 
@@ -602,11 +705,13 @@ impl CangjieClient {
         };
 
         debug!("[LSP] initialize");
-        let _: Value = self
+        let init_result_value: Value = self
             .client
             .request("initialize", LspParams::new(&init_params)?)
             .await
             .map_err(|e| anyhow::anyhow!("LSP initialization failed: {e}"))?;
+        let init_result: InitializeResult = serde_json::from_value(init_result_value.clone())
+            .map_err(|e| anyhow::anyhow!("Failed to decode initialize result: {e}"))?;
 
         debug!("[LSP] initialized");
         self.client
@@ -614,13 +719,24 @@ impl CangjieClient {
             .await
             .map_err(|e| anyhow::anyhow!("LSP initialized notification failed: {e}"))?;
 
-        self.initialized.store(true, Ordering::SeqCst);
+        let raw_capabilities = init_result_value
+            .get("capabilities")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let mut runtime = self.runtime.write().unwrap_or_else(|e| e.into_inner());
+        *runtime = ClientRuntimeState::Ready {
+            _capabilities: Box::new(init_result.capabilities),
+            raw_capabilities: Box::new(raw_capabilities),
+        };
         info!("LSP client initialized successfully");
         Ok(())
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.initialized.load(Ordering::SeqCst)
+        matches!(
+            *self.runtime.read().unwrap_or_else(|e| e.into_inner()),
+            ClientRuntimeState::Ready { .. }
+        )
     }
 
     pub fn is_running(&self) -> bool {
@@ -629,6 +745,17 @@ impl CangjieClient {
 
     pub fn is_alive(&self) -> bool {
         self.is_initialized() && self.is_running()
+    }
+
+    pub fn supports(&self, operation: SupportedOperation) -> bool {
+        let runtime = self.runtime.read().unwrap_or_else(|e| e.into_inner());
+        let ClientRuntimeState::Ready {
+            raw_capabilities, ..
+        } = &*runtime
+        else {
+            return false;
+        };
+        supports_capability(raw_capabilities.as_ref(), operation)
     }
 
     // -- Request / notification helpers --------------------------------------
@@ -689,67 +816,57 @@ impl CangjieClient {
 
     async fn ensure_open(&self, file_path: &str) -> Result<()> {
         let uri_str = path_to_uri(Path::new(file_path));
-
-        {
-            let open_files = self.open_files.lock().await;
-            if open_files.contains_key(&uri_str) {
-                // File already open — check if content changed on disk
-                let content = tokio::fs::read_to_string(file_path)
-                    .await
-                    .context("Failed to read file")?;
-                let new_hash = Self::hash_content(&content);
-
-                let mut hashes = self.file_hashes.lock().await;
-                let old_hash = hashes.get(&uri_str).copied().unwrap_or(0);
-                if new_hash != old_hash {
-                    drop(open_files);
-                    // Content changed: close and re-open with fresh content
-                    let close_params = serde_json::json!({
-                        "textDocument": { "uri": uri_str }
-                    });
-                    debug!("[LSP] textDocument/didClose (re-open): {}", uri_str);
-                    self.notify("textDocument/didClose", &close_params).await?;
-
-                    let mut open_files = self.open_files.lock().await;
-                    let version = open_files.get(&uri_str).copied().unwrap_or(1) + 1;
-
-                    let params = DidOpenTextDocumentParams {
-                        text_document: TextDocumentItem {
-                            uri: parse_uri(&uri_str)?,
-                            language_id: "Cangjie".to_string(),
-                            version,
-                            text: content,
-                        },
-                    };
-                    debug!("[LSP] textDocument/didOpen (re-open): {}", uri_str);
-                    self.notify("textDocument/didOpen", &params).await?;
-
-                    open_files.insert(uri_str.clone(), version);
-                    hashes.insert(uri_str, new_hash);
-                }
-                return Ok(());
-            }
-        }
-
         let content = tokio::fs::read_to_string(file_path)
             .await
             .context("Failed to read file")?;
         let content_hash = Self::hash_content(&content);
+        let previous_version = self.open_files.lock().await.get(&uri_str).copied();
+        let previous_hash = self.file_hashes.lock().await.get(&uri_str).copied();
+        let content_changed = previous_hash != Some(content_hash);
+        let sync_action = next_file_sync_action(previous_version, content_changed);
 
-        let params = DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: parse_uri(&uri_str)?,
-                language_id: "Cangjie".to_string(),
-                version: 1,
-                text: content,
-            },
-        };
+        match sync_action {
+            FileSyncAction::DidOpen { version } => {
+                let params = DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: parse_uri(&uri_str)?,
+                        language_id: "Cangjie".to_string(),
+                        version,
+                        text: content,
+                    },
+                };
 
-        debug!("[LSP] textDocument/didOpen: {}", uri_str);
-        self.notify("textDocument/didOpen", &params).await?;
+                debug!("[LSP] textDocument/didOpen: {}", uri_str);
+                self.notify("textDocument/didOpen", &params).await?;
+                self.open_files
+                    .lock()
+                    .await
+                    .insert(uri_str.clone(), version);
+                self.file_hashes.lock().await.insert(uri_str, content_hash);
+            }
+            FileSyncAction::DidChange { version } => {
+                let params = DidChangeTextDocumentParams {
+                    text_document: VersionedTextDocumentIdentifier {
+                        uri: parse_uri(&uri_str)?,
+                        version,
+                    },
+                    content_changes: vec![TextDocumentContentChangeEvent {
+                        range: None,
+                        range_length: None,
+                        text: content,
+                    }],
+                };
 
-        self.open_files.lock().await.insert(uri_str.clone(), 1);
-        self.file_hashes.lock().await.insert(uri_str, content_hash);
+                debug!("[LSP] textDocument/didChange: {}", uri_str);
+                self.notify("textDocument/didChange", &params).await?;
+                self.open_files
+                    .lock()
+                    .await
+                    .insert(uri_str.clone(), version);
+                self.file_hashes.lock().await.insert(uri_str, content_hash);
+            }
+            FileSyncAction::Noop => {}
+        }
         Ok(())
     }
 
@@ -971,8 +1088,59 @@ impl CangjieClient {
             .await
     }
 
-    pub async fn get_diagnostics(&self, file_path: &str) -> Result<Vec<Value>> {
+    pub async fn completion(&self, file_path: &str, line: u32, character: u32) -> Result<Value> {
         self.ensure_open(file_path).await?;
+        let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
+        let params = CompletionParams {
+            text_document_position: make_td_position(uri.clone(), line, character),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+        self.document_request("textDocument/completion", &params, &uri)
+            .await
+    }
+
+    fn diagnostics_key(file_path: &str) -> String {
+        uri_to_path(path_to_uri(Path::new(file_path)).as_str())
+            .to_string_lossy()
+            .to_string()
+    }
+
+    async fn diagnostics_version(&self, key: &str) -> u64 {
+        self.diagnostic_versions
+            .lock()
+            .await
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    async fn wait_for_diagnostics(
+        &self,
+        key: &str,
+        previous_version: u64,
+        timeout: Duration,
+    ) -> DiagnosticsStatus {
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        loop {
+            if self.diagnostics_version(key).await > previous_version {
+                return DiagnosticsStatus::Ready;
+            }
+
+            let notified = self.diagnostics_notify.notified();
+            tokio::select! {
+                _ = notified => {}
+                _ = tokio::time::sleep_until(deadline) => return DiagnosticsStatus::Timeout,
+            }
+        }
+    }
+
+    pub async fn get_diagnostics(&self, file_path: &str) -> Result<DiagnosticsResponse> {
+        self.ensure_open(file_path).await?;
+        let lookup_key = Self::diagnostics_key(file_path);
+        let previous_version = self.diagnostics_version(&lookup_key).await;
 
         // Send a documentSymbol request to kick the LSP server's ReadyForDiagnostics pipeline
         let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
@@ -987,33 +1155,21 @@ impl CangjieClient {
                 &uri,
             )
             .await;
+        let status = self
+            .wait_for_diagnostics(&lookup_key, previous_version, DIAGNOSTIC_WAIT_TIMEOUT)
+            .await;
+        let diagnostics = self
+            .diagnostics
+            .lock()
+            .await
+            .get(&lookup_key)
+            .cloned()
+            .unwrap_or_default();
 
-        // Normalize the lookup key via uri_to_path(path_to_uri(...)) roundtrip
-        // to match the key format used by publishDiagnostics handler in transport.rs
-        let lookup_key = uri_to_path(path_to_uri(Path::new(file_path)).as_str())
-            .to_string_lossy()
-            .to_string();
-
-        // Poll for diagnostics with 200ms intervals, up to 10s total
-        const POLL_INTERVAL_MS: u64 = 200;
-        const MAX_WAIT_MS: u64 = 10_000;
-        let mut elapsed = 0u64;
-
-        while elapsed < MAX_WAIT_MS {
-            tokio::time::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
-            elapsed += POLL_INTERVAL_MS;
-
-            let diags = self.diagnostics.lock().await;
-            if let Some(d) = diags.get(&lookup_key) {
-                if !d.is_empty() {
-                    return Ok(d.clone());
-                }
-            }
-        }
-
-        // Timeout reached — return whatever we have (possibly empty)
-        let diags = self.diagnostics.lock().await;
-        Ok(diags.get(&lookup_key).cloned().unwrap_or_default())
+        Ok(DiagnosticsResponse {
+            diagnostics,
+            status,
+        })
     }
 
     pub async fn shutdown(&self) -> Result<()> {
@@ -1032,6 +1188,9 @@ impl CangjieClient {
         if let Err(e) = self.client.notification("exit", LspParams::empty()).await {
             warn!("LSP exit notification failed: {}", e);
         }
+
+        let mut runtime = self.runtime.write().unwrap_or_else(|e| e.into_inner());
+        *runtime = ClientRuntimeState::Shutdown;
 
         Ok(())
     }
@@ -1074,6 +1233,47 @@ mod tests {
     #[test]
     fn test_escape_powershell_multiple_quotes() {
         assert_eq!(escape_powershell("a'b'c"), "'a''b''c'");
+    }
+
+    #[test]
+    fn test_next_file_sync_action_for_open_and_change() {
+        assert_eq!(
+            next_file_sync_action(None, false),
+            FileSyncAction::DidOpen { version: 1 }
+        );
+        assert_eq!(
+            next_file_sync_action(Some(1), true),
+            FileSyncAction::DidChange { version: 2 }
+        );
+        assert_eq!(next_file_sync_action(Some(2), false), FileSyncAction::Noop);
+    }
+
+    #[test]
+    fn test_supports_operation_based_on_capabilities() {
+        let raw_capabilities = serde_json::json!({
+            "hoverProvider": true,
+            "definitionProvider": true,
+            "referencesProvider": true,
+            "documentSymbolProvider": true,
+            "workspaceSymbolProvider": true,
+            "renameProvider": true,
+            "completionProvider": { "resolveProvider": true },
+            "callHierarchyProvider": true,
+            "typeHierarchyProvider": true
+        });
+
+        assert!(supports_capability(
+            &raw_capabilities,
+            SupportedOperation::Completion
+        ));
+        assert!(supports_capability(
+            &raw_capabilities,
+            SupportedOperation::IncomingCalls
+        ));
+        assert!(supports_capability(
+            &raw_capabilities,
+            SupportedOperation::Diagnostics
+        ));
     }
 
     #[cfg(not(windows))]

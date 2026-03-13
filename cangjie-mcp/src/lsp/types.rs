@@ -3,12 +3,15 @@
 // Used by client.rs
 pub use lsp_types::{
     CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    ClientCapabilities, ClientInfo, DidOpenTextDocumentParams, DocumentSymbolParams,
-    GotoDefinitionParams, HoverParams, InitializeParams, InitializedParams, Position,
-    ReferenceContext, ReferenceParams, RenameParams, TextDocumentIdentifier, TextDocumentItem,
+    ClientCapabilities, ClientInfo, CompletionItem, CompletionParams, CompletionResponse,
+    DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams,
+    GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, InitializedParams,
+    OneOf, Position, ReferenceContext, ReferenceParams, RenameParams, ServerCapabilities,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
     TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
-    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri, WorkDoneProgressParams,
-    WorkspaceFolder, WorkspaceSymbolParams,
+    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
+    VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceFolder,
+    WorkspaceSymbolParams,
 };
 
 // Used by tools.rs

@@ -191,12 +191,7 @@ claude mcp add \
 
 | 工具名称 | 功能 |
 |---------|------|
-| `cangjie_lsp_definition` | 跳转到符号定义 |
-| `cangjie_lsp_references` | 查找符号的所有引用 |
-| `cangjie_lsp_hover` | 获取符号的类型信息和文档 |
-| `cangjie_lsp_symbols` | 列出文档中的所有符号 |
-| `cangjie_lsp_diagnostics` | 获取文件的错误和警告 |
-| `cangjie_lsp_completion` | 获取代码补全建议 |
+| `cangjie_lsp` | 统一 LSP 入口，通过 `operation` 执行 definition、references、hover、document_symbol、diagnostics、workspace_symbol、incoming/outgoing calls、type hierarchy、rename 和 completion |
 
 ## 命令行参考
 
