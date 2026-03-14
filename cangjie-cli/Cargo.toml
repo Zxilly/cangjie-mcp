@@ -33,3 +33,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 dirs = "6"
 toml = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

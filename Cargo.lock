@@ -624,6 +624,7 @@ dependencies = [
  "cangjie-server",
  "clap",
  "dirs",
+ "libc",
  "rmcp",
  "serde",
  "serde_json",
