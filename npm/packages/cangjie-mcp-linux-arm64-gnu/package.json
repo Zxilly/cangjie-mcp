@@ -1,6 +1,6 @@
 {
   "name": "@cangjie-mcp/cangjie-mcp-linux-arm64-gnu",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Prebuilt cangjie CLI binary for Linux arm64 (glibc >= 2.28).",
   "license": "MIT",
   "os": [
