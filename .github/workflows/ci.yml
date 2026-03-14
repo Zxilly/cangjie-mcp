@@ -36,13 +36,13 @@ jobs:
           cache-targets: "false"
 
       - name: cargo clippy (default features)
-        run: cargo clippy --workspace -- -W clippy::all -D warnings
+        run: cargo clippy --workspace --all-targets -- -W clippy::all -D warnings
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: sccache
 
       - name: cargo clippy (local feature)
-        run: cargo clippy -p cangjie-mcp --features local -- -W clippy::all -D warnings
+        run: cargo clippy --workspace --all-targets --features cangjie-cli/local,cangjie-server/local,cangjie-indexer/local,cangjie-mcp-server/local -- -W clippy::all -D warnings
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: sccache
