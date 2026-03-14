@@ -47,11 +47,17 @@ pub struct CangjieArgs {
 #[derive(Args)]
 pub struct ServerOptions {
     /// Documentation version (git tag)
-    #[arg(long = "docs-version", short = 'v', env = "CANGJIE_DOCS_VERSION", default_value = DEFAULT_DOCS_VERSION)]
+    #[arg(long = "docs-version", short = 'v', env = "CANGJIE_DOCS_VERSION", default_value = DEFAULT_DOCS_VERSION, global = true)]
     pub docs_version: String,
 
     /// Documentation language (zh/en)
-    #[arg(long, short = 'l', env = "CANGJIE_DOCS_LANG", default_value = "zh")]
+    #[arg(
+        long,
+        short = 'l',
+        env = "CANGJIE_DOCS_LANG",
+        default_value = "zh",
+        global = true
+    )]
     pub lang: DocLang,
 
     /// Embedding type: none (BM25 only), local, or openai
@@ -59,84 +65,96 @@ pub struct ServerOptions {
         long,
         short = 'e',
         env = "CANGJIE_EMBEDDING_TYPE",
-        default_value = "none"
+        default_value = "none",
+        global = true
     )]
     pub embedding: EmbeddingType,
 
     /// Local HuggingFace embedding model name
-    #[arg(long = "local-model", env = "CANGJIE_LOCAL_MODEL", default_value = DEFAULT_LOCAL_MODEL)]
+    #[arg(long = "local-model", env = "CANGJIE_LOCAL_MODEL", default_value = DEFAULT_LOCAL_MODEL, global = true)]
     pub local_model: String,
 
     /// OpenAI API key
-    #[arg(long = "openai-api-key", env = "OPENAI_API_KEY")]
+    #[arg(long = "openai-api-key", env = "OPENAI_API_KEY", global = true)]
     pub openai_api_key: Option<String>,
 
     /// OpenAI API base URL
-    #[arg(long = "openai-base-url", env = "OPENAI_BASE_URL", default_value = DEFAULT_OPENAI_BASE_URL)]
+    #[arg(long = "openai-base-url", env = "OPENAI_BASE_URL", default_value = DEFAULT_OPENAI_BASE_URL, global = true)]
     pub openai_base_url: String,
 
     /// OpenAI embedding model
-    #[arg(long = "openai-model", env = "OPENAI_EMBEDDING_MODEL", default_value = DEFAULT_OPENAI_MODEL)]
+    #[arg(long = "openai-model", env = "OPENAI_EMBEDDING_MODEL", default_value = DEFAULT_OPENAI_MODEL, global = true)]
     pub openai_model: String,
 
     /// Rerank type (none/local/openai)
-    #[arg(long, short = 'r', env = "CANGJIE_RERANK_TYPE", default_value = "none")]
+    #[arg(
+        long,
+        short = 'r',
+        env = "CANGJIE_RERANK_TYPE",
+        default_value = "none",
+        global = true
+    )]
     pub rerank: RerankType,
 
     /// Rerank model name
-    #[arg(long = "rerank-model", env = "CANGJIE_RERANK_MODEL", default_value = DEFAULT_RERANK_MODEL)]
+    #[arg(long = "rerank-model", env = "CANGJIE_RERANK_MODEL", default_value = DEFAULT_RERANK_MODEL, global = true)]
     pub rerank_model: String,
 
     /// Number of results after reranking
-    #[arg(long = "rerank-top-k", env = "CANGJIE_RERANK_TOP_K", default_value_t = DEFAULT_RERANK_TOP_K)]
+    #[arg(long = "rerank-top-k", env = "CANGJIE_RERANK_TOP_K", default_value_t = DEFAULT_RERANK_TOP_K, global = true)]
     pub rerank_top_k: usize,
 
     /// Number of candidates before reranking
-    #[arg(long = "rerank-initial-k", env = "CANGJIE_RERANK_INITIAL_K", default_value_t = DEFAULT_RERANK_INITIAL_K)]
+    #[arg(long = "rerank-initial-k", env = "CANGJIE_RERANK_INITIAL_K", default_value_t = DEFAULT_RERANK_INITIAL_K, global = true)]
     pub rerank_initial_k: usize,
 
     /// Max chunk size in characters
-    #[arg(long = "chunk-size", env = "CANGJIE_CHUNK_MAX_SIZE", default_value_t = DEFAULT_CHUNK_MAX_SIZE)]
+    #[arg(long = "chunk-size", env = "CANGJIE_CHUNK_MAX_SIZE", default_value_t = DEFAULT_CHUNK_MAX_SIZE, global = true)]
     pub chunk_max_size: usize,
 
     /// Chunk overlap in characters
-    #[arg(long = "chunk-overlap", env = "CANGJIE_CHUNK_OVERLAP", default_value_t = DEFAULT_CHUNK_OVERLAP)]
+    #[arg(long = "chunk-overlap", env = "CANGJIE_CHUNK_OVERLAP", default_value_t = DEFAULT_CHUNK_OVERLAP, global = true)]
     pub chunk_overlap: usize,
 
     /// Maximum search results per file
-    #[arg(long = "max-per-file", env = "CANGJIE_MAX_PER_FILE", default_value_t = DEFAULT_MAX_PER_FILE)]
+    #[arg(long = "max-per-file", env = "CANGJIE_MAX_PER_FILE", default_value_t = DEFAULT_MAX_PER_FILE, global = true)]
     pub max_per_file: usize,
 
     /// LLM model for generating chunk context summaries
-    #[arg(long = "summary-model", env = "CANGJIE_SUMMARY_MODEL")]
+    #[arg(long = "summary-model", env = "CANGJIE_SUMMARY_MODEL", global = true)]
     pub summary_model: Option<String>,
 
     /// RRF constant k for hybrid search fusion
-    #[arg(long = "rrf-k", env = "CANGJIE_RRF_K", default_value_t = DEFAULT_RRF_K)]
+    #[arg(long = "rrf-k", env = "CANGJIE_RRF_K", default_value_t = DEFAULT_RRF_K, global = true)]
     pub rrf_k: u32,
 
     /// Data directory path
-    #[arg(long = "data-dir", short = 'd', env = "CANGJIE_DATA_DIR")]
+    #[arg(
+        long = "data-dir",
+        short = 'd',
+        env = "CANGJIE_DATA_DIR",
+        global = true
+    )]
     pub data_dir: Option<PathBuf>,
 
     /// URL of a remote cangjie-mcp server to forward queries to
-    #[arg(long = "server-url", env = "CANGJIE_SERVER_URL")]
+    #[arg(long = "server-url", env = "CANGJIE_SERVER_URL", global = true)]
     pub server_url: Option<String>,
 
     /// HTTP client pool idle timeout in seconds
-    #[arg(long = "http-pool-idle-timeout-secs", env = "CANGJIE_HTTP_POOL_IDLE_TIMEOUT_SECS", default_value_t = DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS)]
+    #[arg(long = "http-pool-idle-timeout-secs", env = "CANGJIE_HTTP_POOL_IDLE_TIMEOUT_SECS", default_value_t = DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS, global = true)]
     pub http_pool_idle_timeout_secs: u64,
 
     /// Max idle HTTP connections per host
-    #[arg(long = "http-pool-max-idle-per-host", env = "CANGJIE_HTTP_POOL_MAX_IDLE_PER_HOST", default_value_t = DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST)]
+    #[arg(long = "http-pool-max-idle-per-host", env = "CANGJIE_HTTP_POOL_MAX_IDLE_PER_HOST", default_value_t = DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST, global = true)]
     pub http_pool_max_idle_per_host: usize,
 
     /// TCP keepalive for outbound HTTP in seconds
-    #[arg(long = "http-tcp-keepalive-secs", env = "CANGJIE_HTTP_TCP_KEEPALIVE_SECS", default_value_t = DEFAULT_HTTP_TCP_KEEPALIVE_SECS)]
+    #[arg(long = "http-tcp-keepalive-secs", env = "CANGJIE_HTTP_TCP_KEEPALIVE_SECS", default_value_t = DEFAULT_HTTP_TCP_KEEPALIVE_SECS, global = true)]
     pub http_tcp_keepalive_secs: u64,
 
     /// Enable HTTP/2 for outbound HTTP client
-    #[arg(long = "http2", env = "CANGJIE_HTTP2", default_value_t = DEFAULT_HTTP_ENABLE_HTTP2)]
+    #[arg(long = "http2", env = "CANGJIE_HTTP2", default_value_t = DEFAULT_HTTP_ENABLE_HTTP2, global = true)]
     pub http_enable_http2: bool,
 }
 

@@ -9,6 +9,7 @@ py_ref/
 
 # Data directories
 data/
+indexes/
 
 # Environment variables (contains secrets)
 .env
