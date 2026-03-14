@@ -29,7 +29,7 @@ function isWindows(platform = process.platform) {
 }
 
 function getBinaryFilename(platform = process.platform) {
-  return isWindows(platform) ? 'cangjie.exe' : 'cangjie';
+  return isWindows(platform) ? 'cangjie-mcp.exe' : 'cangjie-mcp';
 }
 
 function compareVersions(left, right) {
@@ -212,7 +212,7 @@ function buildFromSource(platformInfo) {
 
   if (result.status !== 0) {
     throw new Error(
-      `Failed to build cangjie from source for ${formatPlatformInfo(platformInfo)}.`
+      `Failed to build cangjie-mcp from source for ${formatPlatformInfo(platformInfo)}.`
     );
   }
 
@@ -323,7 +323,7 @@ function resolveBinaryPath() {
   }
 
   throw new Error(
-    `Unable to locate a cangjie binary for ${formatPlatformInfo(platformInfo)}. Reinstall the package or set CANGJIE_MCP_FORCE_BUILD=1.`
+    `Unable to locate a cangjie-mcp binary for ${formatPlatformInfo(platformInfo)}. Reinstall the package or set CANGJIE_MCP_FORCE_BUILD=1.`
   );
 }
 
@@ -337,7 +337,7 @@ function executeCli(args, options = {}) {
     });
 
     child.on('error', (error) => {
-      reject(new Error(`Failed to start ${options.commandName || 'cangjie'}: ${error.message}`));
+      reject(new Error(`Failed to start ${options.commandName || 'cangjie-mcp'}: ${error.message}`));
     });
 
     child.on('exit', (code, signal) => {

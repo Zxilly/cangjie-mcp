@@ -8,7 +8,7 @@ const sourcePackageRoot = path.join(repoRoot, 'npm', 'packages', 'cangjie-mcp-so
 const workspaceRoot = path.join(sourcePackageRoot, 'workspace');
 
 const crates = [
-  'cangjie-cli',
+  'cangjie-mcp-cli',
   'cangjie-core',
   'cangjie-indexer',
   'cangjie-lsp',
@@ -64,7 +64,7 @@ members = [
     "cangjie-indexer",
     "cangjie-lsp",
     "cangjie-server",
-    "cangjie-cli",
+    "cangjie-mcp-cli",
 ]
 resolver = "2"
 

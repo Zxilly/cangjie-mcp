@@ -18,7 +18,7 @@ pub const DEFAULT_DAEMON_TIMEOUT_MINUTES: u64 = 30;
 
 #[derive(Parser)]
 #[command(
-    name = "cangjie",
+    name = "cangjie-mcp",
     about = "Cangjie programming language documentation and code intelligence CLI",
     version
 )]
@@ -35,11 +35,14 @@ pub struct CangjieArgs {
     #[arg(long = "daemon-timeout", env = "CANGJIE_DAEMON_TIMEOUT", default_value_t = DEFAULT_DAEMON_TIMEOUT_MINUTES, hide = true, global = true)]
     pub daemon_timeout: u64,
 
+    #[command(flatten)]
+    pub server: ServerOptions,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
 
-// ── Server/index options (only for mcp and index commands) ───────────────
+// ── Server/index options ───────────────────────────────────────────────
 
 #[derive(Args)]
 pub struct ServerOptions {
@@ -213,19 +216,11 @@ pub enum Commands {
         #[command(subcommand)]
         operation: LspCommand,
     },
-    /// MCP server management
-    Mcp {
-        #[command(subcommand)]
-        action: Option<McpAction>,
-
-        #[command(flatten)]
-        server: ServerOptions,
-    },
+    /// Internal: run as daemon (hidden)
+    #[command(hide = true)]
+    Serve,
     /// Build the search index
-    Index {
-        #[command(flatten)]
-        server: ServerOptions,
-    },
+    Index,
     /// Daemon management
     Daemon {
         #[command(subcommand)]
@@ -342,12 +337,6 @@ pub enum LspCommand {
         #[arg(long, alias = "char")]
         character: Option<u32>,
     },
-}
-
-#[derive(Subcommand)]
-pub enum McpAction {
-    /// Start as daemon process (used internally by tool commands)
-    Serve,
 }
 
 #[derive(Subcommand)]

@@ -8,7 +8,7 @@ from cangjie_mcp import find_cangjie_mcp_bin
 
 def _run() -> None:
     cangjie_mcp = find_cangjie_mcp_bin()
-    args = ["mcp", *sys.argv[1:]]
+    args = sys.argv[1:]
 
     if sys.platform == "win32":
         import subprocess

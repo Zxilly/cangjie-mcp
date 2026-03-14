@@ -36,24 +36,24 @@ jobs:
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             package_dir: npm/packages/cangjie-mcp-linux-x64-gnu
-            binary_name: cangjie
+            binary_name: cangjie-mcp
             container_image: quay.io/pypa/manylinux_2_28_x86_64
           - package_name: linux-arm64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             package_dir: npm/packages/cangjie-mcp-linux-arm64-gnu
-            binary_name: cangjie
+            binary_name: cangjie-mcp
             container_image: quay.io/pypa/manylinux_2_28_aarch64
           - package_name: windows-x64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             package_dir: npm/packages/cangjie-mcp-win32-x64-msvc
-            binary_name: cangjie.exe
+            binary_name: cangjie-mcp.exe
           - package_name: darwin-arm64
             runner: macos-15
             target: aarch64-apple-darwin
             package_dir: npm/packages/cangjie-mcp-darwin-arm64
-            binary_name: cangjie
+            binary_name: cangjie-mcp
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -110,12 +110,12 @@ jobs:
 
               # Keep Linux prebuilt npm binaries compatible with glibc 2.28 by
               # using the legacy ort-tract backend instead of downloaded ORT.
-              cargo build -p cangjie-cli --release --features "local,legacy" --target "${{ matrix.target }}"
+              cargo build -p cangjie-mcp-cli --release --features "local,legacy" --target "${{ matrix.target }}"
             '
 
       - name: Build non-Linux binary
         if: runner.os != 'Linux'
-        run: cargo build -p cangjie-cli --release --features local --target ${{ matrix.target }}
+        run: cargo build -p cangjie-mcp-cli --release --features local --target ${{ matrix.target }}
 
       - name: Smoke test binary
         shell: bash
@@ -168,7 +168,7 @@ jobs:
         run: npm --prefix npm run stage:source
 
       - name: Validate source fallback build
-        run: node npm/packages/cangjie-mcp-source/lib/build.cjs --out npm/dist/source-smoke/cangjie
+        run: node npm/packages/cangjie-mcp-source/lib/build.cjs --out npm/dist/source-smoke/cangjie-mcp
 
       - name: Pack source npm package
         working-directory: npm/packages/cangjie-mcp-source
@@ -258,10 +258,8 @@ jobs:
           npm install $sourcePackage $platformPackage $rootPackage
 
           if ($IsWindows) {
-            & ".\node_modules\.bin\cangjie.cmd" --help | Out-Null
             & ".\node_modules\.bin\cangjie-mcp.cmd" --help | Out-Null
           } else {
-            & "./node_modules/.bin/cangjie" --help | Out-Null
             & "./node_modules/.bin/cangjie-mcp" --help | Out-Null
           }
 
@@ -305,7 +303,6 @@ jobs:
           ROOT_PACKAGE="$(find ../npm-dist -maxdepth 1 -name 'cangjie-mcp-[0-9]*.tgz' | head -n1)"
           SOURCE_PACKAGE="$(find ../npm-dist -maxdepth 1 -name 'cangjie-mcp-cangjie-mcp-source-*.tgz' | head -n1)"
           CANGJIE_MCP_FORCE_BUILD=1 npm install "$SOURCE_PACKAGE" "$ROOT_PACKAGE"
-          ./node_modules/.bin/cangjie --help > /dev/null
           ./node_modules/.bin/cangjie-mcp --help > /dev/null
 
   dry-run-publish:

@@ -1,6 +1,6 @@
 {
   "name": "@cangjie-mcp/cangjie-mcp-darwin-arm64",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Prebuilt cangjie CLI binary for macOS arm64.",
   "author": "Zxilly <zxilly@outlook.com>",
   "license": "MIT",
@@ -24,6 +24,6 @@
   "files": [
     "README.md",
     "LICENSE",
-    "bin/cangjie"
+    "bin/cangjie-mcp"
   ]
 }

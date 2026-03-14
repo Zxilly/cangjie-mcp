@@ -23,7 +23,7 @@ function parseArgs(argv) {
 }
 
 function getBinaryFilename() {
-  return process.platform === 'win32' ? 'cangjie.exe' : 'cangjie';
+  return process.platform === 'win32' ? 'cangjie-mcp.exe' : 'cangjie-mcp';
 }
 
 function main() {
@@ -42,7 +42,7 @@ function main() {
   const targetDir = path.join(workspaceRoot, 'target');
   const buildResult = spawnSync(
     'cargo',
-    ['build', '-p', 'cangjie-cli', '--release', '--features', 'local'],
+    ['build', '-p', 'cangjie-mcp-cli', '--release', '--features', 'local'],
     {
       cwd: workspaceRoot,
       stdio: 'inherit',

@@ -213,9 +213,8 @@ pub fn command_to_tool_call(cmd: &Commands) -> Option<CallToolRequestParams> {
             let args = serde_json::to_value(&request).unwrap_or_default();
             Some(make_params("cangjie_lsp", args))
         }
-        Commands::Mcp { .. }
-        | Commands::Index { .. }
-        | Commands::Daemon { .. }
-        | Commands::Config { .. } => None,
+        Commands::Serve | Commands::Index | Commands::Daemon { .. } | Commands::Config { .. } => {
+            None
+        }
     }
 }

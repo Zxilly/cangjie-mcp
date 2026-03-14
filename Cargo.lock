@@ -615,28 +615,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "cangjie-cli"
-version = "0.3.4"
-dependencies = [
- "anyhow",
- "cangjie-core",
- "cangjie-indexer",
- "cangjie-server",
- "clap",
- "dirs",
- "libc",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
- "toml 1.0.3+spec-1.1.0",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "cangjie-core"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "dirs",
@@ -652,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-indexer"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -682,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-lsp"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -703,8 +683,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "cangjie-mcp-cli"
+version = "0.3.5"
+dependencies = [
+ "anyhow",
+ "cangjie-core",
+ "cangjie-indexer",
+ "cangjie-server",
+ "clap",
+ "dirs",
+ "libc",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 1.0.3+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "cangjie-mcp-server"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-server"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -42,7 +42,7 @@ jobs:
           RUSTC_WRAPPER: sccache
 
       - name: cargo clippy (local feature)
-        run: cargo clippy --workspace --all-targets --features cangjie-cli/local,cangjie-server/local,cangjie-indexer/local,cangjie-mcp-server/local -- -W clippy::all -D warnings
+        run: cargo clippy --workspace --all-targets --features cangjie-mcp-cli/local,cangjie-server/local,cangjie-indexer/local,cangjie-mcp-server/local -- -W clippy::all -D warnings
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: sccache

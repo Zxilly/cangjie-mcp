@@ -1,7 +1,7 @@
-mod cli;
-mod client;
-mod config;
-mod daemon;
+pub mod cli;
+pub mod client;
+pub mod config;
+pub mod daemon;
 
 use std::process::ExitCode;
 
@@ -11,26 +11,18 @@ use rmcp::ServiceExt;
 use tracing::info;
 
 use cangjie_core::config::Settings;
+use cangjie_core::logging::setup_logging;
 use cangjie_indexer::search::LocalSearchIndex;
 
-use cli::{CangjieArgs, Commands, ConfigAction, DaemonAction, McpAction};
+use cli::{CangjieArgs, Commands, ConfigAction, DaemonAction};
 
-use cangjie_core::logging::setup_logging;
-
-#[tokio::main]
-async fn main() -> ExitCode {
+pub async fn run() -> ExitCode {
     // Load config file to env BEFORE clap parsing (priority: CLI > env > config > defaults)
     config::load_config_to_env();
     let args = CangjieArgs::parse();
 
     // Daemon serve mode: log to daemon.log instead of stderr
-    let is_daemon_serve = matches!(
-        args.command,
-        Some(Commands::Mcp {
-            action: Some(McpAction::Serve),
-            ..
-        })
-    );
+    let is_daemon_serve = matches!(args.command, Some(Commands::Serve));
     if is_daemon_serve {
         let log_path = daemon::paths::log_file();
         setup_logging(Some(log_path.as_path()), args.debug);
@@ -39,25 +31,15 @@ async fn main() -> ExitCode {
     }
 
     let result = match args.command {
-        Some(Commands::Mcp {
-            action: Some(McpAction::Serve),
-            ..
-        }) => {
+        Some(Commands::Serve) => {
             let settings = config::settings_from_env();
             daemon::server::run_daemon(settings, args.daemon_timeout).await
         }
-        Some(Commands::Mcp {
-            action: None,
-            server,
-        }) => run_mcp_server(server.to_settings()).await,
-        Some(Commands::Index { server }) => run_index(server.to_settings()).await,
+        Some(Commands::Index) => run_index(args.server.to_settings()).await,
         Some(Commands::Daemon { action }) => run_daemon_action(action),
         Some(Commands::Config { action }) => run_config_action(action),
         Some(ref cmd) => run_tool_command(cmd, args.daemon_timeout).await,
-        None => {
-            CangjieArgs::parse_from(["cangjie", "--help"]);
-            unreachable!()
-        }
+        None => run_mcp_server(args.server.to_settings()).await,
     };
 
     match result {

@@ -1,6 +1,6 @@
 {
   "name": "@cangjie-mcp/cangjie-mcp-source",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Source fallback package used to build the cangjie CLI locally when a prebuilt npm binary is unavailable.",
   "author": "Zxilly <zxilly@outlook.com>",
   "license": "MIT",
@@ -24,7 +24,7 @@
     "workspace/Cargo.lock",
     "workspace/LICENSE",
     "workspace/README.md",
-    "workspace/cangjie-cli/**/*",
+    "workspace/cangjie-mcp-cli/**/*",
     "workspace/cangjie-core/**/*",
     "workspace/cangjie-indexer/**/*",
     "workspace/cangjie-lsp/**/*",

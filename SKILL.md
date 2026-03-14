@@ -104,18 +104,22 @@ spawn { x => ... }               spawn { => ... }  // no params
 ## Installation
 
 ```bash
-# Install from PyPI (recommended)
+# Run directly without installing (recommended)
+uvx cangjie-mcp
+
+# Install from PyPI
 pip install cangjie-mcp
 
-# Or run directly without installing
-uvx cangjie-mcp
+# Install from npm
+npm install -g cangjie-mcp
 ```
 
-After `pip install`, the `cangjie` command is available globally. With `uvx`, prefix commands with `uvx cangjie-mcp`:
+All three methods provide the `cangjie-mcp` command:
 
 ```bash
-cangjie query "generics"            # after pip install
-uvx cangjie-mcp query "generics"    # with uvx
+cangjie-mcp query "generics"            # after pip/npm install
+uvx cangjie-mcp query "generics"        # with uvx (no install needed)
+npx cangjie-mcp query "generics"        # with npx (no install needed)
 ```
 
 For LSP code intelligence, the Cangjie SDK must be installed with `cjlsp` in `PATH` or `CANGJIE_HOME` set.
@@ -125,8 +129,8 @@ For LSP code intelligence, the Cangjie SDK must be installed with `cjlsp` in `PA
 ### Config File
 
 ```bash
-cangjie config path    # show config file location
-cangjie config init    # create default config with all options commented out
+cangjie-mcp config path    # show config file location
+cangjie-mcp config init    # create default config with all options commented out
 ```
 
 Config file locations:
@@ -156,7 +160,7 @@ server_url = "https://cj-mcp.learningman.top"
 # daemon_timeout = 30
 ```
 
-Run `cangjie config init` to generate a config file with all available options.
+Run `cangjie-mcp config init` to generate a config file with all available options.
 
 ### Environment Variables
 
@@ -174,46 +178,46 @@ Run `cangjie config init` to generate a config file with all available options.
 ## Documentation Search
 
 ```bash
-cangjie query "<search terms>"
-cangjie query "<terms>" --category <cat> --top-k 10 --offset 0
-cangjie query "<terms>" --extract-code              # extract code examples
-cangjie query "<terms>" --package std.collection     # filter by stdlib package
-cangjie topic <topic-name>
-cangjie topic <topic-name> --category <cat>
-cangjie topics
-cangjie topics --category <cat>
+cangjie-mcp query "<search terms>"
+cangjie-mcp query "<terms>" --category <cat> --top-k 10 --offset 0
+cangjie-mcp query "<terms>" --extract-code              # extract code examples
+cangjie-mcp query "<terms>" --package std.collection     # filter by stdlib package
+cangjie-mcp topic <topic-name>
+cangjie-mcp topic <topic-name> --category <cat>
+cangjie-mcp topics
+cangjie-mcp topics --category <cat>
 ```
 
 **Recommended workflow:**
-1. `cangjie topics` — discover categories and topic names
-2. `cangjie query "<terms>"` — semantic search for concepts
-3. `cangjie query "<terms>" --package <pkg>` — search stdlib APIs
-4. `cangjie query "<terms>" --extract-code` — find code examples
-5. `cangjie topic <name>` — retrieve full documentation
+1. `cangjie-mcp topics` — discover categories and topic names
+2. `cangjie-mcp query "<terms>"` — semantic search for concepts
+3. `cangjie-mcp query "<terms>" --package <pkg>` — search stdlib APIs
+4. `cangjie-mcp query "<terms>" --extract-code` — find code examples
+5. `cangjie-mcp topic <name>` — retrieve full documentation
 
 ## LSP Code Intelligence
 
 ```bash
 # By symbol name
-cangjie lsp definition <file> --symbol <name>
-cangjie lsp references <file> --symbol <name>
-cangjie lsp hover <file> --symbol <name>
-cangjie lsp rename <file> --symbol <name> --new-name <new>
-cangjie lsp incoming-calls <file> --symbol <name>
-cangjie lsp outgoing-calls <file> --symbol <name>
-cangjie lsp type-supertypes <file> --symbol <name>
-cangjie lsp type-subtypes <file> --symbol <name>
+cangjie-mcp lsp definition <file> --symbol <name>
+cangjie-mcp lsp references <file> --symbol <name>
+cangjie-mcp lsp hover <file> --symbol <name>
+cangjie-mcp lsp rename <file> --symbol <name> --new-name <new>
+cangjie-mcp lsp incoming-calls <file> --symbol <name>
+cangjie-mcp lsp outgoing-calls <file> --symbol <name>
+cangjie-mcp lsp type-supertypes <file> --symbol <name>
+cangjie-mcp lsp type-subtypes <file> --symbol <name>
 
 # By position (1-based line and character)
-cangjie lsp definition <file> --line N --character N
-cangjie lsp completion <file> --line N --character N
+cangjie-mcp lsp definition <file> --line N --character N
+cangjie-mcp lsp completion <file> --line N --character N
 
 # File-scoped
-cangjie lsp symbols <file>
-cangjie lsp diagnostics <file>
+cangjie-mcp lsp symbols <file>
+cangjie-mcp lsp diagnostics <file>
 
 # Workspace-scoped
-cangjie lsp workspace-symbol <query>
+cangjie-mcp lsp workspace-symbol <query>
 ```
 
 ## Daemon Management
@@ -221,10 +225,10 @@ cangjie lsp workspace-symbol <query>
 The background daemon auto-starts on first use and stops after idle timeout. Manual control:
 
 ```bash
-cangjie daemon status
-cangjie daemon stop
-cangjie daemon logs --tail 50
-cangjie daemon logs --follow
+cangjie-mcp daemon status
+cangjie-mcp daemon stop
+cangjie-mcp daemon logs --tail 50
+cangjie-mcp daemon logs --follow
 ```
 
 ## Output Format

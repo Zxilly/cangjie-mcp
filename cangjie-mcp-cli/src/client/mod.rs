@@ -9,7 +9,7 @@ pub async fn call_tool(params: CallToolRequestParams) -> Result<CallToolResult> 
 
     let client_info = ClientInfo::new(
         Default::default(),
-        rmcp::model::Implementation::new("cangjie-cli", env!("CARGO_PKG_VERSION")),
+        rmcp::model::Implementation::new("cangjie-mcp-cli", env!("CARGO_PKG_VERSION")),
     );
 
     let service = client_info

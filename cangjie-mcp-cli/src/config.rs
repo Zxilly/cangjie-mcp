@@ -208,8 +208,8 @@ pub fn settings_from_env() -> Settings {
 
 /// Generate a default config file content with all fields commented out.
 pub fn generate_default_config() -> String {
-    r#"# Cangjie CLI configuration
-# Place this file at the path shown by `cangjie config path`
+    r#"# Cangjie MCP CLI configuration
+# Place this file at the path shown by `cangjie-mcp config path`
 #
 # Priority: CLI flags > environment variables > this file > built-in defaults
 

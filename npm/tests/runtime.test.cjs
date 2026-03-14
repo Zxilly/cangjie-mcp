@@ -43,18 +43,18 @@ test('manifest round trip keeps relative paths', () => {
   const manifest = {
     version: 1,
     strategy: 'source',
-    binaryPath: 'artifacts/linux-x64/cangjie',
+    binaryPath: 'artifacts/linux-x64/cangjie-mcp',
     packageName: null,
   };
 
   const binaryPath = runtime.resolveBinaryFromManifest(packageRoot, manifest);
-  assert.equal(binaryPath, path.join(packageRoot, 'artifacts', 'linux-x64', 'cangjie'));
+  assert.equal(binaryPath, path.join(packageRoot, 'artifacts', 'linux-x64', 'cangjie-mcp'));
 });
 
 test('published bin wrappers keep a node shebang for unix installs', () => {
   const packageRoot = path.resolve(__dirname, '..', 'packages', 'cangjie-mcp');
 
-  for (const relativePath of ['bin/cangjie.cjs', 'bin/cangjie-mcp.cjs']) {
+  for (const relativePath of ['bin/cangjie-mcp.cjs']) {
     const filePath = path.join(packageRoot, relativePath);
     const firstLine = fs.readFileSync(filePath, 'utf8').split(/\r?\n/u, 1)[0];
     assert.equal(firstLine, '#!/usr/bin/env node', `${relativePath} must start with a node shebang`);

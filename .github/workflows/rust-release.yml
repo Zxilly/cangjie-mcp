@@ -19,25 +19,25 @@ jobs:
           - package_name: linux-x64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            binary_name: cangjie
-            archive_name: cangjie-x86_64-unknown-linux-gnu.tar.gz
+            binary_name: cangjie-mcp
+            archive_name: cangjie-mcp-x86_64-unknown-linux-gnu.tar.gz
             container_image: quay.io/pypa/manylinux_2_28_x86_64
           - package_name: linux-arm64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            binary_name: cangjie
-            archive_name: cangjie-aarch64-unknown-linux-gnu.tar.gz
+            binary_name: cangjie-mcp
+            archive_name: cangjie-mcp-aarch64-unknown-linux-gnu.tar.gz
             container_image: quay.io/pypa/manylinux_2_28_aarch64
           - package_name: windows-x64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: cangjie.exe
-            archive_name: cangjie-x86_64-pc-windows-msvc.zip
+            binary_name: cangjie-mcp.exe
+            archive_name: cangjie-mcp-x86_64-pc-windows-msvc.zip
           - package_name: darwin-arm64
             runner: macos-15
             target: aarch64-apple-darwin
-            binary_name: cangjie
-            archive_name: cangjie-aarch64-apple-darwin.tar.gz
+            binary_name: cangjie-mcp
+            archive_name: cangjie-mcp-aarch64-apple-darwin.tar.gz
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -89,12 +89,12 @@ jobs:
 
               # Keep Linux release artifacts compatible with glibc 2.28 by
               # using the legacy ort-tract backend instead of downloaded ORT.
-              cargo build -p cangjie-cli --release --features "local,legacy" --target "${{ matrix.target }}"
+              cargo build -p cangjie-mcp-cli --release --features "local,legacy" --target "${{ matrix.target }}"
             '
 
       - name: Build non-Linux binary
         if: runner.os != 'Linux'
-        run: cargo build -p cangjie-cli --release --features local --target ${{ matrix.target }}
+        run: cargo build -p cangjie-mcp-cli --release --features local --target ${{ matrix.target }}
 
       - name: Smoke test binary
         shell: bash
@@ -113,7 +113,7 @@ jobs:
           set -euxo pipefail
           STAGE_DIR="release-stage/${{ matrix.target }}"
           mkdir -p "$STAGE_DIR"
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "$STAGE_DIR/cangjie"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "$STAGE_DIR/cangjie-mcp"
           cp LICENSE "$STAGE_DIR/"
           cp README.md "$STAGE_DIR/"
           mkdir -p release-dist
@@ -125,7 +125,7 @@ jobs:
         run: |
           $stageDir = Join-Path $PWD "release-stage\\${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
-          Copy-Item "target\\${{ matrix.target }}\\release\\${{ matrix.binary_name }}" (Join-Path $stageDir 'cangjie.exe')
+          Copy-Item "target\\${{ matrix.target }}\\release\\${{ matrix.binary_name }}" (Join-Path $stageDir 'cangjie-mcp.exe')
           Copy-Item "LICENSE" $stageDir
           Copy-Item "README.md" $stageDir
           New-Item -ItemType Directory -Force -Path "release-dist" | Out-Null

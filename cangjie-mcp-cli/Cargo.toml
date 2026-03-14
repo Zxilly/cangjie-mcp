@@ -1,12 +1,12 @@
 [package]
-name = "cangjie-cli"
-version = "0.3.4"
+name = "cangjie-mcp-cli"
+version = "0.3.5"
 edition = "2021"
 description = "Cangjie programming language documentation and code intelligence CLI"
 license = "MIT"
 
 [[bin]]
-name = "cangjie"
+name = "cangjie-mcp"
 path = "src/main.rs"
 
 [features]

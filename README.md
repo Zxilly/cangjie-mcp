@@ -32,11 +32,6 @@ uvx cangjie-mcp  # 启动 MCP 服务器
 npm install -g cangjie-mcp
 ```
 
-安装后会提供两个入口：
-
-- `cangjie`
-- `cangjie-mcp`，等价于 `cangjie mcp`
-
 npm 默认优先使用预编译二进制；当当前平台没有匹配包，或 Linux 的 glibc 低于 `2.28` 时，会自动回退到本地源码构建。你也可以显式强制源码构建：
 
 ```bash
@@ -53,7 +48,7 @@ pip install --no-binary cangjie-mcp cangjie-mcp \
 ```
 
 
-可用 feature（传给 `cangjie-cli`）：
+可用 feature（传给 `cangjie-mcp-cli`）：
 
 - `local`：本地向量化（CPU；默认构建的二进制已启用）
 - `legacy`：本地向量化改用 `ort-tract` 后端（适配旧 glibc 构建）
@@ -71,7 +66,7 @@ cangjie-mcp 支持两种运行模式：
 MCP 服务器在本地加载检索索引（BM25 + 向量索引），直接处理查询。
 
 ```bash
-cangjie mcp           # 或 uvx cangjie-mcp
+cangjie-mcp               # 或 uvx cangjie-mcp
 ```
 
 ### 远程文档服务模式（可选）
@@ -83,7 +78,7 @@ cangjie mcp           # 或 uvx cangjie-mcp
 cangjie-mcp-server --embedding local --port 8765
 
 # 终端 2：启动 MCP 服务器，连接远程索引
-cangjie mcp --server-url http://localhost:8765
+cangjie-mcp --server-url http://localhost:8765
 ```
 
 ## 快速配置
@@ -220,21 +215,21 @@ claude mcp add \
 
 ## 命令行参考
 
-### cangjie
+### cangjie-mcp
 
-安装 Python 包后，`cangjie` 命令可直接使用。
+安装 Python 包后，`cangjie-mcp` 命令可直接使用。
 
 ```bash
-cangjie mcp                    # 启动 MCP stdio 服务器
-cangjie query "泛型"           # CLI 搜索（自动启动后台 daemon）
-cangjie topic functions        # 获取完整文档
-cangjie topics -c stdlib       # 列出 stdlib 分类下的主题
-cangjie lsp hover main.cj --symbol main  # LSP 操作
-cangjie index                  # 构建搜索索引
-cangjie config init            # 生成默认配置文件
+cangjie-mcp                        # 启动 MCP stdio 服务器（无参数时默认行为）
+cangjie-mcp query "泛型"           # CLI 搜索（自动启动后台 daemon）
+cangjie-mcp topic functions        # 获取完整文档
+cangjie-mcp topics -c stdlib       # 列出 stdlib 分类下的主题
+cangjie-mcp lsp hover main.cj --symbol main  # LSP 操作
+cangjie-mcp index                  # 构建搜索索引
+cangjie-mcp config init            # 生成默认配置文件
 ```
 
-`cangjie mcp` 和 `cangjie index` 接受完整的索引/嵌入/网络选项（通过 `cangjie mcp --help` 查看）。其他子命令的设置统一从配置文件加载，运行 `cangjie config path` 查看路径。
+`cangjie-mcp` 和 `cangjie-mcp index` 接受完整的索引/嵌入/网络选项（通过 `cangjie-mcp --help` 查看）。其他子命令的设置统一从配置文件加载，运行 `cangjie-mcp config path` 查看路径。
 
 ### 全局选项
 
@@ -259,7 +254,7 @@ cangjie config init            # 生成默认配置文件
 cangjie-mcp-server [OPTIONS]
 ```
 
-支持所有与 `cangjie` 相同的索引选项，以及：
+支持所有与 `cangjie-mcp` 相同的索引选项，以及：
 
 | CLI 参数 | 环境变量 | 默认值 | 说明 |
 |---------|---------|-------|------|
@@ -281,10 +276,10 @@ cangjie-mcp-server [OPTIONS]
 CLI 工具命令（`query`、`topic`、`lsp` 等）会自动在后台启动 daemon 进程，复用已初始化的服务实例以加速响应。daemon 空闲超时后自动退出。
 
 ```bash
-cangjie daemon status           # 查看 daemon 状态
-cangjie daemon stop             # 停止 daemon
-cangjie daemon logs --tail 50   # 查看日志
-cangjie daemon logs --follow    # 实时跟踪日志
+cangjie-mcp daemon status           # 查看 daemon 状态
+cangjie-mcp daemon stop             # 停止 daemon
+cangjie-mcp daemon logs --tail 50   # 查看日志
+cangjie-mcp daemon logs --follow    # 实时跟踪日志
 ```
 
 ### 调试与日志
@@ -293,13 +288,13 @@ cangjie daemon logs --follow    # 实时跟踪日志
 
 ```bash
 # 记录应用日志到文件
-cangjie mcp --log-file /tmp/cangjie.log
+cangjie-mcp --log-file /tmp/cangjie.log
 
 # 调试模式：额外记录 MCP stdio 协议流量
-cangjie mcp --log-file /tmp/cangjie.log --debug
+cangjie-mcp --log-file /tmp/cangjie.log --debug
 
 # 通过环境变量配置
-CANGJIE_LOG_FILE=/tmp/cangjie.log CANGJIE_DEBUG=1 cangjie mcp
+CANGJIE_LOG_FILE=/tmp/cangjie.log CANGJIE_DEBUG=1 cangjie-mcp
 ```
 
 ## 许可证

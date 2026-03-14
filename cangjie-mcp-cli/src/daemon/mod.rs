@@ -36,7 +36,7 @@ fn spawn_daemon(timeout_minutes: u64) -> Result<()> {
     let exe = std::env::current_exe().context("failed to get current executable path")?;
 
     let mut cmd = std::process::Command::new(exe);
-    cmd.args(["mcp", "serve"]);
+    cmd.args(["serve"]);
     cmd.arg("--daemon-timeout");
     cmd.arg(timeout_minutes.to_string());
 

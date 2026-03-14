@@ -2,7 +2,7 @@ use std::path::Path;
 
 /// Set up logging with optional file output.
 ///
-/// Shared between `cangjie-cli` and `cangjie-mcp-server` binaries.
+/// Shared between `cangjie-mcp-cli` and `cangjie-mcp-server` binaries.
 pub fn setup_logging(log_file: Option<&Path>, debug: bool) {
     use tracing_subscriber::EnvFilter;
 
