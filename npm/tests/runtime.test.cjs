@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const runtime = require('../packages/cangjie-mcp/lib/runtime.cjs');
@@ -48,4 +49,14 @@ test('manifest round trip keeps relative paths', () => {
 
   const binaryPath = runtime.resolveBinaryFromManifest(packageRoot, manifest);
   assert.equal(binaryPath, path.join(packageRoot, 'artifacts', 'linux-x64', 'cangjie'));
+});
+
+test('published bin wrappers keep a node shebang for unix installs', () => {
+  const packageRoot = path.resolve(__dirname, '..', 'packages', 'cangjie-mcp');
+
+  for (const relativePath of ['bin/cangjie.cjs', 'bin/cangjie-mcp.cjs']) {
+    const filePath = path.join(packageRoot, relativePath);
+    const firstLine = fs.readFileSync(filePath, 'utf8').split(/\r?\n/u, 1)[0];
+    assert.equal(firstLine, '#!/usr/bin/env node', `${relativePath} must start with a node shebang`);
+  }
 });

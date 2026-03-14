@@ -87,7 +87,9 @@ jobs:
               chmod +x "${PROTOC_DIR}/bin/protoc"
               export PATH="${PROTOC_DIR}/bin:${PATH}"
 
-              cargo build -p cangjie-cli --release --features local --target "${{ matrix.target }}"
+              # Keep Linux release artifacts compatible with glibc 2.28 by
+              # using the legacy ort-tract backend instead of downloaded ORT.
+              cargo build -p cangjie-cli --release --features "local,legacy" --target "${{ matrix.target }}"
             '
 
       - name: Build non-Linux binary

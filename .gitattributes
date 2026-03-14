@@ -1,0 +1,22 @@
+* text=auto
+
+# Keep executable scripts and release metadata on LF across platforms.
+*.sh text eol=lf
+*.cjs text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.rs text eol=lf
+.gitattributes text eol=lf
+
+# Never treat packaged or compiled artifacts as text.
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.tgz binary
+*.whl binary
+*.pdb binary
