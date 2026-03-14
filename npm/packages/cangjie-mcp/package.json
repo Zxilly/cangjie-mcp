@@ -2,10 +2,11 @@
   "name": "cangjie-mcp",
   "version": "0.3.4",
   "description": "Cangjie CLI distributed through npm with platform binaries and source fallback builds.",
+  "author": "Zxilly <zxilly@outlook.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Zxilly/cangjie-mcp.git"
+    "url": "https://github.com/Zxilly/cangjie-mcp"
   },
   "homepage": "https://github.com/Zxilly/cangjie-mcp",
   "bugs": {

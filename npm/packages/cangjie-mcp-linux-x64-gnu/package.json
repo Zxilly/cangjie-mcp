@@ -2,7 +2,16 @@
   "name": "@cangjie-mcp/cangjie-mcp-linux-x64-gnu",
   "version": "0.3.4",
   "description": "Prebuilt cangjie CLI binary for Linux x64 (glibc >= 2.28).",
+  "author": "Zxilly <zxilly@outlook.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Zxilly/cangjie-mcp"
+  },
+  "homepage": "https://github.com/Zxilly/cangjie-mcp",
+  "bugs": {
+    "url": "https://github.com/Zxilly/cangjie-mcp/issues"
+  },
   "os": [
     "linux"
   ],
