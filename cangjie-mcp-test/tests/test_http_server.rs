@@ -1,10 +1,10 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use cangjie_mcp::indexer::search::bm25::BM25Store;
-use cangjie_mcp::indexer::search::LocalSearchIndex;
-use cangjie_mcp::indexer::{IndexMetadata, SearchMode};
-use cangjie_mcp::server::http::create_http_app;
+use cangjie_indexer::search::bm25::BM25Store;
+use cangjie_indexer::search::LocalSearchIndex;
+use cangjie_indexer::{IndexMetadata, SearchMode};
 use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings, MockDocumentSource};
+use cangjie_server::http::create_http_app;
 use http_body_util::BodyExt;
 use tempfile::TempDir;
 use tower::ServiceExt;

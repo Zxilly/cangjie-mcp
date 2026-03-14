@@ -10,10 +10,10 @@
 //! Tip: load `.env` before running:
 //!   `set -a && source .env && set +a && cargo test ...`
 
-use cangjie_mcp::config::{DocLang, EmbeddingType, RerankType, Settings};
-use cangjie_mcp::indexer::embedding;
-use cangjie_mcp::indexer::rerank;
-use cangjie_mcp::indexer::{SearchResult, SearchResultMetadata};
+use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
+use cangjie_indexer::embedding;
+use cangjie_indexer::rerank;
+use cangjie_indexer::{SearchResult, SearchResultMetadata};
 
 fn openai_settings() -> Option<Settings> {
     let api_key = std::env::var("OPENAI_API_KEY").ok()?;

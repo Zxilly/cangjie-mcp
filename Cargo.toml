@@ -1,7 +1,10 @@
 [workspace]
 members = [
-    "cangjie-mcp",
-    "cangjie-mcp-cli",
+    "cangjie-core",
+    "cangjie-indexer",
+    "cangjie-lsp",
+    "cangjie-server",
+    "cangjie-cli",
     "cangjie-mcp-server",
     "cangjie-mcp-test",
 ]

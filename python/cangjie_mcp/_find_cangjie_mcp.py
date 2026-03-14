@@ -9,9 +9,9 @@ class CanjieMcpNotFound(FileNotFoundError): ...
 
 
 def find_cangjie_mcp_bin() -> str:
-    """Return the cangjie-mcp binary path."""
+    """Return the cangjie binary path."""
 
-    cangjie_mcp_exe = "cangjie-mcp" + sysconfig.get_config_var("EXE")
+    cangjie_mcp_exe = "cangjie" + sysconfig.get_config_var("EXE")
 
     targets = [
         # The scripts directory for the current Python
@@ -56,7 +56,7 @@ def find_cangjie_mcp_bin() -> str:
 
     locations = "\n".join(f" - {target}" for target in seen)
     raise CanjieMcpNotFound(
-        f"Could not find the cangjie-mcp binary in any of the following locations:\n{locations}\n"
+        f"Could not find the cangjie binary in any of the following locations:\n{locations}\n"
     )
 
 

@@ -26,7 +26,7 @@ Repository = "https://github.com/Zxilly/cangjie-mcp"
 
 [tool.maturin]
 bindings = "bin"
-manifest-path = "cangjie-mcp-cli/Cargo.toml"
+manifest-path = "cangjie-cli/Cargo.toml"
 module-name = "cangjie_mcp"
 python-source = "python"
 strip = true

@@ -615,57 +615,90 @@ dependencies = [
 ]
 
 [[package]]
-name = "cangjie-mcp"
+name = "cangjie-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cangjie-core",
+ "cangjie-indexer",
+ "cangjie-server",
+ "clap",
+ "dirs",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 1.0.3+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cangjie-core"
+version = "0.3.3"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cangjie-indexer"
 version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-trait",
- "axum",
- "clap",
- "dirs",
+ "cangjie-core",
  "fastembed",
  "gix",
  "jieba-rs",
- "jsonrpsee",
  "lru",
- "lsp-types",
  "once_cell",
  "ort",
  "ort-tract",
  "regex",
  "reqwest 0.13.2",
- "rmcp",
  "rusqlite",
  "serde",
  "serde_json",
- "shlex",
  "sqlite-vec",
  "strsim",
  "tantivy",
  "temp-env",
  "tempfile",
  "text-splitter",
- "thiserror 2.0.18",
  "tokio",
- "toml 1.0.3+spec-1.1.0",
- "tower-http",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
  "zerocopy",
 ]
 
 [[package]]
-name = "cangjie-mcp-cli"
+name = "cangjie-lsp"
 version = "0.3.3"
 dependencies = [
  "anyhow",
- "cangjie-mcp",
- "clap",
- "rmcp",
+ "async-trait",
+ "cangjie-core",
+ "dirs",
+ "jsonrpsee",
+ "lsp-types",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "shlex",
+ "temp-env",
+ "tempfile",
  "tokio",
+ "toml 1.0.3+spec-1.1.0",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -674,7 +707,9 @@ version = "0.3.3"
 dependencies = [
  "anyhow",
  "axum",
- "cangjie-mcp",
+ "cangjie-core",
+ "cangjie-indexer",
+ "cangjie-server",
  "clap",
  "serde_json",
  "tokio",
@@ -689,7 +724,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "cangjie-mcp",
+ "cangjie-core",
+ "cangjie-indexer",
+ "cangjie-lsp",
+ "cangjie-server",
  "http-body-util",
  "rmcp",
  "serde_json",
@@ -697,6 +735,27 @@ dependencies = [
  "tokio",
  "tower",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "cangjie-server"
+version = "0.3.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "cangjie-core",
+ "cangjie-indexer",
+ "cangjie-lsp",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "strsim",
+ "temp-env",
+ "tempfile",
+ "tokio",
+ "tower-http",
+ "tracing",
 ]
 
 [[package]]
@@ -5250,9 +5309,9 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "rmcp"
-version = "0.16.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc4c9c94680f75470ee8083a0667988b5d7b5beb70b9f998a8e51de7c682ce60"
+checksum = "ba6b9d2f0efe2258b23767f1f9e0054cfbcac9c2d6f81a031214143096d7864f"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -5266,15 +5325,16 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
 ]
 
 [[package]]
 name = "rmcp-macros"
-version = "0.16.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90c23c8f26cae4da838fbc3eadfaecf2d549d97c04b558e7bd90526a9c28b42a"
+checksum = "ab9d95d7ed26ad8306352b0d5f05b593222b272790564589790d210aa15caa9e"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",

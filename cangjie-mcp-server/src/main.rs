@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use tracing::info;
 
-use cangjie_mcp::config::{
+use cangjie_core::config::{
     self, DocLang, EmbeddingType, PrebuiltMode, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
     DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2, DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS,
     DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST, DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL,
@@ -12,10 +12,10 @@ use cangjie_mcp::config::{
     DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K, DEFAULT_SERVER_ENABLE_HTTP2, DEFAULT_SERVER_HOST,
     DEFAULT_SERVER_PORT,
 };
-use cangjie_mcp::indexer::document::source::GitDocumentSource;
-use cangjie_mcp::indexer::search::LocalSearchIndex;
-use cangjie_mcp::indexer::IndexMetadata;
-use cangjie_mcp::server::http::create_http_app;
+use cangjie_indexer::document::source::GitDocumentSource;
+use cangjie_indexer::search::LocalSearchIndex;
+use cangjie_indexer::IndexMetadata;
+use cangjie_server::http::create_http_app;
 
 #[derive(Parser)]
 #[command(
@@ -29,11 +29,16 @@ struct Cli {
     docs_version: String,
 
     /// Documentation language (zh/en)
-    #[arg(long, short = 'l', env = "CANGJIE_DOCS_LANG", value_enum, default_value_t = DocLang::Zh)]
+    #[arg(long, short = 'l', env = "CANGJIE_DOCS_LANG", default_value = "zh")]
     lang: DocLang,
 
     /// Embedding type: none (BM25 only), local, or openai
-    #[arg(long, short = 'e', env = "CANGJIE_EMBEDDING_TYPE", value_enum, default_value_t = EmbeddingType::None)]
+    #[arg(
+        long,
+        short = 'e',
+        env = "CANGJIE_EMBEDDING_TYPE",
+        default_value = "none"
+    )]
     embedding: EmbeddingType,
 
     /// Local HuggingFace embedding model name
@@ -53,7 +58,7 @@ struct Cli {
     openai_model: String,
 
     /// Rerank type (none/local/openai)
-    #[arg(long, short = 'r', env = "CANGJIE_RERANK_TYPE", value_enum, default_value_t = RerankType::None)]
+    #[arg(long, short = 'r', env = "CANGJIE_RERANK_TYPE", default_value = "none")]
     rerank: RerankType,
 
     /// Rerank model name
@@ -156,42 +161,12 @@ impl Cli {
     }
 }
 
-fn setup_logging(log_file: Option<&PathBuf>, debug: bool) {
-    use tracing_subscriber::EnvFilter;
-
-    let filter = if debug {
-        EnvFilter::new("debug")
-    } else {
-        EnvFilter::new("info")
-    };
-
-    if let Some(log_path) = log_file {
-        if let Some(parent) = log_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path)
-            .expect("Failed to open log file");
-
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_writer(std::sync::Mutex::new(file))
-            .with_ansi(false)
-            .init();
-    } else {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_writer(std::io::stderr)
-            .init();
-    }
-}
+use cangjie_core::logging::setup_logging;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    setup_logging(cli.log_file.as_ref(), cli.debug);
+    setup_logging(cli.log_file.as_deref(), cli.debug);
 
     let settings = cli.to_settings();
 

@@ -21,8 +21,11 @@ ROOT = Path(__file__).resolve().parent.parent
 # cangjie-mcp-test is intentionally excluded — it has its own version.
 VERSION_FILES = [
     "pyproject.toml",
-    "cangjie-mcp/Cargo.toml",
-    "cangjie-mcp-cli/Cargo.toml",
+    "cangjie-core/Cargo.toml",
+    "cangjie-indexer/Cargo.toml",
+    "cangjie-lsp/Cargo.toml",
+    "cangjie-server/Cargo.toml",
+    "cangjie-cli/Cargo.toml",
     "cangjie-mcp-server/Cargo.toml",
 ]
 
@@ -30,11 +33,11 @@ VERSION_RE = re.compile(r'^(version\s*=\s*")(\d+\.\d+\.\d+)(")', re.MULTILINE)
 
 
 def read_current_version() -> str:
-    """Read the current version from cangjie-mcp-cli/Cargo.toml (source of truth)."""
-    text = (ROOT / "cangjie-mcp-cli/Cargo.toml").read_text(encoding="utf-8")
+    """Read the current version from cangjie-core/Cargo.toml (source of truth)."""
+    text = (ROOT / "cangjie-core/Cargo.toml").read_text(encoding="utf-8")
     m = VERSION_RE.search(text)
     if not m:
-        sys.exit("ERROR: could not find version in cangjie-mcp-cli/Cargo.toml")
+        sys.exit("ERROR: could not find version in cangjie-core/Cargo.toml")
     return m.group(2)
 
 

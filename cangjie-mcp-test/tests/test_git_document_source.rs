@@ -2,9 +2,9 @@
 //!
 //! These tests require network access.
 
-use cangjie_mcp::config::DocLang;
-use cangjie_mcp::indexer::document::source::{DocumentSource, GitDocumentSource};
-use cangjie_mcp::repo::GitManager;
+use cangjie_core::config::DocLang;
+use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource};
+use cangjie_indexer::repo::GitManager;
 use tempfile::TempDir;
 
 async fn setup_repo() -> (TempDir, std::path::PathBuf) {

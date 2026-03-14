@@ -1,0 +1,37 @@
+[package]
+name = "cangjie-server"
+version = "0.3.3"
+edition = "2021"
+description = "MCP and HTTP server handlers for Cangjie MCP"
+license = "MIT"
+
+[features]
+default = ["lsp", "http"]
+lsp = ["dep:cangjie-lsp"]
+http = ["dep:axum", "dep:tower-http"]
+local = ["cangjie-indexer/local"]
+legacy = ["cangjie-indexer/legacy"]
+local-cuda = ["cangjie-indexer/local-cuda"]
+local-cudnn = ["cangjie-indexer/local-cudnn"]
+local-metal = ["cangjie-indexer/local-metal"]
+local-mkl = ["cangjie-indexer/local-mkl"]
+local-accelerate = ["cangjie-indexer/local-accelerate"]
+
+[dependencies]
+cangjie-core = { path = "../cangjie-core" }
+cangjie-indexer = { path = "../cangjie-indexer" }
+cangjie-lsp = { path = "../cangjie-lsp", optional = true }
+rmcp = { version = "1.2", features = ["server", "transport-io", "macros", "schemars"] }
+axum = { version = "0.8", features = ["http2"], optional = true }
+tower-http = { version = "0.6", features = ["cors"], optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+anyhow = "1"
+strsim = "0.11"
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+temp-env = "0.3"

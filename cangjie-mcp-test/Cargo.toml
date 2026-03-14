@@ -5,7 +5,10 @@ edition = "2021"
 publish = false
 
 [dependencies]
-cangjie-mcp = { path = "../cangjie-mcp" }
+cangjie-core = { path = "../cangjie-core" }
+cangjie-indexer = { path = "../cangjie-indexer" }
+cangjie-server = { path = "../cangjie-server" }
+cangjie-lsp = { path = "../cangjie-lsp" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 serde_json = "1"
@@ -14,5 +17,5 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 anyhow = "1"
 async-trait = "0.1"
-rmcp = { version = "0.16", features = ["server", "macros", "schemars"] }
+rmcp = { version = "1.2", features = ["server", "macros", "schemars"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

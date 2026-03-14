@@ -1,14 +1,13 @@
-use cangjie_mcp::config::{MAX_TOP_K, MIN_TOP_K};
-use cangjie_mcp::indexer::search::bm25::BM25Store;
-use cangjie_mcp::indexer::search::LocalSearchIndex;
-use cangjie_mcp::indexer::{DocMetadata, TextChunk};
-use cangjie_mcp::server::lsp_tools::{LspOperation, LspRequest, LspTarget};
-use cangjie_mcp::server::tools::{
-    CangjieServer, GetTopicParams, ListTopicsParams, SearchDocsParams, TopicResult,
-    TopicsListResult,
-};
-use cangjie_mcp::Parameters;
+use cangjie_core::config::{MAX_TOP_K, MIN_TOP_K};
+use cangjie_indexer::search::bm25::BM25Store;
+use cangjie_indexer::search::LocalSearchIndex;
+use cangjie_indexer::{DocMetadata, TextChunk};
 use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings, MockDocumentSource};
+use cangjie_server::lsp_tools::{LspOperation, LspRequest, LspTarget};
+use cangjie_server::mcp_handler::{
+    GetTopicParams, ListTopicsParams, SearchDocsParams, TopicResult, TopicsListResult,
+};
+use cangjie_server::{CangjieServer, Parameters};
 use tempfile::TempDir;
 
 async fn build_test_server() -> (TempDir, CangjieServer) {

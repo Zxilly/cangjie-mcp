@@ -1,5 +1,5 @@
-use cangjie_mcp::indexer::search::bm25::BM25Store;
-use cangjie_mcp::indexer::search::LocalSearchIndex;
+use cangjie_indexer::search::bm25::BM25Store;
+use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_mcp_test::{sample_chunks, test_settings};
 use tempfile::TempDir;
 
@@ -105,9 +105,9 @@ fn test_search_with_settings_integration() {
     let settings = test_settings(tmp.path().to_path_buf());
     assert_eq!(
         settings.embedding_type,
-        cangjie_mcp::config::EmbeddingType::None
+        cangjie_core::config::EmbeddingType::None
     );
-    assert_eq!(settings.rerank_type, cangjie_mcp::config::RerankType::None);
+    assert_eq!(settings.rerank_type, cangjie_core::config::RerankType::None);
 }
 
 /// BM25 query parser should handle special regex characters gracefully

@@ -1,8 +1,8 @@
-use cangjie_mcp::indexer::document::chunker::{chunk_document, chunk_documents};
-use cangjie_mcp::indexer::document::loader::{
+use cangjie_indexer::document::chunker::{chunk_document, chunk_documents};
+use cangjie_indexer::document::loader::{
     extract_code_blocks, extract_title_from_content, load_document_from_content,
 };
-use cangjie_mcp::indexer::document::source::DocumentSource;
+use cangjie_indexer::document::source::DocumentSource;
 use cangjie_mcp_test::{sample_documents, MockDocumentSource};
 
 #[test]

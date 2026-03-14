@@ -1,0 +1,376 @@
+pub mod commands;
+pub mod output;
+
+use std::path::PathBuf;
+
+use clap::{Args, Parser, Subcommand};
+
+use cangjie_core::config::{
+    self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
+    DEFAULT_CHUNK_OVERLAP, DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2,
+    DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS, DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST,
+    DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL, DEFAULT_MAX_PER_FILE,
+    DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL,
+    DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
+};
+
+pub const DEFAULT_DAEMON_TIMEOUT_MINUTES: u64 = 30;
+
+#[derive(Parser)]
+#[command(
+    name = "cangjie",
+    about = "Cangjie programming language documentation and code intelligence CLI",
+    version
+)]
+pub struct CangjieArgs {
+    /// Log file path
+    #[arg(long = "log-file", env = "CANGJIE_LOG_FILE", global = true)]
+    pub log_file: Option<PathBuf>,
+
+    /// Enable debug mode
+    #[arg(long, env = "CANGJIE_DEBUG", global = true)]
+    pub debug: bool,
+
+    /// Daemon idle timeout in minutes
+    #[arg(long = "daemon-timeout", env = "CANGJIE_DAEMON_TIMEOUT", default_value_t = DEFAULT_DAEMON_TIMEOUT_MINUTES, hide = true, global = true)]
+    pub daemon_timeout: u64,
+
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+// ── Server/index options (only for mcp and index commands) ───────────────
+
+#[derive(Args)]
+pub struct ServerOptions {
+    /// Documentation version (git tag)
+    #[arg(long = "docs-version", short = 'v', env = "CANGJIE_DOCS_VERSION", default_value = DEFAULT_DOCS_VERSION)]
+    pub docs_version: String,
+
+    /// Documentation language (zh/en)
+    #[arg(long, short = 'l', env = "CANGJIE_DOCS_LANG", default_value = "zh")]
+    pub lang: DocLang,
+
+    /// Embedding type: none (BM25 only), local, or openai
+    #[arg(
+        long,
+        short = 'e',
+        env = "CANGJIE_EMBEDDING_TYPE",
+        default_value = "none"
+    )]
+    pub embedding: EmbeddingType,
+
+    /// Local HuggingFace embedding model name
+    #[arg(long = "local-model", env = "CANGJIE_LOCAL_MODEL", default_value = DEFAULT_LOCAL_MODEL)]
+    pub local_model: String,
+
+    /// OpenAI API key
+    #[arg(long = "openai-api-key", env = "OPENAI_API_KEY")]
+    pub openai_api_key: Option<String>,
+
+    /// OpenAI API base URL
+    #[arg(long = "openai-base-url", env = "OPENAI_BASE_URL", default_value = DEFAULT_OPENAI_BASE_URL)]
+    pub openai_base_url: String,
+
+    /// OpenAI embedding model
+    #[arg(long = "openai-model", env = "OPENAI_EMBEDDING_MODEL", default_value = DEFAULT_OPENAI_MODEL)]
+    pub openai_model: String,
+
+    /// Rerank type (none/local/openai)
+    #[arg(long, short = 'r', env = "CANGJIE_RERANK_TYPE", default_value = "none")]
+    pub rerank: RerankType,
+
+    /// Rerank model name
+    #[arg(long = "rerank-model", env = "CANGJIE_RERANK_MODEL", default_value = DEFAULT_RERANK_MODEL)]
+    pub rerank_model: String,
+
+    /// Number of results after reranking
+    #[arg(long = "rerank-top-k", env = "CANGJIE_RERANK_TOP_K", default_value_t = DEFAULT_RERANK_TOP_K)]
+    pub rerank_top_k: usize,
+
+    /// Number of candidates before reranking
+    #[arg(long = "rerank-initial-k", env = "CANGJIE_RERANK_INITIAL_K", default_value_t = DEFAULT_RERANK_INITIAL_K)]
+    pub rerank_initial_k: usize,
+
+    /// Max chunk size in characters
+    #[arg(long = "chunk-size", env = "CANGJIE_CHUNK_MAX_SIZE", default_value_t = DEFAULT_CHUNK_MAX_SIZE)]
+    pub chunk_max_size: usize,
+
+    /// Chunk overlap in characters
+    #[arg(long = "chunk-overlap", env = "CANGJIE_CHUNK_OVERLAP", default_value_t = DEFAULT_CHUNK_OVERLAP)]
+    pub chunk_overlap: usize,
+
+    /// Maximum search results per file
+    #[arg(long = "max-per-file", env = "CANGJIE_MAX_PER_FILE", default_value_t = DEFAULT_MAX_PER_FILE)]
+    pub max_per_file: usize,
+
+    /// LLM model for generating chunk context summaries
+    #[arg(long = "summary-model", env = "CANGJIE_SUMMARY_MODEL")]
+    pub summary_model: Option<String>,
+
+    /// RRF constant k for hybrid search fusion
+    #[arg(long = "rrf-k", env = "CANGJIE_RRF_K", default_value_t = DEFAULT_RRF_K)]
+    pub rrf_k: u32,
+
+    /// Data directory path
+    #[arg(long = "data-dir", short = 'd', env = "CANGJIE_DATA_DIR")]
+    pub data_dir: Option<PathBuf>,
+
+    /// URL of a remote cangjie-mcp server to forward queries to
+    #[arg(long = "server-url", env = "CANGJIE_SERVER_URL")]
+    pub server_url: Option<String>,
+
+    /// HTTP client pool idle timeout in seconds
+    #[arg(long = "http-pool-idle-timeout-secs", env = "CANGJIE_HTTP_POOL_IDLE_TIMEOUT_SECS", default_value_t = DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS)]
+    pub http_pool_idle_timeout_secs: u64,
+
+    /// Max idle HTTP connections per host
+    #[arg(long = "http-pool-max-idle-per-host", env = "CANGJIE_HTTP_POOL_MAX_IDLE_PER_HOST", default_value_t = DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST)]
+    pub http_pool_max_idle_per_host: usize,
+
+    /// TCP keepalive for outbound HTTP in seconds
+    #[arg(long = "http-tcp-keepalive-secs", env = "CANGJIE_HTTP_TCP_KEEPALIVE_SECS", default_value_t = DEFAULT_HTTP_TCP_KEEPALIVE_SECS)]
+    pub http_tcp_keepalive_secs: u64,
+
+    /// Enable HTTP/2 for outbound HTTP client
+    #[arg(long = "http2", env = "CANGJIE_HTTP2", default_value_t = DEFAULT_HTTP_ENABLE_HTTP2)]
+    pub http_enable_http2: bool,
+}
+
+impl ServerOptions {
+    pub fn to_settings(&self) -> Settings {
+        Settings {
+            docs_version: self.docs_version.clone(),
+            docs_lang: self.lang,
+            embedding_type: self.embedding,
+            local_model: self.local_model.clone(),
+            rerank_type: self.rerank,
+            rerank_model: self.rerank_model.clone(),
+            rerank_top_k: self.rerank_top_k,
+            rerank_initial_k: self.rerank_initial_k,
+            rrf_k: self.rrf_k,
+            chunk_max_size: self.chunk_max_size,
+            chunk_overlap: self.chunk_overlap,
+            max_per_file: self.max_per_file,
+            summary_model: self.summary_model.clone(),
+            data_dir: self
+                .data_dir
+                .clone()
+                .unwrap_or_else(config::get_default_data_dir),
+            server_url: self.server_url.clone(),
+            openai_api_key: self.openai_api_key.clone(),
+            openai_base_url: self.openai_base_url.clone(),
+            openai_model: self.openai_model.clone(),
+            http_pool_idle_timeout_secs: self.http_pool_idle_timeout_secs,
+            http_pool_max_idle_per_host: self.http_pool_max_idle_per_host,
+            http_tcp_keepalive_secs: self.http_tcp_keepalive_secs,
+            http_enable_http2: self.http_enable_http2,
+            ..Settings::default()
+        }
+    }
+}
+
+// ── Commands ─────────────────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Search Cangjie documentation
+    Query {
+        /// Search query
+        query: String,
+        /// Filter by category
+        #[arg(long, short = 'c')]
+        category: Option<String>,
+        /// Number of results (default: 5, max: 20)
+        #[arg(long, short = 'k', default_value_t = 5)]
+        top_k: usize,
+        /// Offset for pagination
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        /// Extract code examples
+        #[arg(long)]
+        extract_code: bool,
+        /// Filter by stdlib package name
+        #[arg(long)]
+        package: Option<String>,
+    },
+    /// Get complete documentation for a topic
+    Topic {
+        /// Topic name
+        name: String,
+        /// Optional category filter
+        #[arg(long, short = 'c')]
+        category: Option<String>,
+    },
+    /// List available documentation topics
+    Topics {
+        /// Optional category filter
+        #[arg(long, short = 'c')]
+        category: Option<String>,
+    },
+    /// LSP code intelligence operations
+    Lsp {
+        #[command(subcommand)]
+        operation: LspCommand,
+    },
+    /// MCP server management
+    Mcp {
+        #[command(subcommand)]
+        action: Option<McpAction>,
+
+        #[command(flatten)]
+        server: ServerOptions,
+    },
+    /// Build the search index
+    Index {
+        #[command(flatten)]
+        server: ServerOptions,
+    },
+    /// Daemon management
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
+    /// Configuration file management
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum LspCommand {
+    /// Go to definition
+    Definition {
+        /// Source file path
+        file: String,
+        /// Symbol name to look up
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Line number (1-based)
+        #[arg(long)]
+        line: Option<u32>,
+        /// Character position (1-based)
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+    /// Find references
+    References {
+        file: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        line: Option<u32>,
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+    /// Hover information
+    Hover {
+        file: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        line: Option<u32>,
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+    /// List document symbols
+    Symbols { file: String },
+    /// Get file diagnostics
+    Diagnostics { file: String },
+    /// Search workspace symbols
+    WorkspaceSymbol {
+        /// Search query
+        query: String,
+    },
+    /// Get completions at position
+    Completion {
+        file: String,
+        /// Line number (1-based)
+        #[arg(long)]
+        line: u32,
+        /// Character position (1-based)
+        #[arg(long, alias = "char")]
+        character: u32,
+    },
+    /// Rename symbol
+    Rename {
+        file: String,
+        #[arg(long)]
+        symbol: String,
+        /// New name for the symbol
+        #[arg(long)]
+        new_name: String,
+    },
+    /// Find incoming calls
+    IncomingCalls {
+        file: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        line: Option<u32>,
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+    /// Find outgoing calls
+    OutgoingCalls {
+        file: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        line: Option<u32>,
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+    /// Find type supertypes
+    TypeSupertypes {
+        file: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        line: Option<u32>,
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+    /// Find type subtypes
+    TypeSubtypes {
+        file: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        line: Option<u32>,
+        #[arg(long, alias = "char")]
+        character: Option<u32>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum McpAction {
+    /// Start as daemon process (used internally by tool commands)
+    Serve,
+}
+
+#[derive(Subcommand)]
+pub enum ConfigAction {
+    /// Show config file path
+    Path,
+    /// Create a default config file with all options commented out
+    Init,
+}
+
+#[derive(Subcommand)]
+pub enum DaemonAction {
+    /// Stop the daemon
+    Stop,
+    /// Show daemon status
+    Status,
+    /// Show daemon logs
+    Logs {
+        /// Number of lines to show from the end
+        #[arg(long, short = 'n', default_value_t = 50)]
+        tail: usize,
+        /// Follow log output
+        #[arg(long, short = 'f')]
+        follow: bool,
+    },
+}

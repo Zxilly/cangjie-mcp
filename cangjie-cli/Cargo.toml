@@ -1,0 +1,35 @@
+[package]
+name = "cangjie-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Cangjie programming language documentation and code intelligence CLI"
+license = "MIT"
+
+[[bin]]
+name = "cangjie"
+path = "src/main.rs"
+
+[features]
+default = []
+local = ["cangjie-server/local"]
+legacy = ["cangjie-server/legacy"]
+local-cuda = ["cangjie-server/local-cuda"]
+local-cudnn = ["cangjie-server/local-cudnn"]
+local-metal = ["cangjie-server/local-metal"]
+local-mkl = ["cangjie-server/local-mkl"]
+local-accelerate = ["cangjie-server/local-accelerate"]
+
+[dependencies]
+cangjie-core = { path = "../cangjie-core" }
+cangjie-server = { path = "../cangjie-server", default-features = false, features = ["lsp"] }
+cangjie-indexer = { path = "../cangjie-indexer" }
+rmcp = { version = "1.2", features = ["server", "client", "transport-io", "transport-async-rw"] }
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "process", "io-util", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+dirs = "6"
+toml = "1"

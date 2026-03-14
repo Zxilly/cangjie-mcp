@@ -33,8 +33,8 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --release -p cangjie-mcp-cli -p cangjie-mcp-server \
- && cp target/release/cangjie-mcp /usr/local/bin/ \
+    cargo build --release -p cangjie-cli -p cangjie-mcp-server \
+ && cp target/release/cangjie /usr/local/bin/ \
  && cp target/release/cangjie-mcp-server /usr/local/bin/
 
 # ---- Stage 4: build search index (OpenAI embeddings required) ----
@@ -44,7 +44,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/bin/cangjie-mcp /usr/local/bin/cangjie-mcp
+COPY --from=builder /usr/local/bin/cangjie /usr/local/bin/cangjie
 
 ARG CANGJIE_DOCS_VERSION=dev
 ARG CANGJIE_DOCS_LANG=zh
@@ -60,12 +60,11 @@ RUN --mount=type=secret,id=OPENAI_API_KEY \
  && OPENAI_API_KEY=$(cat /run/secrets/OPENAI_API_KEY) \
     OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL}" \
     OPENAI_BASE_URL="${OPENAI_BASE_URL}" \
-    cangjie-mcp \
+    cangjie index \
       --docs-version "${CANGJIE_DOCS_VERSION}" \
       --lang "${CANGJIE_DOCS_LANG}" \
       --embedding openai \
-      --data-dir /data \
-      index
+      --data-dir /data
 
 # ---- Stage 5: minimal runtime with server binary + pre-built index ----
 FROM debian:bookworm-slim

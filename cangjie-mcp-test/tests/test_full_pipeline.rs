@@ -7,14 +7,14 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use cangjie_mcp::config::{DocLang, EmbeddingType, RerankType, Settings};
-use cangjie_mcp::indexer::document::chunker::chunk_documents;
-use cangjie_mcp::indexer::document::source::{DocumentSource, GitDocumentSource};
-use cangjie_mcp::indexer::search::bm25::BM25Store;
-use cangjie_mcp::indexer::search::LocalSearchIndex;
-use cangjie_mcp::indexer::{IndexMetadata, SearchMode};
-use cangjie_mcp::repo::GitManager;
-use cangjie_mcp::server::http::create_http_app;
+use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
+use cangjie_indexer::document::chunker::chunk_documents;
+use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource};
+use cangjie_indexer::repo::GitManager;
+use cangjie_indexer::search::bm25::BM25Store;
+use cangjie_indexer::search::LocalSearchIndex;
+use cangjie_indexer::{IndexMetadata, SearchMode};
+use cangjie_server::http::create_http_app;
 use http_body_util::BodyExt;
 use tempfile::TempDir;
 use tower::ServiceExt;

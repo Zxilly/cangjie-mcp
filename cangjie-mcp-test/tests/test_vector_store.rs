@@ -4,9 +4,9 @@ use std::hash::{Hash, Hasher};
 use anyhow::Result;
 use async_trait::async_trait;
 
-use cangjie_mcp::indexer::embedding::{EmbedKind, Embedder};
-use cangjie_mcp::indexer::search::vector::VectorStore;
-use cangjie_mcp::indexer::{DocMetadata, TextChunk};
+use cangjie_indexer::embedding::{EmbedKind, Embedder};
+use cangjie_indexer::search::vector::VectorStore;
+use cangjie_indexer::{DocMetadata, TextChunk};
 
 // -- MockEmbedder -------------------------------------------------------------
 

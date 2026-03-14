@@ -11,16 +11,18 @@ path = "src/main.rs"
 
 [features]
 default = []
-local = ["cangjie-mcp/local"]
-legacy = ["cangjie-mcp/legacy"]
-local-cuda = ["cangjie-mcp/local-cuda"]
-local-cudnn = ["cangjie-mcp/local-cudnn"]
-local-metal = ["cangjie-mcp/local-metal"]
-local-mkl = ["cangjie-mcp/local-mkl"]
-local-accelerate = ["cangjie-mcp/local-accelerate"]
+local = ["cangjie-server/local"]
+legacy = ["cangjie-server/legacy"]
+local-cuda = ["cangjie-server/local-cuda"]
+local-cudnn = ["cangjie-server/local-cudnn"]
+local-metal = ["cangjie-server/local-metal"]
+local-mkl = ["cangjie-server/local-mkl"]
+local-accelerate = ["cangjie-server/local-accelerate"]
 
 [dependencies]
-cangjie-mcp = { path = "../cangjie-mcp" }
+cangjie-core = { path = "../cangjie-core" }
+cangjie-server = { path = "../cangjie-server", features = ["http"] }
+cangjie-indexer = { path = "../cangjie-indexer" }
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 axum = { version = "0.8", features = ["http2"] }

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use cangjie_mcp::config::{DocLang, EmbeddingType, RerankType, Settings};
-use cangjie_mcp::indexer::document::source::DocumentSource;
-use cangjie_mcp::indexer::{DocData, DocMetadata, TextChunk};
+use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
+use cangjie_indexer::document::source::DocumentSource;
+use cangjie_indexer::{DocData, DocMetadata, TextChunk};
 
 /// Create a BM25-only `Settings` suitable for testing.
 pub fn test_settings(data_dir: PathBuf) -> Settings {

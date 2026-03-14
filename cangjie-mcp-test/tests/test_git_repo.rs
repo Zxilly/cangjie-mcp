@@ -2,7 +2,7 @@
 //!
 //! These tests require network access.
 
-use cangjie_mcp::repo::GitManager;
+use cangjie_indexer::repo::GitManager;
 use tempfile::TempDir;
 
 async fn clone_repo() -> (TempDir, GitManager) {

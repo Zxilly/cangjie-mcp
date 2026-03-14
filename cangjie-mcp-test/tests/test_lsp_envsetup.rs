@@ -9,8 +9,8 @@
 //!
 //! Tests are automatically skipped when the SDK is not available.
 
-use cangjie_mcp::lsp;
-use cangjie_mcp::lsp::config::LSPSettings;
+use cangjie_lsp as lsp;
+use cangjie_lsp::config::LSPSettings;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -285,7 +285,7 @@ async fn test_lsp_diagnostics_on_valid_file() {
 #[tokio::test]
 async fn test_lsp_document_symbol() {
     let _ = tracing_subscriber::fmt()
-        .with_env_filter("cangjie_mcp::lsp=info")
+        .with_env_filter("cangjie_lsp=info")
         .with_test_writer()
         .try_init();
 

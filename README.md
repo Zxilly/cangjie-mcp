@@ -36,7 +36,7 @@ pip install --no-binary cangjie-mcp cangjie-mcp \
 ```
 
 
-可用 feature（传给 `cangjie-mcp-cli`）：
+可用 feature（传给 `cangjie-cli`）：
 
 - `local`：本地向量化（CPU；默认构建的二进制已启用）
 - `legacy`：本地向量化改用 `ort-tract` 后端（适配旧 glibc 构建）
@@ -54,7 +54,7 @@ cangjie-mcp 支持两种运行模式：
 MCP 服务器在本地加载检索索引（BM25 + 向量索引），直接处理查询。
 
 ```bash
-cangjie-mcp
+cangjie mcp           # 或 uvx cangjie-mcp
 ```
 
 ### 远程文档服务模式（可选）
@@ -63,10 +63,10 @@ cangjie-mcp
 
 ```bash
 # 终端 1：启动 HTTP 查询服务器
-cangjie-mcp server --embedding local --port 8765
+cangjie-mcp-server --embedding local --port 8765
 
 # 终端 2：启动 MCP 服务器，连接远程索引
-cangjie-mcp --server-url http://localhost:8765
+cangjie mcp --server-url http://localhost:8765
 ```
 
 ## 快速配置
@@ -175,6 +175,14 @@ claude mcp add \
 
 </details>
 
+## AI 编程助手 Skill
+
+项目根目录包含 [`SKILL.md`](SKILL.md)，遵循 [vercel-labs/skills](https://github.com/vercel-labs/ai-sdk-preview-tool-call) 规范。支持该规范的 AI 编程助手（如 Claude Code、Cursor 等）会自动识别并加载该文件，获取仓颉语言的语法速查、关键差异和常见陷阱等知识，无需额外配置。
+
+如果你的 AI 助手支持 skill 规范，只需将本项目作为 MCP 服务器接入，助手即可同时获得：
+- **SKILL.md** 中的仓颉语言知识（语法、类型系统、并发模型等）
+- **MCP 工具** 提供的文档搜索和代码智能能力
+
 ## 可用工具
 
 ### 文档搜索
@@ -195,51 +203,46 @@ claude mcp add \
 
 ## 命令行参考
 
-### cangjie-mcp
+### cangjie
 
-启动 MCP 服务器，同时提供文档搜索和 LSP 代码智能功能。LSP 功能在设置了 `CANGJIE_HOME` 环境变量时自动启用。
+安装 Python 包后，`cangjie` 命令可直接使用。
 
 ```bash
-cangjie-mcp [OPTIONS]
+cangjie mcp                    # 启动 MCP stdio 服务器
+cangjie query "泛型"           # CLI 搜索（自动启动后台 daemon）
+cangjie topic functions        # 获取完整文档
+cangjie topics -c stdlib       # 列出 stdlib 分类下的主题
+cangjie lsp hover main.cj --symbol main  # LSP 操作
+cangjie index                  # 构建搜索索引
+cangjie config init            # 生成默认配置文件
 ```
 
-### 选项
+`cangjie mcp` 和 `cangjie index` 接受完整的索引/嵌入/网络选项（通过 `cangjie mcp --help` 查看）。其他子命令的设置统一从配置文件加载，运行 `cangjie config path` 查看路径。
 
-| CLI 参数 | 环境变量 | 默认值 | 说明 |
-|---------|---------|-------|------|
-| `-v, --version` | - | - | 显示版本并退出 |
-| `--log-file PATH` | `CANGJIE_LOG_FILE` | - | 日志文件路径 |
-| `--debug / --no-debug` | `CANGJIE_DEBUG` | `--no-debug` | 启用调试模式，将 stdio 流量写入日志文件 |
-| `-V, --docs-version TEXT` | `CANGJIE_DOCS_VERSION` | `latest` | 文档版本 (git tag) |
-| `-l, --lang TEXT` | `CANGJIE_DOCS_LANG` | `zh` | 文档语言 (`zh` / `en`) |
-| `-e, --embedding TEXT` | `CANGJIE_EMBEDDING_TYPE` | `none` | 向量化类型 (`none` / `local` / `openai`) |
-| `--local-model TEXT` | `CANGJIE_LOCAL_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | 本地 HuggingFace 向量化模型 |
-| `--openai-api-key TEXT` | `OPENAI_API_KEY` | - | OpenAI API 密钥 |
-| `--openai-base-url TEXT` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API 基础 URL |
-| `--openai-model TEXT` | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI 向量化模型 |
-| `-r, --rerank TEXT` | `CANGJIE_RERANK_TYPE` | `none` | 重排序类型 (`none` / `local` / `openai`) |
-| `--rerank-model TEXT` | `CANGJIE_RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | 重排序模型 |
-| `--rerank-top-k INT` | `CANGJIE_RERANK_TOP_K` | `5` | 重排序后返回结果数 |
-| `--rerank-initial-k INT` | `CANGJIE_RERANK_INITIAL_K` | `20` | 重排序前候选数 |
-| `--chunk-size INT` | `CANGJIE_CHUNK_MAX_SIZE` | `6000` | 最大分块大小（字符数） |
-| `-d, --data-dir PATH` | `CANGJIE_DATA_DIR` | `~/.cangjie-mcp` | 数据目录路径 |
-| `--server-url TEXT` | `CANGJIE_SERVER_URL` | - | 远程查询服务器 URL |
+### 全局选项
 
-LSP 功能通过以下环境变量控制：
+| CLI 参数 | 环境变量 | 说明 |
+|---------|---------|------|
+| `--log-file PATH` | `CANGJIE_LOG_FILE` | 日志文件路径 |
+| `--debug` | `CANGJIE_DEBUG` | 启用调试模式 |
+| `-h, --help` | - | 显示帮助 |
+| `-V, --version` | - | 显示版本 |
+
+### 环境变量
 
 | 环境变量 | 说明 |
 |---------|------|
 | `CANGJIE_HOME` | 仓颉 SDK 路径，设置后自动启用 LSP 工具 |
 
-### cangjie-mcp server
+### cangjie-mcp-server
 
-启动 HTTP 查询服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务。
+启动 HTTP 查询服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务。该服务器为独立二进制，需单独构建。
 
 ```bash
-cangjie-mcp server [OPTIONS]
+cangjie-mcp-server [OPTIONS]
 ```
 
-支持所有与 `cangjie-mcp` 相同的索引选项，以及：
+支持所有与 `cangjie` 相同的索引选项，以及：
 
 | CLI 参数 | 环境变量 | 默认值 | 说明 |
 |---------|---------|-------|------|
@@ -256,19 +259,30 @@ cangjie-mcp server [OPTIONS]
 | `GET` | `/topics` | 列出所有分类和主题 |
 | `GET` | `/topics/{category}/{topic}` | 获取文档内容 |
 
+### Daemon 管理
+
+CLI 工具命令（`query`、`topic`、`lsp` 等）会自动在后台启动 daemon 进程，复用已初始化的服务实例以加速响应。daemon 空闲超时后自动退出。
+
+```bash
+cangjie daemon status           # 查看 daemon 状态
+cangjie daemon stop             # 停止 daemon
+cangjie daemon logs --tail 50   # 查看日志
+cangjie daemon logs --follow    # 实时跟踪日志
+```
+
 ### 调试与日志
 
 `--log-file` 和 `--debug` 配合使用，可以帮助排查 MCP 通信问题：
 
 ```bash
 # 记录应用日志到文件
-cangjie-mcp --log-file /tmp/cangjie.log
+cangjie mcp --log-file /tmp/cangjie.log
 
 # 调试模式：额外记录 MCP stdio 协议流量
-cangjie-mcp --log-file /tmp/cangjie.log --debug
+cangjie mcp --log-file /tmp/cangjie.log --debug
 
 # 通过环境变量配置
-CANGJIE_LOG_FILE=/tmp/cangjie.log CANGJIE_DEBUG=1 cangjie-mcp
+CANGJIE_LOG_FILE=/tmp/cangjie.log CANGJIE_DEBUG=1 cangjie mcp
 ```
 
 ## 许可证

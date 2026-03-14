@@ -1,6 +1,6 @@
-use cangjie_mcp::indexer::search::bm25::BM25Store;
-use cangjie_mcp::indexer::search::fusion::reciprocal_rank_fusion;
-use cangjie_mcp::indexer::{SearchResult, SearchResultMetadata};
+use cangjie_indexer::search::bm25::BM25Store;
+use cangjie_indexer::search::fusion::reciprocal_rank_fusion;
+use cangjie_indexer::{SearchResult, SearchResultMetadata};
 use cangjie_mcp_test::sample_chunks;
 use tempfile::TempDir;
 
