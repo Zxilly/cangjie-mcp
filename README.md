@@ -14,31 +14,29 @@
 - **代码智能**: 基于 LSP 的代码补全、跳转定义、查找引用等功能
 - **可选远程文档服务**: 支持连接远程文档/索引服务，减少本地资源占用，适合开箱即用或团队共享
 
+## 快速开始
+
+推荐使用 `uvx` 或 `npx` 直接运行，无需全局安装：
+
+```bash
+# 使用 uvx (Python 侧推荐)
+uvx cangjie-mcp
+
+# 使用 npx (Node.js 侧推荐)
+npx cangjie-mcp
+```
+
 ## 安装
+
+你可以根据偏好的包管理器，选择通过 PyPI (Python) 或 npm (Node.js) 进行安装。
+
+### 通过 PyPI 安装 (Python)
 
 ```bash
 pip install cangjie-mcp
 ```
 
-或使用 uvx 直接运行（推荐）：
-
-```bash
-uvx cangjie-mcp  # 启动 MCP 服务器
-```
-
-也可以通过 npm 安装 CLI：
-
-```bash
-npm install -g cangjie-mcp
-```
-
-npm 默认优先使用预编译二进制；当当前平台没有匹配包，或 Linux 的 glibc 低于 `2.28` 时，会自动回退到本地源码构建。你也可以显式强制源码构建：
-
-```bash
-CANGJIE_MCP_FORCE_BUILD=1 npm install -g cangjie-mcp
-```
-
-### 安装并指定 Rust feature
+#### 安装并指定 Rust feature
 
 当平台没有预编译 wheel，或你希望按需启用 GPU/NPU 等加速后端时，可强制从 sdist 构建并传入 maturin 构建参数：
 
@@ -55,6 +53,18 @@ pip install --no-binary cangjie-mcp cangjie-mcp \
 - `local-cuda` / `local-cudnn`：启用 CUDA/CUDNN 后端
 - `local-metal`：启用 Apple Metal 后端
 - `local-mkl` / `local-accelerate`：启用 MKL / Accelerate 后端
+
+### 通过 npm 安装 (Node.js)
+
+```bash
+npm install -g cangjie-mcp
+```
+
+npm 默认优先使用预编译二进制；当当前平台没有匹配包，或 Linux 的 glibc 低于 `2.28` 时，会自动回退到本地源码构建。你也可以显式强制源码构建：
+
+```bash
+CANGJIE_MCP_FORCE_BUILD=1 npm install -g cangjie-mcp
+```
 
 
 ## 架构
@@ -189,11 +199,15 @@ claude mcp add \
 
 ## AI 编程助手 Skill
 
-项目根目录包含 [`SKILL.md`](SKILL.md)，遵循 [vercel-labs/skills](https://github.com/vercel-labs/ai-sdk-preview-tool-call) 规范。支持该规范的 AI 编程助手（如 Claude Code、Cursor 等）会自动识别并加载该文件，获取仓颉语言的语法速查、关键差异和常见陷阱等知识，无需额外配置。
+本项目提供了仓颉语言的 AI 编程助手技能，包含仓颉语言的语法速查、关键差异和常见陷阱等知识。
 
-如果你的 AI 助手支持 skill 规范，只需将本项目作为 MCP 服务器接入，助手即可同时获得：
-- **SKILL.md** 中的仓颉语言知识（语法、类型系统、并发模型等）
-- **MCP 工具** 提供的文档搜索和代码智能能力
+你可以使用以下命令直接在你的项目（例如 Cursor 项目）中安装该 Skill：
+
+```bash
+npx skills add Zxilly/cangjie-mcp
+```
+
+项目根目录包含 [`SKILL.md`](SKILL.md)，遵循 skills 规范。
 
 ## 可用工具
 
