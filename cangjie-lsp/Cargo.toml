@@ -1,6 +1,6 @@
 [package]
 name = "cangjie-lsp"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 description = "LSP client for Cangjie programming language"
 license = "MIT"
