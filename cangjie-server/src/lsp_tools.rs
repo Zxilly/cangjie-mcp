@@ -413,53 +413,87 @@ async fn execute_lsp_request_impl(params: LspRequest) -> String {
             None
         };
 
+    macro_rules! lsp_op {
+        // positioned — client.method(file, line, char), processor(&result)
+        (positioned, $client_method:ident, $processor:ident) => {{
+            let position = resolved_position.expect("validated target");
+            match client
+                .$client_method(
+                    file_path.expect("validated file"),
+                    position.zero_based_line,
+                    position.zero_based_character,
+                )
+                .await
+            {
+                Ok(result) => {
+                    let data = lsp_tools::$processor(&result);
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        resolved_target,
+                        &data,
+                        None,
+                    )
+                }
+                Err(error) => error_response(params.operation, format!("Error: {error}")),
+            }
+        }};
+
+        // file_only — client.method(file), processor(&result, file)
+        (file_only, $client_method:ident, $processor:ident) => {{
+            let file = file_path.expect("validated file");
+            match client.$client_method(file).await {
+                Ok(result) => {
+                    let data = lsp_tools::$processor(&result, file);
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        None,
+                        &data,
+                        None,
+                    )
+                }
+                Err(error) => error_response(params.operation, format!("Error: {error}")),
+            }
+        }};
+
+        // query_only — client.method(query), processor(&result)
+        (query_only, $client_method:ident, $processor:ident) => {{
+            match client
+                .$client_method(params.query.as_deref().unwrap_or_default())
+                .await
+            {
+                Ok(result) => {
+                    let data = lsp_tools::$processor(&result);
+                    response_with_data(
+                        params.operation,
+                        status_from_count(data.count),
+                        None,
+                        &data,
+                        None,
+                    )
+                }
+                Err(error) => error_response(params.operation, format!("Error: {error}")),
+            }
+        }};
+    }
+
     match params.operation {
-        LspOperation::Definition => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .definition(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_definition(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
+        LspOperation::Definition => lsp_op!(positioned, definition, process_definition),
+        LspOperation::References => lsp_op!(positioned, references, process_references),
+        LspOperation::IncomingCalls => lsp_op!(positioned, incoming_calls, process_incoming_calls),
+        LspOperation::OutgoingCalls => lsp_op!(positioned, outgoing_calls, process_outgoing_calls),
+        LspOperation::TypeSupertypes => {
+            lsp_op!(positioned, type_supertypes, process_type_hierarchy)
         }
-        LspOperation::References => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .references(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_references(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
+        LspOperation::TypeSubtypes => lsp_op!(positioned, type_subtypes, process_type_hierarchy),
+        LspOperation::Completion => lsp_op!(positioned, completion, process_completion),
+        LspOperation::DocumentSymbol => lsp_op!(file_only, document_symbol, process_symbols),
+        LspOperation::WorkspaceSymbol => {
+            lsp_op!(query_only, workspace_symbol, process_workspace_symbols)
         }
+
+        // Special cases — kept manual
         LspOperation::Hover => {
             let position = resolved_position.expect("validated target");
             match client
@@ -491,22 +525,6 @@ async fn execute_lsp_request_impl(params: LspRequest) -> String {
                 Err(error) => error_response(params.operation, format!("Error: {error}")),
             }
         }
-        LspOperation::DocumentSymbol => match client
-            .document_symbol(file_path.expect("validated file"))
-            .await
-        {
-            Ok(result) => {
-                let data = lsp_tools::process_symbols(&result, file_path.expect("validated file"));
-                response_with_data(
-                    params.operation,
-                    status_from_count(data.count),
-                    None,
-                    &data,
-                    None,
-                )
-            }
-            Err(error) => error_response(params.operation, format!("Error: {error}")),
-        },
         LspOperation::Diagnostics => match client
             .get_diagnostics(file_path.expect("validated file"))
             .await
@@ -529,114 +547,6 @@ async fn execute_lsp_request_impl(params: LspRequest) -> String {
             }
             Err(error) => error_response(params.operation, format!("Error: {error}")),
         },
-        LspOperation::WorkspaceSymbol => match client
-            .workspace_symbol(params.query.as_deref().unwrap_or_default())
-            .await
-        {
-            Ok(result) => {
-                let data = lsp_tools::process_workspace_symbols(&result);
-                response_with_data(
-                    params.operation,
-                    status_from_count(data.count),
-                    None,
-                    &data,
-                    None,
-                )
-            }
-            Err(error) => error_response(params.operation, format!("Error: {error}")),
-        },
-        LspOperation::IncomingCalls => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .incoming_calls(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_incoming_calls(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
-        }
-        LspOperation::OutgoingCalls => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .outgoing_calls(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_outgoing_calls(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
-        }
-        LspOperation::TypeSupertypes => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .type_supertypes(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_type_hierarchy(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
-        }
-        LspOperation::TypeSubtypes => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .type_subtypes(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_type_hierarchy(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
-        }
         LspOperation::Rename => {
             let position = resolved_position.expect("validated target");
             match client
@@ -653,29 +563,6 @@ async fn execute_lsp_request_impl(params: LspRequest) -> String {
                     response_with_data(
                         params.operation,
                         status_from_count(data.edit_count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
-        }
-        LspOperation::Completion => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .completion(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_completion(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.count),
                         resolved_target,
                         &data,
                         None,

@@ -4,9 +4,7 @@ use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::{DocMetadata, TextChunk};
 use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings, MockDocumentSource};
 use cangjie_server::lsp_tools::{LspOperation, LspRequest, LspTarget};
-use cangjie_server::mcp_handler::{
-    GetTopicParams, ListTopicsParams, SearchDocsParams, TopicResult, TopicsListResult,
-};
+use cangjie_server::mcp_handler::{GetTopicParams, ListTopicsParams, SearchDocsParams};
 use cangjie_server::{CangjieServer, Parameters};
 use tempfile::TempDir;
 
@@ -40,7 +38,7 @@ async fn build_test_server_with_chunks(chunks: Vec<TextChunk>) -> (TempDir, Cang
 async fn test_search_docs_basic() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "函数".into(),
             top_k: 5,
@@ -51,16 +49,13 @@ async fn test_search_docs_basic() {
         }))
         .await;
 
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(result_count > 0, "search should return results");
     assert!(
-        result_json.contains("showing 1-"),
+        result.contains("showing 1-"),
         "should show pagination starting from 1"
     );
-    assert!(
-        !result_json.is_empty(),
-        "result content should not be empty"
-    );
+    assert!(result.contains("[score:"), "should include relevance score");
 }
 
 #[tokio::test]
@@ -119,7 +114,7 @@ async fn test_unified_lsp_tool_requires_position_for_completion() {
 async fn test_search_docs_with_category() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "函数".into(),
             top_k: 10,
@@ -130,10 +125,10 @@ async fn test_search_docs_with_category() {
         }))
         .await;
 
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(result_count > 0, "should find results in syntax category");
     assert!(
-        result_json.contains("syntax"),
+        result.contains("syntax"),
         "all results should belong to 'syntax' category"
     );
 }
@@ -142,7 +137,7 @@ async fn test_search_docs_with_category() {
 async fn test_search_docs_pagination() {
     let (_tmp, server) = build_test_server().await;
 
-    let all_json = server
+    let all = server
         .search_docs(Parameters(SearchDocsParams {
             query: "仓颉".into(),
             top_k: 20,
@@ -152,9 +147,9 @@ async fn test_search_docs_pagination() {
             package: None,
         }))
         .await;
-    let all_count = all_json.matches("### [").count();
+    let all_count = all.matches("### [").count();
 
-    let page_json = server
+    let page = server
         .search_docs(Parameters(SearchDocsParams {
             query: "仓颉".into(),
             top_k: 2,
@@ -165,16 +160,16 @@ async fn test_search_docs_pagination() {
         }))
         .await;
 
-    let page_count = page_json.matches("### [").count();
+    let page_count = page.matches("### [").count();
     assert!(
-        page_json.contains("showing 3-"),
+        page.contains("showing 3-"),
         "offset=2 should show results starting from 3"
     );
     assert!(page_count <= 2, "should return at most top_k items");
 
     if all_count > 4 {
         assert!(
-            page_json.contains("More results available"),
+            page.contains("More results available"),
             "should have more results when total > offset + top_k"
         );
     }
@@ -184,7 +179,7 @@ async fn test_search_docs_pagination() {
 async fn test_search_docs_extract_code() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "函数定义".into(),
             top_k: 5,
@@ -195,19 +190,16 @@ async fn test_search_docs_extract_code() {
         }))
         .await;
 
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(result_count > 0, "should return results");
-    assert!(
-        !result_json.is_empty(),
-        "result content should not be empty"
-    );
+    assert!(!result.is_empty(), "result content should not be empty");
 }
 
 #[tokio::test]
 async fn test_search_docs_package_filter() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "集合".into(),
             top_k: 10,
@@ -219,7 +211,7 @@ async fn test_search_docs_package_filter() {
         .await;
 
     assert!(
-        result_json.contains("Array"),
+        result.contains("Array"),
         "results should mention 'Array' when package filter is set"
     );
 }
@@ -228,26 +220,24 @@ async fn test_search_docs_package_filter() {
 async fn test_get_topic_found() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .get_topic(Parameters(GetTopicParams {
             topic: "functions".into(),
             category: Some("syntax".into()),
         }))
         .await;
 
-    let result: TopicResult =
-        serde_json::from_str(&result_json).expect("should parse as TopicResult");
-
     assert!(
-        result.content.contains("函数"),
+        result.contains("函数"),
         "topic content should contain '函数'"
     );
-    assert_eq!(result.category, "syntax");
-    assert_eq!(result.topic, "functions");
-    assert!(!result.title.is_empty(), "title should not be empty");
     assert!(
-        !result.file_path.is_empty(),
-        "file_path should not be empty"
+        result.contains("**Category:** syntax"),
+        "should show category metadata"
+    );
+    assert!(
+        result.contains("**Topic:** functions"),
+        "should show topic metadata"
     );
 }
 
@@ -262,7 +252,6 @@ async fn test_get_topic_not_found_with_suggestions() {
         }))
         .await;
 
-    // Should not parse as TopicResult (it's a plain error message)
     assert!(
         result.contains("not found"),
         "response should indicate topic not found, got: {result}"
@@ -281,19 +270,20 @@ async fn test_get_topic_not_found_with_suggestions() {
 async fn test_get_topic_wrong_category_fallbacks_to_correct_category() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .get_topic(Parameters(GetTopicParams {
             topic: "functions".into(),
             category: Some("stdlib".into()),
         }))
         .await;
 
-    let result: TopicResult =
-        serde_json::from_str(&result_json).expect("should parse as TopicResult");
-    assert_eq!(result.topic, "functions");
-    assert_eq!(
-        result.category, "syntax",
+    assert!(
+        result.contains("**Category:** syntax"),
         "tool should fallback to correct category when provided category is wrong"
+    );
+    assert!(
+        result.contains("**Topic:** functions"),
+        "should contain the topic name"
     );
 }
 
@@ -339,7 +329,7 @@ async fn test_search_docs_allows_two_snippets_per_document_when_top_k_is_large()
     ];
     let (_tmp, server) = build_test_server_with_chunks(chunks).await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "HashMap".into(),
             top_k: 10,
@@ -351,10 +341,10 @@ async fn test_search_docs_allows_two_snippets_per_document_when_top_k_is_large()
         .await;
 
     assert!(
-        result_json.contains("HashMap"),
+        result.contains("HashMap"),
         "results should contain HashMap content when top_k is large"
     );
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(result_count > 0, "should return at least one result");
 }
 
@@ -400,7 +390,7 @@ async fn test_search_docs_limits_to_one_snippet_per_document_when_top_k_is_small
     ];
     let (_tmp, server) = build_test_server_with_chunks(chunks).await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "HashMap".into(),
             top_k: 3,
@@ -412,10 +402,10 @@ async fn test_search_docs_limits_to_one_snippet_per_document_when_top_k_is_small
         .await;
 
     assert!(
-        result_json.contains("HashMap"),
+        result.contains("HashMap"),
         "results should contain HashMap content when top_k is small"
     );
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(result_count > 0, "should return at least one result");
 }
 
@@ -423,68 +413,54 @@ async fn test_search_docs_limits_to_one_snippet_per_document_when_top_k_is_small
 async fn test_list_topics_all() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
-        .list_topics(Parameters(ListTopicsParams { category: None }))
-        .await;
-
-    let result: TopicsListResult =
-        serde_json::from_str(&result_json).expect("should parse as TopicsListResult");
-
-    assert!(result.error.is_none(), "should not have an error");
-    assert!(
-        result.categories.contains_key("syntax"),
-        "should contain 'syntax' category"
-    );
-    assert!(
-        result.categories.contains_key("stdlib"),
-        "should contain 'stdlib' category"
-    );
-    assert!(
-        result.categories.contains_key("cjpm"),
-        "should contain 'cjpm' category"
-    );
-    assert!(
-        result.total_categories >= 3,
-        "should have at least 3 categories"
-    );
-    assert!(result.total_topics > 0, "should have some topics");
-}
-
-#[tokio::test]
-async fn test_list_topics_filter_category() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result_json = server
+    let result = server
         .list_topics(Parameters(ListTopicsParams {
-            category: Some("syntax".into()),
+            category: None,
+            detail: false,
         }))
         .await;
 
-    let result: TopicsListResult =
-        serde_json::from_str(&result_json).expect("should parse as TopicsListResult");
-
-    assert!(result.error.is_none(), "should not have an error");
-    assert_eq!(
-        result.total_categories, 1,
-        "should have exactly 1 category when filtered"
-    );
     assert!(
-        result.categories.contains_key("syntax"),
+        result.contains("syntax"),
         "should contain 'syntax' category"
     );
     assert!(
-        !result.categories.contains_key("stdlib"),
+        result.contains("stdlib"),
+        "should contain 'stdlib' category"
+    );
+    assert!(result.contains("cjpm"), "should contain 'cjpm' category");
+    assert!(
+        result.contains("topics total"),
+        "should show total topic count"
+    );
+    // In compact mode (detail=false), should show topic counts but not individual topic names
+    assert!(
+        result.contains("topics)"),
+        "should show topic count per category"
+    );
+}
+
+#[tokio::test]
+async fn test_list_topics_filter_category_with_detail() {
+    let (_tmp, server) = build_test_server().await;
+
+    let result = server
+        .list_topics(Parameters(ListTopicsParams {
+            category: Some("syntax".into()),
+            detail: true,
+        }))
+        .await;
+
+    assert!(
+        result.contains("syntax"),
+        "should contain 'syntax' category"
+    );
+    assert!(
+        !result.contains("### stdlib"),
         "should not contain 'stdlib' when filtered by 'syntax'"
     );
     assert!(
-        !result.categories.contains_key("cjpm"),
-        "should not contain 'cjpm' when filtered by 'syntax'"
-    );
-
-    let syntax_topics = &result.categories["syntax"];
-    let topic_names: Vec<&str> = syntax_topics.iter().map(|t| t.name.as_str()).collect();
-    assert!(
-        topic_names.contains(&"functions"),
+        result.contains("functions"),
         "syntax category should contain 'functions' topic"
     );
 }
@@ -493,31 +469,20 @@ async fn test_list_topics_filter_category() {
 async fn test_list_topics_invalid_category() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .list_topics(Parameters(ListTopicsParams {
             category: Some("nonexistent".into()),
+            detail: false,
         }))
         .await;
 
-    let result: TopicsListResult =
-        serde_json::from_str(&result_json).expect("should parse as TopicsListResult");
-
     assert!(
-        result.error.is_some(),
-        "should have an error for nonexistent category"
+        result.contains("not found"),
+        "should indicate category not found, got: {result}"
     );
     assert!(
-        result.error.as_ref().unwrap().contains("not found"),
-        "error should mention category not found"
-    );
-    assert!(
-        result.available_categories.is_some(),
-        "should list available categories"
-    );
-    let available = result.available_categories.unwrap();
-    assert!(
-        available.contains(&"syntax".to_string()),
-        "available categories should include 'syntax'"
+        result.contains("syntax"),
+        "should list available categories including 'syntax', got: {result}"
     );
 }
 
@@ -548,7 +513,7 @@ async fn test_search_docs_not_initialized() {
 async fn test_search_docs_max_top_k_clamped() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "仓颉".into(),
             top_k: 999,
@@ -559,7 +524,7 @@ async fn test_search_docs_max_top_k_clamped() {
         }))
         .await;
 
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(
         result_count <= MAX_TOP_K,
         "result count ({}) should be clamped to MAX_TOP_K ({})",
@@ -572,7 +537,7 @@ async fn test_search_docs_max_top_k_clamped() {
 async fn test_search_docs_min_top_k_clamped() {
     let (_tmp, server) = build_test_server().await;
 
-    let result_json = server
+    let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "函数".into(),
             top_k: 0,
@@ -583,7 +548,7 @@ async fn test_search_docs_min_top_k_clamped() {
         }))
         .await;
 
-    let result_count = result_json.matches("### [").count();
+    let result_count = result.matches("### [").count();
     assert!(
         result_count == MIN_TOP_K,
         "result count ({}) should be exactly MIN_TOP_K ({}) when top_k is clamped from 0",

@@ -58,29 +58,16 @@ pub struct DocsSearchResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct TopicResult {
-    pub content: String,
-    pub file_path: String,
-    pub category: String,
-    pub topic: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TopicInfo {
     pub name: String,
     pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct TopicsListResult {
-    pub categories: HashMap<String, Vec<TopicInfo>>,
-    pub total_categories: usize,
-    pub total_topics: usize,
+pub struct CategorySummary {
+    pub topic_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub available_categories: Option<Vec<String>>,
+    pub topics: Option<Vec<TopicInfo>>,
 }
 
 /// Format search results as compact Markdown for LLM consumption.
@@ -102,11 +89,16 @@ fn format_results_markdown(result: &DocsSearchResult) -> String {
         writeln!(out, "---").unwrap();
         writeln!(
             out,
-            "### [{rank}] {} ({}/{})\n",
-            item.title, item.category, item.topic
+            "### [{rank}] {} ({}/{}) [score: {:.2}]\n",
+            item.title, item.category, item.topic, item.score
         )
         .unwrap();
         writeln!(out, "{}\n", item.content).unwrap();
+        if let Some(ref examples) = item.code_examples {
+            for ex in examples {
+                writeln!(out, "```{}\n{}\n```\n", ex.language, ex.code).unwrap();
+            }
+        }
     }
 
     if result.has_more {
@@ -117,6 +109,66 @@ fn format_results_markdown(result: &DocsSearchResult) -> String {
                 "_More results available. Use offset={next} to see next page._"
             )
             .unwrap();
+        }
+    }
+
+    out
+}
+
+/// Format a topic result as Markdown.
+fn format_topic_markdown(
+    file_path: &str,
+    category: &str,
+    topic: &str,
+    title: &str,
+    content: &str,
+) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    writeln!(out, "# {title}\n").unwrap();
+    writeln!(
+        out,
+        "**Topic:** {topic} | **Category:** {category} | **File:** {file_path}\n"
+    )
+    .unwrap();
+    writeln!(out, "---\n").unwrap();
+    write!(out, "{content}").unwrap();
+    out
+}
+
+/// Format topics list as Markdown.
+fn format_topics_list_markdown(
+    categories: &HashMap<String, CategorySummary>,
+    total_categories: usize,
+    total_topics: usize,
+) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    writeln!(
+        out,
+        "**{total_categories} categories, {total_topics} topics total**\n"
+    )
+    .unwrap();
+
+    let mut sorted_cats: Vec<_> = categories.iter().collect();
+    sorted_cats.sort_by_key(|(name, _)| (*name).clone());
+
+    for (cat, summary) in sorted_cats {
+        match &summary.topics {
+            Some(topics) => {
+                writeln!(out, "### {cat} ({} topics)\n", summary.topic_count).unwrap();
+                for t in topics {
+                    if t.title.is_empty() {
+                        writeln!(out, "- {}", t.name).unwrap();
+                    } else {
+                        writeln!(out, "- **{}** — {}", t.name, t.title).unwrap();
+                    }
+                }
+                writeln!(out).unwrap();
+            }
+            None => {
+                writeln!(out, "- **{cat}** ({} topics)", summary.topic_count).unwrap();
+            }
         }
     }
 
@@ -532,6 +584,9 @@ pub struct ListTopicsParams {
     /// Optional category to filter by (e.g., 'cjpm', 'syntax')
     #[serde(default)]
     pub category: Option<String>,
+    /// Whether to include full topic lists per category (default: false returns only category names and counts)
+    #[serde(default)]
+    pub detail: bool,
 }
 
 // ── Tool implementations ────────────────────────────────────────────────────
@@ -540,7 +595,12 @@ pub struct ListTopicsParams {
 impl CangjieServer {
     #[tool(
         name = "cangjie_lsp",
-        description = "Unified Cangjie LSP entry point. Use operation to run definition, references, hover, document_symbol, diagnostics, workspace_symbol, incoming_calls, outgoing_calls, type hierarchy, rename, and completion."
+        description = "Unified Cangjie LSP entry point. Use operation to run definition, references, hover, document_symbol, diagnostics, workspace_symbol, incoming_calls, outgoing_calls, type hierarchy, rename, and completion.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     pub async fn lsp(
         &self,
@@ -551,7 +611,12 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_search_docs",
-        description = "Search Cangjie documentation using semantic search. Performs similarity search across all indexed documentation. Returns matching sections ranked by relevance with pagination support."
+        description = "Search Cangjie documentation using semantic search. Performs similarity search across all indexed documentation. Returns matching sections ranked by relevance as structured JSON with pagination support (use offset/top_k). Supports filtering by category (e.g. 'stdlib', 'syntax') and stdlib package name (e.g. 'std.collection', 'std.fs'). Set extract_code=true to extract code examples from results.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     pub async fn search_docs(&self, Parameters(params): Parameters<SearchDocsParams>) -> String {
         let top_k = params.top_k.clamp(MIN_TOP_K, MAX_TOP_K);
@@ -640,7 +705,12 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_get_topic",
-        description = "Get complete documentation for a specific topic. Retrieves the full content of a documentation file by topic name. Use cangjie_list_topics first to discover available topic names."
+        description = "Get complete documentation for a specific topic. Retrieves the full content of a documentation file by topic name. Use cangjie_list_topics first to discover available topic names.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     pub async fn get_topic(&self, Parameters(params): Parameters<GetTopicParams>) -> String {
         let docs = {
@@ -657,31 +727,25 @@ impl CangjieServer {
         let doc = docs.get_document_by_topic(topic, category).await;
 
         match doc {
-            Ok(Some(doc)) => {
-                let result = TopicResult {
-                    content: doc.text,
-                    file_path: doc.metadata.file_path,
-                    category: doc.metadata.category,
-                    topic: doc.metadata.topic,
-                    title: doc.metadata.title,
-                };
-                serde_json::to_string_pretty(&result)
-                    .unwrap_or_else(|e| format!("Serialization error: {e}"))
-            }
+            Ok(Some(doc)) => format_topic_markdown(
+                &doc.metadata.file_path,
+                &doc.metadata.category,
+                &doc.metadata.topic,
+                &doc.metadata.title,
+                &doc.text,
+            ),
             Ok(None) => {
                 // If the provided category is wrong, fallback to cross-category search.
                 if category.is_some() {
                     match docs.get_document_by_topic(topic, None).await {
                         Ok(Some(doc)) => {
-                            let result = TopicResult {
-                                content: doc.text,
-                                file_path: doc.metadata.file_path,
-                                category: doc.metadata.category,
-                                topic: doc.metadata.topic,
-                                title: doc.metadata.title,
-                            };
-                            return serde_json::to_string_pretty(&result)
-                                .unwrap_or_else(|e| format!("Serialization error: {e}"));
+                            return format_topic_markdown(
+                                &doc.metadata.file_path,
+                                &doc.metadata.category,
+                                &doc.metadata.topic,
+                                &doc.metadata.title,
+                                &doc.text,
+                            );
                         }
                         Ok(None) => {}
                         Err(e) => return format!("Error retrieving topic '{topic}': {e}"),
@@ -734,7 +798,12 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_list_topics",
-        description = "List available documentation topics organized by category. Returns all documentation topics, optionally filtered by category. Use this to discover topic names for use with cangjie_get_topic."
+        description = "List available documentation topics organized by category. Returns all documentation topics, optionally filtered by category. Use this to discover topic names for use with cangjie_get_topic. Set detail=false (default) for a compact summary with category names and topic counts; set detail=true to include full topic lists.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     pub async fn list_topics(&self, Parameters(params): Parameters<ListTopicsParams>) -> String {
         let docs = {
@@ -750,15 +819,11 @@ impl CangjieServer {
         if let Some(cat) = filter_category {
             let all_cats = docs.get_categories().await.unwrap_or_default();
             if !all_cats.contains(&cat.to_string()) {
-                let result = TopicsListResult {
-                    categories: HashMap::new(),
-                    total_categories: 0,
-                    total_topics: 0,
-                    error: Some(format!("Category '{cat}' not found.")),
-                    available_categories: Some(all_cats),
-                };
-                return serde_json::to_string_pretty(&result)
-                    .unwrap_or_else(|e| format!("Serialization error: {e}"));
+                return format!(
+                    "Category '{}' not found.\n\nAvailable categories: {}",
+                    cat,
+                    all_cats.join(", ")
+                );
             }
         }
 
@@ -771,30 +836,33 @@ impl CangjieServer {
         let mut categories = HashMap::new();
         for cat in &categories_to_list {
             let topics = docs.get_topics_in_category(cat).await.unwrap_or_default();
-            let titles = docs.get_topic_titles(cat).await.unwrap_or_default();
             if !topics.is_empty() {
-                let infos: Vec<TopicInfo> = topics
-                    .iter()
-                    .map(|t| TopicInfo {
-                        name: t.clone(),
-                        title: titles.get(t).cloned().unwrap_or_default(),
-                    })
-                    .collect();
-                categories.insert(cat.clone(), infos);
+                let summary = if params.detail {
+                    let titles = docs.get_topic_titles(cat).await.unwrap_or_default();
+                    let infos: Vec<TopicInfo> = topics
+                        .iter()
+                        .map(|t| TopicInfo {
+                            name: t.clone(),
+                            title: titles.get(t).cloned().unwrap_or_default(),
+                        })
+                        .collect();
+                    CategorySummary {
+                        topic_count: infos.len(),
+                        topics: Some(infos),
+                    }
+                } else {
+                    CategorySummary {
+                        topic_count: topics.len(),
+                        topics: None,
+                    }
+                };
+                categories.insert(cat.clone(), summary);
             }
         }
 
-        let total_topics: usize = categories.values().map(|v| v.len()).sum();
-        let result = TopicsListResult {
-            total_categories: categories.len(),
-            total_topics,
-            categories,
-            error: None,
-            available_categories: None,
-        };
+        let total_topics: usize = categories.values().map(|v| v.topic_count).sum();
 
-        serde_json::to_string_pretty(&result)
-            .unwrap_or_else(|e| format!("Serialization error: {e}"))
+        format_topics_list_markdown(&categories, categories.len(), total_topics)
     }
 
     // ── LSP Tools ──────────────────────────────────────────────────────────
@@ -952,7 +1020,10 @@ mod tests {
         let server = CangjieServer::new(settings);
         let result = server
             .list_topics(rmcp::handler::server::wrapper::Parameters(
-                super::ListTopicsParams { category: None },
+                super::ListTopicsParams {
+                    category: None,
+                    detail: false,
+                },
             ))
             .await;
 

@@ -8,16 +8,24 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, Mutex, Notify};
 use tracing::{debug, error, info, warn};
 
-pub(crate) const CONTENT_LENGTH_HEADER: &str = "Content-Length: ";
+const CONTENT_LENGTH: &str = "Content-Length";
 
 // -- Transport error ---------------------------------------------------------
 
 #[derive(Debug)]
-pub(crate) struct LspTransportError(String);
+pub(crate) enum LspTransportError {
+    ChannelClosed,
+    InvalidJson(String),
+    Eof,
+}
 
 impl std::fmt::Display for LspTransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::ChannelClosed => f.write_str("LSP channel closed"),
+            Self::InvalidJson(e) => write!(f, "invalid JSON from LSP: {e}"),
+            Self::Eof => f.write_str("LSP connection EOF"),
+        }
     }
 }
 
@@ -34,10 +42,10 @@ impl TransportSenderT for LspSender {
     type Error = LspTransportError;
 
     async fn send(&mut self, msg: String) -> std::result::Result<(), Self::Error> {
-        debug!("[LSP send] {}", msg);
+        debug!("[LSP queue] {}", msg);
         self.outbound_tx
             .send(msg)
-            .map_err(|_| LspTransportError("LSP outbound channel closed".into()))
+            .map_err(|_| LspTransportError::ChannelClosed)
     }
 
     async fn close(&mut self) -> std::result::Result<(), Self::Error> {
@@ -69,41 +77,46 @@ impl TransportReceiverT for LspReceiver {
                 .incoming_rx
                 .recv()
                 .await
-                .ok_or_else(|| LspTransportError("LSP connection closed".into()))?;
+                .ok_or(LspTransportError::Eof)?;
 
+            // Parse once into Value; discriminate by presence of "id" and "method"
+            // following the JSON-RPC 2.0 spec (same approach as async-lsp's
+            // `#[serde(untagged)] enum Message`).
             let msg: Value = serde_json::from_str(&body)
-                .map_err(|e| LspTransportError(format!("Invalid JSON from LSP: {e}")))?;
+                .map_err(|e| LspTransportError::InvalidJson(e.to_string()))?;
 
             info!("[LSP recv] {}", body);
 
-            if let Some(_id) = msg.get("id") {
-                if msg.get("method").is_some() {
-                    // Server → client request: handle internally, send response
-                    info!("[LSP] Handling server request: {}", msg["method"]);
-                    self.handle_server_request(&msg);
-                    continue;
+            let has_id = msg.get("id").is_some();
+            let method = msg.get("method").and_then(|m| m.as_str());
+
+            match (has_id, method) {
+                // Request from server (has both id and method)
+                (true, Some(m)) => {
+                    info!("[LSP] Handling server request: {}", m);
+                    self.handle_server_request(&msg, m);
                 }
-                // Response to our request: forward to jsonrpsee
-                info!("[LSP] Forwarding response id={}", _id);
-                return Ok(ReceivedMessage::Text(body));
+                // Response to our request (has id, no method)
+                (true, None) => {
+                    return Ok(ReceivedMessage::Text(body));
+                }
+                // Notification from server (no id, has method)
+                (false, Some(m)) => {
+                    info!("[LSP] Handling notification: {}", m);
+                    self.handle_notification(&msg, m).await;
+                }
+                // Invalid JSON-RPC message (no id, no method)
+                (false, None) => {
+                    warn!("[LSP] Received message with neither id nor method, forwarding");
+                    return Ok(ReceivedMessage::Text(body));
+                }
             }
-
-            if msg.get("method").is_some() {
-                // Server notification: handle internally
-                info!("[LSP] Handling notification: {}", msg["method"]);
-                self.handle_notification(&msg).await;
-                continue;
-            }
-
-            // Unknown message type — forward to jsonrpsee
-            return Ok(ReceivedMessage::Text(body));
         }
     }
 }
 
 impl LspReceiver {
-    fn handle_server_request(&self, msg: &Value) {
-        let method = msg["method"].as_str().unwrap_or("");
+    fn handle_server_request(&self, msg: &Value, method: &str) {
         let id = &msg["id"];
 
         let result = match method {
@@ -134,9 +147,7 @@ impl LspReceiver {
         }
     }
 
-    async fn handle_notification(&self, msg: &Value) {
-        let method = msg["method"].as_str().unwrap_or("");
-
+    async fn handle_notification(&self, msg: &Value, method: &str) {
         if method == "textDocument/publishDiagnostics" {
             if let Some(params) = msg.get("params") {
                 if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
@@ -146,11 +157,9 @@ impl LspReceiver {
                         .and_then(|v| v.as_array())
                         .cloned()
                         .unwrap_or_default();
-                    self.diagnostics.lock().await.insert(path, diags);
+                    self.diagnostics.lock().await.insert(path.clone(), diags);
                     let mut versions = self.diagnostic_versions.lock().await;
-                    let entry = versions
-                        .entry(crate::utils::uri_to_path(uri).to_string_lossy().to_string());
-                    *entry.or_insert(0) += 1;
+                    *versions.entry(path).or_insert(0) += 1;
                     self.diagnostics_notify.notify_waiters();
                 }
             }
@@ -186,6 +195,10 @@ impl LspParams {
 /// Continuously reads Content-Length framed JSON-RPC messages from LSP stdout
 /// and pushes them into an unbounded channel. This allows the LSP server to
 /// write without blocking on pipe buffer limits; receive() consumes on demand.
+///
+/// Header parsing follows the LSP base protocol strictly (inspired by async-lsp):
+/// headers are `Name: Value\r\n` terminated by a blank `\r\n` line.
+/// Body bytes are read via `read_exact` and forwarded as a UTF-8 string.
 pub(crate) async fn stdout_reader_task(
     stdout: tokio::process::ChildStdout,
     incoming_tx: mpsc::UnboundedSender<String>,
@@ -209,6 +222,8 @@ pub(crate) async fn stdout_reader_task(
             break;
         }
 
+        // Use from_utf8_lossy-free path: LSP mandates UTF-8.
+        // Validate + convert in one step via from_utf8.
         let body = match String::from_utf8(body_buf) {
             Ok(s) => s,
             Err(e) => {
@@ -225,6 +240,12 @@ pub(crate) async fn stdout_reader_task(
     debug!("LSP stdout reader task exited");
 }
 
+/// Read LSP headers until the blank `\r\n` separator, extract `Content-Length`.
+///
+/// Follows the strict LSP base protocol format (aligned with async-lsp):
+/// - Each header line ends with `\r\n`
+/// - Header name and value are separated by `: ` (colon + space)
+/// - Header names are matched case-insensitively
 async fn read_content_length<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
     header_buf: &mut String,
@@ -234,42 +255,51 @@ async fn read_content_length<R: tokio::io::AsyncBufRead + Unpin>(
 
     loop {
         header_buf.clear();
-        let bytes_read = reader.read_line(header_buf).await.map_err(|_e| {
-            if running.load(Ordering::SeqCst) {
-                error!(
-                    "LSP stdout stream closed unexpectedly — \
-                     the LSP server process may have crashed. \
-                     LSP tools will be unavailable."
-                );
-            } else {
-                debug!("LSP stdout stream closed during shutdown");
-            }
+        let bytes_read = reader.read_line(header_buf).await.map_err(|e| {
+            log_stream_close(running, &e.to_string());
         })?;
 
         if bytes_read == 0 {
-            if running.load(Ordering::SeqCst) {
-                error!(
-                    "LSP stdout stream closed unexpectedly — \
-                     the LSP server process may have crashed. \
-                     LSP tools will be unavailable."
-                );
-            } else {
-                debug!("LSP stdout stream closed during shutdown");
-            }
+            log_stream_close(running, "EOF");
             return Err(());
         }
 
-        let line = header_buf.trim();
+        // Strip line ending: prefer strict "\r\n", tolerate bare "\n"
+        let line = header_buf
+            .strip_suffix("\r\n")
+            .or_else(|| header_buf.strip_suffix('\n'))
+            .unwrap_or(header_buf);
+
         if line.is_empty() {
             break;
         }
 
-        if let Some(len_str) = line.strip_prefix(CONTENT_LENGTH_HEADER) {
-            content_length = Some(len_str.trim().parse().map_err(|_| ())?);
+        if let Some((name, value)) = line.split_once(": ") {
+            if name.eq_ignore_ascii_case(CONTENT_LENGTH) {
+                content_length = Some(value.trim().parse().map_err(|_| {
+                    error!("LSP invalid Content-Length value: {value:?}");
+                })?);
+            }
+        } else {
+            debug!("LSP ignoring malformed header: {:?}", line);
         }
     }
 
-    content_length.ok_or(())
+    content_length.ok_or_else(|| {
+        error!("LSP message missing Content-Length header");
+    })
+}
+
+fn log_stream_close(running: &AtomicBool, detail: &str) {
+    if running.load(Ordering::SeqCst) {
+        error!(
+            "LSP stdout stream closed unexpectedly ({detail}) — \
+             the LSP server process may have crashed. \
+             LSP tools will be unavailable."
+        );
+    } else {
+        debug!("LSP stdout stream closed during shutdown");
+    }
 }
 
 pub(crate) async fn stdin_task(
@@ -278,29 +308,17 @@ pub(crate) async fn stdin_task(
     running: Arc<AtomicBool>,
 ) {
     while let Some(message) = outbound_rx.recv().await {
-        // Batch all pending messages into a single write so the LSP server
-        // receives them in the same pipe-buffer read.  The Cangjie LSP
-        // server only calls ReadyForDiagnostics when it can peek ahead at
-        // the next message during the ArkASTWorker processing loop; writing
-        // messages one-at-a-time with a flush in-between prevents the server
-        // from seeing the next message when it needs to.
-        info!("[LSP send] {}", message);
-        let mut batch = format!(
-            "{CONTENT_LENGTH_HEADER}{}\r\n\r\n{}",
-            message.len(),
-            message
-        );
-
-        while let Ok(message) = outbound_rx.try_recv() {
-            info!("[LSP send] {}", message);
-            batch.push_str(&format!(
-                "{CONTENT_LENGTH_HEADER}{}\r\n\r\n{}",
-                message.len(),
-                message
-            ));
+        info!("[LSP write] {}", message);
+        // Write header and body separately to avoid copying the entire body
+        // into a new String just to prepend a small header.
+        let header = format!("{CONTENT_LENGTH}: {}\r\n\r\n", message.len());
+        if let Err(e) = stdin.write_all(header.as_bytes()).await {
+            if running.load(Ordering::SeqCst) {
+                error!("Failed to write to LSP stdin: {}", e);
+            }
+            break;
         }
-
-        if let Err(e) = stdin.write_all(batch.as_bytes()).await {
+        if let Err(e) = stdin.write_all(message.as_bytes()).await {
             if running.load(Ordering::SeqCst) {
                 error!("Failed to write to LSP stdin: {}", e);
             }
