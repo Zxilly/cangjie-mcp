@@ -335,7 +335,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          for package in npm-dist/*.tgz; do
+          for package in ./npm-dist/*.tgz; do
             npm publish "$package" --access public --dry-run
           done
 
@@ -370,11 +370,11 @@ jobs:
         run: |
           set -euxo pipefail
           for package in \
-            npm-dist/cangjie-mcp-cangjie-mcp-linux-x64-gnu-*.tgz \
-            npm-dist/cangjie-mcp-cangjie-mcp-linux-arm64-gnu-*.tgz \
-            npm-dist/cangjie-mcp-cangjie-mcp-win32-x64-msvc-*.tgz \
-            npm-dist/cangjie-mcp-cangjie-mcp-darwin-arm64-*.tgz \
-            npm-dist/cangjie-mcp-cangjie-mcp-source-*.tgz; do
+            ./npm-dist/cangjie-mcp-cangjie-mcp-linux-x64-gnu-*.tgz \
+            ./npm-dist/cangjie-mcp-cangjie-mcp-linux-arm64-gnu-*.tgz \
+            ./npm-dist/cangjie-mcp-cangjie-mcp-win32-x64-msvc-*.tgz \
+            ./npm-dist/cangjie-mcp-cangjie-mcp-darwin-arm64-*.tgz \
+            ./npm-dist/cangjie-mcp-cangjie-mcp-source-*.tgz; do
             npm publish "$package" --access public --provenance
           done
 
@@ -384,5 +384,5 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euxo pipefail
-          ROOT_PACKAGE="$(find npm-dist -maxdepth 1 -name 'cangjie-mcp-[0-9]*.tgz' | head -n1)"
+          ROOT_PACKAGE="$(find ./npm-dist -maxdepth 1 -name 'cangjie-mcp-[0-9]*.tgz' | head -n1)"
           npm publish "$ROOT_PACKAGE" --access public --provenance
