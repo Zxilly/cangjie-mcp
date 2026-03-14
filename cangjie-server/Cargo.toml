@@ -1,6 +1,6 @@
 [package]
 name = "cangjie-server"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2021"
 description = "MCP and HTTP server handlers for Cangjie MCP"
 license = "MIT"
