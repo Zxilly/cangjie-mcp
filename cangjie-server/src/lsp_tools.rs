@@ -8,6 +8,9 @@ use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// Meta key for passing the client's working directory via `_meta` header.
+pub const META_WORKING_DIRECTORY: &str = "workingDirectory";
+
 #[cfg(feature = "lsp")]
 use crate::mcp_handler::CangjieServer;
 
@@ -201,9 +204,13 @@ fn unsupported_response(operation: LspOperation, message: impl Into<String>) -> 
 
 #[cfg(feature = "lsp")]
 fn validate_request(params: &LspRequest) -> Result<(), String> {
+    let op_name = format!("{:?}", params.operation).to_lowercase();
+
     if params.operation.requires_file_path() {
         let Some(file_path) = params.file_path.as_deref() else {
-            return Err("file_path is required for this operation".to_string());
+            return Err(format!(
+                "file_path is required for {op_name}. Provide an absolute path to a .cj file, e.g. {{\"file_path\": \"/path/to/file.cj\"}}"
+            ));
         };
         if let Some(err) = lsp_tools::get_validate_error(file_path) {
             return Err(err);
@@ -211,7 +218,9 @@ fn validate_request(params: &LspRequest) -> Result<(), String> {
     }
 
     if params.operation.requires_target() && params.target.is_none() {
-        return Err("target is required for this operation".to_string());
+        return Err(format!(
+            "target is required for {op_name}. Use {{\"kind\": \"symbol\", \"symbol\": \"name\"}} or {{\"kind\": \"position\", \"line\": 1, \"character\": 1}}"
+        ));
     }
 
     if matches!(params.operation, LspOperation::WorkspaceSymbol)
@@ -220,7 +229,10 @@ fn validate_request(params: &LspRequest) -> Result<(), String> {
             .as_deref()
             .is_none_or(|query| query.trim().is_empty())
     {
-        return Err("query is required for workspace_symbol".to_string());
+        return Err(
+            "query is required for workspace_symbol. Provide a symbol name to search, e.g. {\"query\": \"MyClass\"}"
+                .to_string(),
+        );
     }
 
     if matches!(params.operation, LspOperation::Rename)
@@ -229,13 +241,19 @@ fn validate_request(params: &LspRequest) -> Result<(), String> {
             .as_deref()
             .is_none_or(|new_name| new_name.trim().is_empty())
     {
-        return Err("new_name is required for rename".to_string());
+        return Err(
+            "new_name is required for rename. Provide the desired new name, e.g. {\"new_name\": \"newSymbolName\"}"
+                .to_string(),
+        );
     }
 
     if matches!(params.operation, LspOperation::Completion)
         && !matches!(params.target, Some(LspTarget::Position { .. }))
     {
-        return Err("completion requires target.kind=position".to_string());
+        return Err(
+            "completion requires target with kind=position. Use {\"kind\": \"position\", \"line\": 1, \"character\": 1} (symbol targets are not supported for completion)"
+                .to_string(),
+        );
     }
 
     Ok(())
@@ -358,10 +376,14 @@ impl CangjieServer {
     }
 }
 
-pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
+pub(crate) async fn execute_lsp_request(
+    params: LspRequest,
+    #[cfg(feature = "lsp")] lsp_pool: Option<&crate::lsp_pool::LspPool>,
+    #[cfg(feature = "lsp")] working_dir: Option<std::path::PathBuf>,
+) -> String {
     #[cfg(feature = "lsp")]
     {
-        execute_lsp_request_impl(params).await
+        execute_lsp_request_impl(params, lsp_pool, working_dir).await
     }
     #[cfg(not(feature = "lsp"))]
     {
@@ -373,18 +395,47 @@ pub(crate) async fn execute_lsp_request(params: LspRequest) -> String {
 }
 
 #[cfg(feature = "lsp")]
-async fn execute_lsp_request_impl(params: LspRequest) -> String {
+async fn execute_lsp_request_impl(
+    params: LspRequest,
+    lsp_pool: Option<&crate::lsp_pool::LspPool>,
+    working_dir: Option<std::path::PathBuf>,
+) -> String {
     if let Err(message) = validate_request(&params) {
         return error_response(params.operation, message);
     }
 
-    let guard = cangjie_lsp::get_client().await;
-    let client = match guard {
-        Some(ref inner) => match inner.as_ref() {
-            Some(client) => client,
-            None => return error_response(params.operation, lsp_unavailable_message()),
-        },
-        None => return error_response(params.operation, lsp_unavailable_message()),
+    // Resolve LSP client: pool mode (daemon) or singleton mode (stdio)
+    let pool_client;
+    let singleton_guard;
+
+    if let Some(pool) = lsp_pool {
+        let workspace = match working_dir {
+            Some(wd) => wd,
+            None => {
+                return error_response(
+                    params.operation,
+                    "working directory is required in daemon mode for LSP operations. \
+                     Pass it via _meta.workingDirectory in the tool call request.",
+                );
+            }
+        };
+        match pool.get_or_create(&workspace).await {
+            Ok(c) => pool_client = Some(c),
+            Err(msg) => return error_response(params.operation, msg),
+        }
+        singleton_guard = None;
+    } else {
+        pool_client = None;
+        singleton_guard = cangjie_lsp::get_client().await;
+        if singleton_guard.as_ref().and_then(|g| g.as_ref()).is_none() {
+            return error_response(params.operation, lsp_unavailable_message());
+        }
+    }
+
+    let client: &CangjieClient = if let Some(ref c) = pool_client {
+        c
+    } else {
+        singleton_guard.as_ref().unwrap().as_ref().unwrap()
     };
 
     if !client.supports(params.operation.into()) {
@@ -653,9 +704,10 @@ mod tests {
             query: None,
             new_name: None,
         };
-        assert_eq!(
-            validate_request(&params).unwrap_err(),
-            "completion requires target.kind=position"
+        let err = validate_request(&params).unwrap_err();
+        assert!(
+            err.contains("completion requires target with kind=position"),
+            "unexpected error: {err}"
         );
     }
 

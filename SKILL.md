@@ -65,23 +65,45 @@ let f = { x: Int64 => x * 2 }               // lambda
 x |> f |> g                                  // pipeline: g(f(x))
 
 // Classes, interfaces, generics — use <: for inherit/implement
+open class Animal { public open func speak() { } }  // 'open' for inheritance
 class Dog <: Animal & Drawable { public override func speak() { } }
 extend String { func rev(): String { } }     // extension
 func id<T>(x: T): T where T <: Show { x }   // generic constraint
+
+// Properties
+class Temp {
+    private var _c: Float64 = 0.0
+    public prop celsius: Float64 { get() { _c } set(v) { _c = v } }
+}
 
 // Option type
 let a: Option<Int64> = 100                   // auto-wraps to Some(100)
 let v = opt ?? default                       // coalescing
 obj?.property                                // optional chaining
 
+// Collections
+let arr: Array<Int64> = [1, 2, 3]            // fixed size
+let list = ArrayList<String>()               // dynamic
+let map = HashMap<String, Int64>()
+let set = HashSet<Int64>()
+
 // Concurrency and error handling
 spawn { => doWork() }                        // lightweight thread
 try { op() } catch (e: IOException) { }
 try (r = open()) { use(r) }                  // auto-close resource
 
-// Packages
+// Operators
+x |> f |> g                                  // pipeline: g(f(x))
+f ~> g                                       // composition
+// Type check/cast: `is` and `as`
+
+// Macros
+@Test class MyTest { @TestCase func t() { @Assert(1+1, 2) } }
+
+// Packages and visibility (default: internal)
 package myapp.utils
 import std.collection.*
+// private | internal (DEFAULT) | protected | public
 ```
 
 ### Critical Pitfalls (Common LLM Errors)
@@ -122,7 +144,7 @@ uvx cangjie-mcp query "generics"        # with uvx (no install needed)
 npx cangjie-mcp query "generics"        # with npx (no install needed)
 ```
 
-For LSP code intelligence, the Cangjie SDK must be installed with `cjlsp` in `PATH` or `CANGJIE_HOME` set.
+For LSP code intelligence, the Cangjie SDK must be installed in `PATH` or `CANGJIE_HOME` set.
 
 ## Configuration
 
@@ -189,11 +211,10 @@ cangjie-mcp topics --category <cat>
 ```
 
 **Recommended workflow:**
-1. `cangjie-mcp topics` — discover categories and topic names
-2. `cangjie-mcp query "<terms>"` — semantic search for concepts
+1. `cangjie-mcp topics` — discover categories and topic names (includes names by default)
+2. `cangjie-mcp query "<terms>"` — semantic search for concepts (returns code examples by default)
 3. `cangjie-mcp query "<terms>" --package <pkg>` — search stdlib APIs
-4. `cangjie-mcp query "<terms>" --extract-code` — find code examples
-5. `cangjie-mcp topic <name>` — retrieve full documentation
+4. `cangjie-mcp topic <name>` — retrieve full documentation for a specific topic
 
 ## LSP Code Intelligence
 

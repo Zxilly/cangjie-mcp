@@ -6,6 +6,7 @@ use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings, MockDocum
 use cangjie_server::lsp_tools::{LspOperation, LspRequest, LspTarget};
 use cangjie_server::mcp_handler::{GetTopicParams, ListTopicsParams, SearchDocsParams};
 use cangjie_server::{CangjieServer, Parameters};
+use rmcp::model::Meta;
 use tempfile::TempDir;
 
 async fn build_test_server() -> (TempDir, CangjieServer) {
@@ -63,13 +64,16 @@ async fn test_unified_lsp_tool_reports_validation_error() {
     let (_tmp, server) = build_test_server().await;
 
     let result_json = server
-        .lsp(Parameters(LspRequest {
-            operation: LspOperation::WorkspaceSymbol,
-            file_path: None,
-            target: None,
-            query: None,
-            new_name: None,
-        }))
+        .lsp(
+            Parameters(LspRequest {
+                operation: LspOperation::WorkspaceSymbol,
+                file_path: None,
+                target: None,
+                query: None,
+                new_name: None,
+            }),
+            Meta::default(),
+        )
         .await;
 
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -89,16 +93,19 @@ async fn test_unified_lsp_tool_requires_position_for_completion() {
     std::fs::write(&file_path, "main() {}").unwrap();
 
     let result_json = server
-        .lsp(Parameters(LspRequest {
-            operation: LspOperation::Completion,
-            file_path: Some(file_path.to_string_lossy().to_string()),
-            target: Some(LspTarget::Symbol {
-                symbol: "main".to_string(),
-                line_hint: None,
+        .lsp(
+            Parameters(LspRequest {
+                operation: LspOperation::Completion,
+                file_path: Some(file_path.to_string_lossy().to_string()),
+                target: Some(LspTarget::Symbol {
+                    symbol: "main".to_string(),
+                    line_hint: None,
+                }),
+                query: None,
+                new_name: None,
             }),
-            query: None,
-            new_name: None,
-        }))
+            Meta::default(),
+        )
         .await;
 
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -107,7 +114,7 @@ async fn test_unified_lsp_tool_requires_position_for_completion() {
     assert!(result["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("target.kind=position"));
+        .contains("completion requires target with kind=position"));
 }
 
 #[tokio::test]

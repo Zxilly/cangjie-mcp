@@ -53,20 +53,20 @@ fn detect_cangjie_home(workspace: &Path) -> Option<PathBuf> {
         .or_else(|| detect_cangjie_home_from_vscode_settings(workspace))
 }
 
-/// Initialize the global LSP client.
-pub async fn init(settings: LSPSettings) -> bool {
+/// Create and start a new LSP client from settings.
+/// Shared by both `init` (global singleton) and `LspPool` (per-workspace).
+pub async fn start_client(settings: &LSPSettings) -> Result<CangjieClient, String> {
     let validation_errors = settings.validate();
     if !validation_errors.is_empty() {
-        error!(
-            "Failed to initialize LSP client: invalid settings: {}",
+        return Err(format!(
+            "Invalid LSP settings: {}",
             validation_errors.join("; ")
-        );
-        return false;
+        ));
     }
 
     if let Some(ref log_path) = settings.log_path {
         if let Err(e) = std::fs::create_dir_all(log_path) {
-            error!(
+            tracing::warn!(
                 "Failed to create LSP log directory {}: {}",
                 log_path.display(),
                 e
@@ -74,19 +74,24 @@ pub async fn init(settings: LSPSettings) -> bool {
         }
     }
 
-    // Create the LSP compilation cache directory
     let cache_dir = settings.workspace_path.join(".cache").join("lsp");
     if let Err(e) = std::fs::create_dir_all(&cache_dir) {
-        error!(
+        tracing::warn!(
             "Failed to create LSP cache directory {}: {}",
             cache_dir.display(),
             e
         );
     }
 
-    let (init_options, require_path) = build_init_options(&settings);
+    let (init_options, require_path) = build_init_options(settings);
+    CangjieClient::start(settings, &init_options, &require_path)
+        .await
+        .map_err(|e| format!("Failed to start LSP client: {e}"))
+}
 
-    match CangjieClient::start(&settings, &init_options, &require_path).await {
+/// Initialize the global LSP client.
+pub async fn init(settings: LSPSettings) -> bool {
+    match start_client(&settings).await {
         Ok(client) => {
             *LSP_CLIENT.write().await = Some(client);
             info!("LSP client initialized successfully");
@@ -96,7 +101,7 @@ pub async fn init(settings: LSPSettings) -> bool {
             true
         }
         Err(e) => {
-            error!("Failed to initialize LSP client: {}", e);
+            error!("{e}");
             false
         }
     }

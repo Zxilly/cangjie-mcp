@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+#[cfg(feature = "lsp")]
+use crate::lsp_pool::LspPool;
 use anyhow::Result;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -195,6 +197,8 @@ pub struct CangjieServer {
     state: Arc<RwLock<Option<InnerState>>>,
     settings: Settings,
     tool_router: ToolRouter<Self>,
+    #[cfg(feature = "lsp")]
+    lsp_pool: Option<Arc<LspPool>>,
 }
 
 impl CangjieServer {
@@ -263,7 +267,27 @@ impl CangjieServer {
             state: Arc::new(RwLock::new(None)),
             settings,
             tool_router: Self::build_tool_router(),
+            #[cfg(feature = "lsp")]
+            lsp_pool: None,
         }
+    }
+
+    /// Create a server with an LSP pool for daemon mode.
+    /// LSP clients are created on demand per workspace directory.
+    #[cfg(feature = "lsp")]
+    pub fn with_lsp_pool(settings: Settings, idle_timeout: std::time::Duration) -> Self {
+        Self {
+            state: Arc::new(RwLock::new(None)),
+            settings,
+            tool_router: Self::build_tool_router(),
+            lsp_pool: Some(Arc::new(LspPool::new(idle_timeout))),
+        }
+    }
+
+    /// Get a reference to the LSP pool (if in daemon mode).
+    #[cfg(feature = "lsp")]
+    pub fn lsp_pool(&self) -> Option<&Arc<LspPool>> {
+        self.lsp_pool.as_ref()
     }
 
     /// Create a `CangjieServer` with pre-initialized state (for testing).
@@ -281,6 +305,8 @@ impl CangjieServer {
             state: Arc::new(RwLock::new(Some(inner))),
             settings,
             tool_router: Self::build_tool_router(),
+            #[cfg(feature = "lsp")]
+            lsp_pool: None,
         }
     }
 
@@ -291,16 +317,22 @@ impl CangjieServer {
 
         #[cfg(feature = "lsp")]
         {
-            Self::log_lsp_startup_status();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-            if let Some(lsp_settings) = cangjie_lsp::detect_settings(Some(cwd)) {
-                if cangjie_lsp::init(lsp_settings).await {
-                    info!("LSP startup: initialization completed");
-                } else {
-                    warn!("LSP startup: initialization failed, LSP tools will be unavailable");
-                }
+            if self.lsp_pool.is_some() {
+                info!("LSP startup: using pool mode (clients created on demand per workspace)");
             } else {
-                warn!("LSP startup: skipped initialization because CANGJIE_HOME is not configured");
+                Self::log_lsp_startup_status();
+                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                if let Some(lsp_settings) = cangjie_lsp::detect_settings(Some(cwd)) {
+                    if cangjie_lsp::init(lsp_settings).await {
+                        info!("LSP startup: initialization completed");
+                    } else {
+                        warn!("LSP startup: initialization failed, LSP tools will be unavailable");
+                    }
+                } else {
+                    warn!(
+                        "LSP startup: skipped initialization because CANGJIE_HOME is not configured"
+                    );
+                }
             }
         }
 
@@ -558,8 +590,8 @@ pub struct SearchDocsParams {
     /// Number of results to skip for pagination
     #[serde(default)]
     pub offset: usize,
-    /// Whether to extract code examples from results
-    #[serde(default)]
+    /// Whether to extract code examples from results (default: true)
+    #[serde(default = "default_true")]
     pub extract_code: bool,
     /// Filter by stdlib package name (e.g., 'std.collection', 'std.fs')
     #[serde(default)]
@@ -584,9 +616,13 @@ pub struct ListTopicsParams {
     /// Optional category to filter by (e.g., 'cjpm', 'syntax')
     #[serde(default)]
     pub category: Option<String>,
-    /// Whether to include full topic lists per category (default: false returns only category names and counts)
-    #[serde(default)]
+    /// Whether to include full topic lists per category (default: true). Set to false for a compact summary with only category names and counts.
+    #[serde(default = "default_true")]
     pub detail: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // ── Tool implementations ────────────────────────────────────────────────────
@@ -605,13 +641,30 @@ impl CangjieServer {
     pub async fn lsp(
         &self,
         Parameters(params): Parameters<crate::lsp_tools::LspRequest>,
+        meta: rmcp::model::Meta,
     ) -> String {
-        crate::lsp_tools::execute_lsp_request(params).await
+        // Extract working directory from _meta header
+        let working_dir = meta
+            .0
+            .get(crate::lsp_tools::META_WORKING_DIRECTORY)
+            .and_then(|v| v.as_str())
+            .map(std::path::PathBuf::from);
+
+        #[cfg(feature = "lsp")]
+        {
+            crate::lsp_tools::execute_lsp_request(params, self.lsp_pool.as_deref(), working_dir)
+                .await
+        }
+        #[cfg(not(feature = "lsp"))]
+        {
+            let _ = working_dir;
+            crate::lsp_tools::execute_lsp_request(params).await
+        }
     }
 
     #[tool(
         name = "cangjie_search_docs",
-        description = "Search Cangjie documentation using semantic search. Performs similarity search across all indexed documentation. Returns matching sections ranked by relevance as structured JSON with pagination support (use offset/top_k). Supports filtering by category (e.g. 'stdlib', 'syntax') and stdlib package name (e.g. 'std.collection', 'std.fs'). Set extract_code=true to extract code examples from results.",
+        description = "Search Cangjie documentation using semantic search. Performs similarity search across all indexed documentation. Returns matching sections ranked by relevance with code examples and pagination support (use offset/top_k). Supports filtering by category (e.g. 'stdlib', 'syntax') and stdlib package name (e.g. 'std.collection', 'std.fs').",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -798,7 +851,7 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_list_topics",
-        description = "List available documentation topics organized by category. Returns all documentation topics, optionally filtered by category. Use this to discover topic names for use with cangjie_get_topic. Set detail=false (default) for a compact summary with category names and topic counts; set detail=true to include full topic lists.",
+        description = "List available documentation topics organized by category. Returns all documentation topics with names, optionally filtered by category. Use this to discover topic names for use with cangjie_get_topic. Set detail=false for a compact summary with only category names and topic counts.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

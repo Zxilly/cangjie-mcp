@@ -509,14 +509,13 @@ class A : B { }                   class A <: B { }  // Use <:
 
 ## Available Tools
 
-- `cangjie_search_docs`: Semantic search across documentation (supports code extraction and stdlib package filtering)
+- `cangjie_search_docs`: Semantic search across documentation with code examples (supports stdlib package filtering)
 - `cangjie_get_topic`: Get complete documentation for a topic
-- `cangjie_list_topics`: List available topics by category
+- `cangjie_list_topics`: List available topics by category (includes topic names by default)
 
 ## Recommended Workflow
 
-1. `cangjie_list_topics` - discover available categories
-2. `cangjie_search_docs` - search for general concepts
+1. `cangjie_list_topics` - discover available categories and topic names
+2. `cangjie_search_docs` - search for concepts (returns code examples by default)
 3. `cangjie_search_docs` with `package` - search standard library APIs (e.g., `package="std.collection"`)
-4. `cangjie_search_docs` with `extract_code=True` - find practical code examples
-5. `cangjie_get_topic` - retrieve full documentation
+4. `cangjie_get_topic` - retrieve full documentation for a specific topic

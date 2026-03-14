@@ -1,5 +1,5 @@
 use cangjie_server::lsp_tools::{LspOperation, LspRequest, LspTarget};
-use rmcp::model::CallToolRequestParams;
+use rmcp::model::{CallToolRequestParams, Meta};
 use serde_json::{json, Map, Value};
 
 use super::{Commands, LspCommand};
@@ -211,7 +211,17 @@ pub fn command_to_tool_call(cmd: &Commands) -> Option<CallToolRequestParams> {
         Commands::Lsp { operation } => {
             let request = lsp_command_to_request(operation);
             let args = serde_json::to_value(&request).unwrap_or_default();
-            Some(make_params("cangjie_lsp", args))
+            let mut params = make_params("cangjie_lsp", args);
+            // Pass working directory via _meta (header-style, not visible in tool schema)
+            if let Ok(cwd) = std::env::current_dir() {
+                let mut meta = Meta::new();
+                meta.0.insert(
+                    cangjie_server::lsp_tools::META_WORKING_DIRECTORY.to_string(),
+                    json!(cwd.to_string_lossy()),
+                );
+                params.meta = Some(meta);
+            }
+            Some(params)
         }
         Commands::Serve | Commands::Index | Commands::Daemon { .. } | Commands::Config { .. } => {
             None

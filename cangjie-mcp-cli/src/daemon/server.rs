@@ -12,6 +12,8 @@ use cangjie_server::CangjieServer;
 use super::ipc::IpcListener;
 use super::paths;
 
+const LSP_IDLE_TIMEOUT_SECS: u64 = 10 * 60; // 10 minutes
+
 pub async fn run_daemon(settings: Settings, timeout_minutes: u64) -> Result<()> {
     // Write PID file
     paths::ensure_runtime_dir()?;
@@ -19,8 +21,20 @@ pub async fn run_daemon(settings: Settings, timeout_minutes: u64) -> Result<()> 
     std::fs::write(paths::pid_file(), pid.to_string())?;
     info!("Daemon started (PID={pid}, timeout={timeout_minutes}min)");
 
-    // Create and initialize the MCP server
-    let server = CangjieServer::new(settings);
+    // Create and initialize the MCP server with LSP pool for multi-workspace support
+    let server = CangjieServer::with_lsp_pool(settings, Duration::from_secs(LSP_IDLE_TIMEOUT_SECS));
+
+    // Spawn LSP pool idle eviction task
+    if let Some(pool) = server.lsp_pool() {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                pool.evict_idle().await;
+            }
+        });
+    }
+
     let server_init = server.clone();
     tokio::spawn(async move {
         if let Err(e) = server_init.initialize().await {
