@@ -26,6 +26,23 @@ pip install cangjie-mcp
 uvx cangjie-mcp  # 启动 MCP 服务器
 ```
 
+也可以通过 npm 安装 CLI：
+
+```bash
+npm install -g cangjie-mcp
+```
+
+安装后会提供两个入口：
+
+- `cangjie`
+- `cangjie-mcp`，等价于 `cangjie mcp`
+
+npm 默认优先使用预编译二进制；当当前平台没有匹配包，或 Linux 的 glibc 低于 `2.28` 时，会自动回退到本地源码构建。你也可以显式强制源码构建：
+
+```bash
+CANGJIE_MCP_FORCE_BUILD=1 npm install -g cangjie-mcp
+```
+
 ### 安装并指定 Rust feature
 
 当平台没有预编译 wheel，或你希望按需启用 GPU/NPU 等加速后端时，可强制从 sdist 构建并传入 maturin 构建参数：

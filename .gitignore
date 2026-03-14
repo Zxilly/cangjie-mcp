@@ -43,3 +43,11 @@ coverage.xml
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+npm/node_modules/
+npm/dist/
+npm/packages/*/bin/cangjie
+npm/packages/*/bin/cangjie.exe
+npm/packages/cangjie-mcp/artifacts/*
+!npm/packages/cangjie-mcp/artifacts/.gitignore
+npm/packages/cangjie-mcp-source/workspace/*
+!npm/packages/cangjie-mcp-source/workspace/.gitkeep

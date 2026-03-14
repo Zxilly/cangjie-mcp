@@ -1,0 +1,386 @@
+name: NPM Release
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test-npm:
+    name: Validate npm scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run Node tests
+        run: npm --prefix npm test
+
+  build-platform-package:
+    name: Pack ${{ matrix.package_name }}
+    runs-on: ${{ matrix.runner }}
+    needs: [test-npm]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_name: linux-x64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            package_dir: npm/packages/cangjie-mcp-linux-x64-gnu
+            binary_name: cangjie
+            container_image: quay.io/pypa/manylinux_2_28_x86_64
+          - package_name: linux-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            package_dir: npm/packages/cangjie-mcp-linux-arm64-gnu
+            binary_name: cangjie
+            container_image: quay.io/pypa/manylinux_2_28_aarch64
+          - package_name: windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            package_dir: npm/packages/cangjie-mcp-win32-x64-msvc
+            binary_name: cangjie.exe
+          - package_name: darwin-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            package_dir: npm/packages/cangjie-mcp-darwin-arm64
+            binary_name: cangjie
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Protoc
+        if: runner.os != 'Linux'
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "33.5"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        if: runner.os != 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Linux binary in manylinux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD":/workspace \
+            -w /workspace \
+            "${{ matrix.container_image }}" \
+            /bin/bash -lc '
+              set -euxo pipefail
+              curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+              source "$HOME/.cargo/env"
+              rustup default stable
+              rustup target add "${{ matrix.target }}"
+
+              ARCH="$(uname -m)"
+              if [ "$ARCH" = "x86_64" ]; then
+                PROTOC_ARCH="x86_64"
+              elif [ "$ARCH" = "aarch64" ]; then
+                PROTOC_ARCH="aarch_64"
+              else
+                echo "Unsupported architecture for protoc: $ARCH"
+                exit 1
+              fi
+
+              PROTOC_ZIP="protoc-33.5-linux-${PROTOC_ARCH}.zip"
+              PROTOC_DIR="${HOME}/.local"
+              curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v33.5/${PROTOC_ZIP}"
+              python3 -m zipfile -e "${PROTOC_ZIP}" "${PROTOC_DIR}"
+              rm "${PROTOC_ZIP}"
+              chmod +x "${PROTOC_DIR}/bin/protoc"
+              export PATH="${PROTOC_DIR}/bin:${PATH}"
+
+              cargo build -p cangjie-cli --release --features local --target "${{ matrix.target }}"
+            '
+
+      - name: Build non-Linux binary
+        if: runner.os != 'Linux'
+        run: cargo build -p cangjie-cli --release --features local --target ${{ matrix.target }}
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            "./${BINARY}" --help > /dev/null
+          else
+            "${BINARY}" --help > /dev/null
+          fi
+
+      - name: Stage binary
+        run: node npm/scripts/stage-binary-package.cjs --package-dir ${{ matrix.package_dir }} --binary target/${{ matrix.target }}/release/${{ matrix.binary_name }} --name ${{ matrix.binary_name }}
+
+      - name: Pack npm package
+        shell: bash
+        working-directory: ${{ matrix.package_dir }}
+        run: |
+          mkdir -p ../../dist
+          npm pack . --pack-destination ../../dist
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: npm-${{ matrix.package_name }}
+          path: npm/dist/*.tgz
+
+  build-source-package:
+    name: Pack source fallback package
+    runs-on: ubuntu-24.04
+    needs: [test-npm]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "33.5"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Stage source package
+        run: npm --prefix npm run stage:source
+
+      - name: Validate source fallback build
+        run: node npm/packages/cangjie-mcp-source/lib/build.cjs --out npm/dist/source-smoke/cangjie
+
+      - name: Pack source npm package
+        working-directory: npm/packages/cangjie-mcp-source
+        run: |
+          mkdir -p ../../dist
+          npm pack . --pack-destination ../../dist
+
+      - name: Upload source package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: npm-source
+          path: npm/dist/*.tgz
+
+  build-root-package:
+    name: Pack root npm package
+    runs-on: ubuntu-24.04
+    needs: [test-npm]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Pack root npm package
+        working-directory: npm/packages/cangjie-mcp
+        run: |
+          mkdir -p ../../dist
+          npm pack . --pack-destination ../../dist
+
+      - name: Upload root package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: npm-root
+          path: npm/dist/*.tgz
+
+  integration-prebuilt:
+    name: Integration test ${{ matrix.package_name }}
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - build-platform-package
+      - build-source-package
+      - build-root-package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_name: linux-x64
+            runner: ubuntu-24.04
+            tarball_pattern: cangjie-mcp-cangjie-mcp-linux-x64-gnu-*.tgz
+          - package_name: linux-arm64
+            runner: ubuntu-24.04-arm
+            tarball_pattern: cangjie-mcp-cangjie-mcp-linux-arm64-gnu-*.tgz
+          - package_name: windows-x64
+            runner: windows-latest
+            tarball_pattern: cangjie-mcp-cangjie-mcp-win32-x64-msvc-*.tgz
+          - package_name: darwin-arm64
+            runner: macos-15
+            tarball_pattern: cangjie-mcp-cangjie-mcp-darwin-arm64-*.tgz
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: npm-*
+          merge-multiple: true
+          path: npm-dist
+
+      - name: Install tarballs and test entrypoints
+        shell: pwsh
+        run: |
+          $workspace = Join-Path $PWD 'npm-integration'
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          Set-Location $workspace
+
+          npm init -y | Out-Null
+
+          $rootPackage = (Resolve-Path (Join-Path $PWD '..\npm-dist\cangjie-mcp-[0-9]*.tgz')).Path
+          $sourcePackage = (Resolve-Path (Join-Path $PWD '..\npm-dist\cangjie-mcp-cangjie-mcp-source-*.tgz')).Path
+          $platformPackage = (Resolve-Path (Join-Path $PWD "..\npm-dist\${{ matrix.tarball_pattern }}")).Path
+
+          npm install $sourcePackage $platformPackage $rootPackage
+
+          if ($IsWindows) {
+            & ".\node_modules\.bin\cangjie.cmd" --help | Out-Null
+            & ".\node_modules\.bin\cangjie-mcp.cmd" --help | Out-Null
+          } else {
+            & "./node_modules/.bin/cangjie" --help | Out-Null
+            & "./node_modules/.bin/cangjie-mcp" --help | Out-Null
+          }
+
+  integration-source-fallback:
+    name: Integration test source fallback
+    runs-on: ubuntu-24.04
+    needs:
+      - build-source-package
+      - build-root-package
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "33.5"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: npm-*
+          merge-multiple: true
+          path: npm-dist
+
+      - name: Install root package with forced source build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p npm-source-integration
+          cd npm-source-integration
+          npm init -y > /dev/null
+          ROOT_PACKAGE="$(find ../npm-dist -maxdepth 1 -name 'cangjie-mcp-[0-9]*.tgz' | head -n1)"
+          SOURCE_PACKAGE="$(find ../npm-dist -maxdepth 1 -name 'cangjie-mcp-cangjie-mcp-source-*.tgz' | head -n1)"
+          CANGJIE_MCP_FORCE_BUILD=1 npm install "$SOURCE_PACKAGE" "$ROOT_PACKAGE"
+          ./node_modules/.bin/cangjie --help > /dev/null
+          ./node_modules/.bin/cangjie-mcp --help > /dev/null
+
+  dry-run-publish:
+    name: Dry-run npm publish
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    needs:
+      - build-platform-package
+      - build-source-package
+      - build-root-package
+      - integration-prebuilt
+      - integration-source-fallback
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: npm-*
+          merge-multiple: true
+          path: npm-dist
+
+      - name: Dry-run publish all tarballs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for package in npm-dist/*.tgz; do
+            npm publish "$package" --access public --dry-run
+          done
+
+  publish-npm:
+    name: Publish npm packages
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    needs:
+      - build-platform-package
+      - build-source-package
+      - build-root-package
+      - integration-prebuilt
+      - integration-source-fallback
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: npm-*
+          merge-multiple: true
+          path: npm-dist
+
+      - name: Publish platform and source packages
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euxo pipefail
+          for package in \
+            npm-dist/cangjie-mcp-cangjie-mcp-linux-x64-gnu-*.tgz \
+            npm-dist/cangjie-mcp-cangjie-mcp-linux-arm64-gnu-*.tgz \
+            npm-dist/cangjie-mcp-cangjie-mcp-win32-x64-msvc-*.tgz \
+            npm-dist/cangjie-mcp-cangjie-mcp-darwin-arm64-*.tgz \
+            npm-dist/cangjie-mcp-cangjie-mcp-source-*.tgz; do
+            npm publish "$package" --access public --provenance
+          done
+
+      - name: Publish root package
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euxo pipefail
+          ROOT_PACKAGE="$(find npm-dist -maxdepth 1 -name 'cangjie-mcp-[0-9]*.tgz' | head -n1)"
+          npm publish "$ROOT_PACKAGE" --access public --provenance

@@ -1,0 +1,40 @@
+{
+  "name": "cangjie-mcp",
+  "version": "0.3.3",
+  "description": "Cangjie CLI distributed through npm with platform binaries and source fallback builds.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zxilly/cangjie-mcp.git"
+  },
+  "homepage": "https://github.com/Zxilly/cangjie-mcp",
+  "bugs": {
+    "url": "https://github.com/Zxilly/cangjie-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "cangjie": "bin/cangjie.cjs",
+    "cangjie-mcp": "bin/cangjie-mcp.cjs"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "bin/*.cjs",
+    "lib/*.cjs",
+    "scripts/*.cjs"
+  ],
+  "scripts": {
+    "postinstall": "node ./scripts/postinstall.cjs"
+  },
+  "dependencies": {
+    "@cangjie-mcp/cangjie-mcp-source": "0.3.3"
+  },
+  "optionalDependencies": {
+    "@cangjie-mcp/cangjie-mcp-darwin-arm64": "0.3.3",
+    "@cangjie-mcp/cangjie-mcp-linux-arm64-gnu": "0.3.3",
+    "@cangjie-mcp/cangjie-mcp-linux-x64-gnu": "0.3.3",
+    "@cangjie-mcp/cangjie-mcp-win32-x64-msvc": "0.3.3"
+  }
+}

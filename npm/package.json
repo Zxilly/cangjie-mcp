@@ -1,0 +1,12 @@
+{
+  "name": "cangjie-mcp-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "stage:source": "node scripts/stage-source-package.cjs",
+    "stage:binary": "node scripts/stage-binary-package.cjs"
+  }
+}

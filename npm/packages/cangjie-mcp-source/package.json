@@ -1,0 +1,29 @@
+{
+  "name": "@cangjie-mcp/cangjie-mcp-source",
+  "version": "0.3.3",
+  "description": "Source fallback package used to build the cangjie CLI locally when a prebuilt npm binary is unavailable.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zxilly/cangjie-mcp.git"
+  },
+  "homepage": "https://github.com/Zxilly/cangjie-mcp",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "lib/index.cjs",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "lib/*.cjs",
+    "workspace/Cargo.toml",
+    "workspace/Cargo.lock",
+    "workspace/LICENSE",
+    "workspace/README.md",
+    "workspace/cangjie-cli/**/*",
+    "workspace/cangjie-core/**/*",
+    "workspace/cangjie-indexer/**/*",
+    "workspace/cangjie-lsp/**/*",
+    "workspace/cangjie-server/**/*"
+  ]
+}
