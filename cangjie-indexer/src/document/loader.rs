@@ -1,17 +1,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-use super::{CODE_BLOCK_RE, HEADING_RE};
+use super::CODE_BLOCK_RE;
 use crate::{DocData, DocMetadata};
-
-// -- Code Block --------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct CodeBlock {
-    pub language: String,
-    pub code: String,
-    pub context: String,
-}
 
 // -- Title extraction --------------------------------------------------------
 
@@ -23,42 +14,6 @@ pub fn extract_title_from_content(content: &str) -> String {
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
         .unwrap_or_default()
-}
-
-// -- Code block extraction ---------------------------------------------------
-
-pub fn extract_code_blocks(content: &str) -> Vec<CodeBlock> {
-    let mut blocks = Vec::new();
-
-    for cap in CODE_BLOCK_RE.captures_iter(content) {
-        let language = cap.get(1).map(|m| m.as_str()).unwrap_or("text").to_string();
-        let language = if language.is_empty() {
-            "text".to_string()
-        } else {
-            language
-        };
-        let code = cap
-            .get(2)
-            .map(|m| m.as_str().trim())
-            .unwrap_or("")
-            .to_string();
-
-        let start_pos = cap.get(0).unwrap().start();
-        let preceding = &content[..start_pos];
-        let context = HEADING_RE
-            .captures_iter(preceding)
-            .last()
-            .map(|c| c.get(0).unwrap().as_str().to_string())
-            .unwrap_or_default();
-
-        blocks.push(CodeBlock {
-            language,
-            code,
-            context,
-        });
-    }
-
-    blocks
 }
 
 // -- Document loading from files on disk -------------------------------------
@@ -74,7 +29,7 @@ pub fn load_document_from_content(
     }
 
     let title = extract_title_from_content(&content);
-    let code_blocks = extract_code_blocks(&content);
+    let has_code = CODE_BLOCK_RE.is_match(&content);
 
     Some(DocData {
         text: content,
@@ -83,8 +38,8 @@ pub fn load_document_from_content(
             category: category.to_string(),
             topic: topic.to_string(),
             title,
-            code_block_count: code_blocks.len(),
-            has_code: !code_blocks.is_empty(),
+            code_block_count: 0,
+            has_code,
             chunk_id: String::new(),
         },
         doc_id: relative_path.to_string(),
@@ -130,40 +85,6 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_code_blocks_basic() {
-        let content = "## Section\n```cangjie\nfunc main() {}\n```\n";
-        let blocks = extract_code_blocks(content);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].language, "cangjie");
-        assert_eq!(blocks[0].code, "func main() {}");
-        assert_eq!(blocks[0].context, "## Section");
-    }
-
-    #[test]
-    fn test_extract_code_blocks_no_language() {
-        let content = "```\nplain code\n```\n";
-        let blocks = extract_code_blocks(content);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].language, "text");
-    }
-
-    #[test]
-    fn test_extract_code_blocks_multiple() {
-        let content = "# Title\n```rust\nlet x = 1;\n```\n## Other\n```python\nx = 1\n```\n";
-        let blocks = extract_code_blocks(content);
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].language, "rust");
-        assert_eq!(blocks[1].language, "python");
-        assert_eq!(blocks[1].context, "## Other");
-    }
-
-    #[test]
-    fn test_extract_code_blocks_empty() {
-        let blocks = extract_code_blocks("no code here");
-        assert!(blocks.is_empty());
-    }
-
-    #[test]
     fn test_load_document_from_content_basic() {
         let content =
             "# Functions\nSome text about functions.\n```cangjie\nfunc foo() {}\n```\n".to_string();
@@ -179,7 +100,6 @@ mod tests {
         assert_eq!(doc.metadata.category, "syntax");
         assert_eq!(doc.metadata.topic, "functions");
         assert!(doc.metadata.has_code);
-        assert_eq!(doc.metadata.code_block_count, 1);
     }
 
     #[test]

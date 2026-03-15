@@ -44,7 +44,6 @@ async fn test_search_docs_basic() {
             query: "函数".into(),
             top_k: 5,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -126,7 +125,6 @@ async fn test_search_docs_with_category() {
             query: "函数".into(),
             top_k: 10,
             offset: 0,
-            extract_code: false,
             category: Some("syntax".into()),
             package: None,
         }))
@@ -149,7 +147,6 @@ async fn test_search_docs_pagination() {
             query: "仓颉".into(),
             top_k: 20,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -161,7 +158,6 @@ async fn test_search_docs_pagination() {
             query: "仓颉".into(),
             top_k: 2,
             offset: 2,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -183,26 +179,6 @@ async fn test_search_docs_pagination() {
 }
 
 #[tokio::test]
-async fn test_search_docs_extract_code() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .search_docs(Parameters(SearchDocsParams {
-            query: "函数定义".into(),
-            top_k: 5,
-            offset: 0,
-            extract_code: true,
-            category: None,
-            package: None,
-        }))
-        .await;
-
-    let result_count = result.matches("### [").count();
-    assert!(result_count > 0, "should return results");
-    assert!(!result.is_empty(), "result content should not be empty");
-}
-
-#[tokio::test]
 async fn test_search_docs_package_filter() {
     let (_tmp, server) = build_test_server().await;
 
@@ -211,7 +187,6 @@ async fn test_search_docs_package_filter() {
             query: "集合".into(),
             top_k: 10,
             offset: 0,
-            extract_code: false,
             category: None,
             package: Some("Array".into()),
         }))
@@ -231,6 +206,8 @@ async fn test_get_topic_found() {
         .get_topic(Parameters(GetTopicParams {
             topic: "functions".into(),
             category: Some("syntax".into()),
+            offset: 0,
+            max_length: 10000,
         }))
         .await;
 
@@ -256,6 +233,8 @@ async fn test_get_topic_not_found_with_suggestions() {
         .get_topic(Parameters(GetTopicParams {
             topic: "functons".into(), // typo: missing 'i'
             category: None,
+            offset: 0,
+            max_length: 10000,
         }))
         .await;
 
@@ -281,6 +260,8 @@ async fn test_get_topic_wrong_category_fallbacks_to_correct_category() {
         .get_topic(Parameters(GetTopicParams {
             topic: "functions".into(),
             category: Some("stdlib".into()),
+            offset: 0,
+            max_length: 10000,
         }))
         .await;
 
@@ -341,7 +322,6 @@ async fn test_search_docs_allows_two_snippets_per_document_when_top_k_is_large()
             query: "HashMap".into(),
             top_k: 10,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -402,7 +382,6 @@ async fn test_search_docs_limits_to_one_snippet_per_document_when_top_k_is_small
             query: "HashMap".into(),
             top_k: 3,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -504,7 +483,6 @@ async fn test_search_docs_not_initialized() {
             query: "函数".into(),
             top_k: 5,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -525,7 +503,6 @@ async fn test_search_docs_max_top_k_clamped() {
             query: "仓颉".into(),
             top_k: 999,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))
@@ -549,7 +526,6 @@ async fn test_search_docs_min_top_k_clamped() {
             query: "函数".into(),
             top_k: 0,
             offset: 0,
-            extract_code: false,
             category: None,
             package: None,
         }))

@@ -208,20 +208,23 @@ pub enum Commands {
         /// Offset for pagination
         #[arg(long, default_value_t = 0)]
         offset: usize,
-        /// Extract code examples
-        #[arg(long)]
-        extract_code: bool,
         /// Filter by stdlib package name
         #[arg(long)]
         package: Option<String>,
     },
-    /// Get complete documentation for a topic
+    /// Get documentation for a topic (with pagination)
     Topic {
         /// Topic name
         name: String,
         /// Optional category filter
         #[arg(long, short = 'c')]
         category: Option<String>,
+        /// Byte offset to start reading from
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        /// Maximum number of bytes to return
+        #[arg(long, default_value_t = 10000)]
+        max_length: usize,
     },
     /// List available documentation topics
     Topics {

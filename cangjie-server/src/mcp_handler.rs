@@ -15,26 +15,16 @@ use tracing::info;
 use tracing::warn;
 
 use cangjie_core::config::{
-    Settings, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER,
-    SIMILARITY_THRESHOLD,
+    Settings, DEFAULT_TOPIC_MAX_LENGTH, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K,
+    PACKAGE_FETCH_MULTIPLIER, SIMILARITY_THRESHOLD,
 };
 use cangjie_core::prompts::get_prompt;
 use cangjie_indexer::document::chunker::strip_chunk_artifacts;
-use cangjie_indexer::document::loader::extract_code_blocks;
 use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource, RemoteDocumentSource};
 use cangjie_indexer::search::{LocalSearchIndex, RemoteSearchIndex};
 use cangjie_indexer::SearchResult;
 
 // ── Output models ───────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct CodeExample {
-    pub language: String,
-    pub code: String,
-    pub context: String,
-    pub source_topic: String,
-    pub source_file: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchResultItem {
@@ -44,9 +34,6 @@ pub struct SearchResultItem {
     pub category: String,
     pub topic: String,
     pub title: String,
-    pub has_code_examples: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_examples: Option<Vec<CodeExample>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -96,11 +83,6 @@ fn format_results_markdown(result: &DocsSearchResult) -> String {
         )
         .unwrap();
         writeln!(out, "{}\n", item.content).unwrap();
-        if let Some(ref examples) = item.code_examples {
-            for ex in examples {
-                writeln!(out, "```{}\n{}\n```\n", ex.language, ex.code).unwrap();
-            }
-        }
     }
 
     if result.has_more {
@@ -117,24 +99,51 @@ fn format_results_markdown(result: &DocsSearchResult) -> String {
     out
 }
 
-/// Format a topic result as Markdown.
+/// Format a topic result as Markdown with pagination support.
 fn format_topic_markdown(
     file_path: &str,
     category: &str,
     topic: &str,
     title: &str,
     content: &str,
+    offset: usize,
+    max_length: usize,
 ) -> String {
     use std::fmt::Write;
     let mut out = String::new();
+
+    let total_len = content.len();
+
+    // Snap byte offsets to valid UTF-8 char boundaries
+    let start = content.floor_char_boundary(offset.min(total_len));
+    let end = content.floor_char_boundary((start + max_length).min(total_len));
+    let slice = &content[start..end];
+    let has_more = end < total_len;
+
     writeln!(out, "# {title}\n").unwrap();
     writeln!(
         out,
-        "**Topic:** {topic} | **Category:** {category} | **File:** {file_path}\n"
+        "**Topic:** {topic} | **Category:** {category} | **File:** {file_path}"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "**Content range:** {start}-{end} / {total_len} bytes\n"
     )
     .unwrap();
     writeln!(out, "---\n").unwrap();
-    write!(out, "{content}").unwrap();
+    write!(out, "{slice}").unwrap();
+
+    if has_more {
+        writeln!(out).unwrap();
+        writeln!(out, "\n---").unwrap();
+        writeln!(
+            out,
+            "_Content truncated. Use offset={end} to read the next section._"
+        )
+        .unwrap();
+    }
+
     out
 }
 
@@ -590,9 +599,6 @@ pub struct SearchDocsParams {
     /// Number of results to skip for pagination
     #[serde(default)]
     pub offset: usize,
-    /// Whether to extract code examples from results (default: true)
-    #[serde(default = "default_true")]
-    pub extract_code: bool,
     /// Filter by stdlib package name (e.g., 'std.collection', 'std.fs')
     #[serde(default)]
     pub package: Option<String>,
@@ -609,6 +615,16 @@ pub struct GetTopicParams {
     /// Optional category to narrow the search (e.g., 'syntax', 'stdlib')
     #[serde(default)]
     pub category: Option<String>,
+    /// Byte offset to start reading from (default: 0). Use for paginated reading of large documents.
+    #[serde(default)]
+    pub offset: usize,
+    /// Maximum number of bytes to return (default: 10000). Use with offset for pagination.
+    #[serde(default = "default_topic_max_length")]
+    pub max_length: usize,
+}
+
+fn default_topic_max_length() -> usize {
+    DEFAULT_TOPIC_MAX_LENGTH
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -708,34 +724,13 @@ impl CangjieServer {
 
         let items: Vec<SearchResultItem> = paginated
             .into_iter()
-            .map(|r| {
-                let code_examples = if params.extract_code {
-                    let blocks = extract_code_blocks(&r.text);
-                    Some(
-                        blocks
-                            .into_iter()
-                            .map(|b| CodeExample {
-                                language: b.language,
-                                code: b.code,
-                                context: b.context,
-                                source_topic: r.metadata.topic.clone(),
-                                source_file: r.metadata.file_path.clone(),
-                            })
-                            .collect(),
-                    )
-                } else {
-                    None
-                };
-                SearchResultItem {
-                    content: strip_chunk_artifacts(&r.text).to_string(),
-                    score: r.score,
-                    file_path: r.metadata.file_path,
-                    category: r.metadata.category,
-                    topic: r.metadata.topic,
-                    title: r.metadata.title,
-                    has_code_examples: r.metadata.has_code,
-                    code_examples,
-                }
+            .map(|r| SearchResultItem {
+                content: strip_chunk_artifacts(&r.text).to_string(),
+                score: r.score,
+                file_path: r.metadata.file_path,
+                category: r.metadata.category,
+                topic: r.metadata.topic,
+                title: r.metadata.title,
             })
             .collect();
 
@@ -758,7 +753,7 @@ impl CangjieServer {
 
     #[tool(
         name = "cangjie_get_topic",
-        description = "Get complete documentation for a specific topic. Retrieves the full content of a documentation file by topic name. Use cangjie_list_topics first to discover available topic names.",
+        description = "Get documentation for a specific topic with pagination. Returns a section of the document content. Use offset and max_length to paginate through large documents. Use cangjie_list_topics first to discover available topic names.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -776,6 +771,8 @@ impl CangjieServer {
 
         let topic = &params.topic;
         let category = params.category.as_deref().filter(|s| !s.is_empty());
+        let offset = params.offset;
+        let max_length = params.max_length.max(1);
 
         let doc = docs.get_document_by_topic(topic, category).await;
 
@@ -786,6 +783,8 @@ impl CangjieServer {
                 &doc.metadata.topic,
                 &doc.metadata.title,
                 &doc.text,
+                offset,
+                max_length,
             ),
             Ok(None) => {
                 // If the provided category is wrong, fallback to cross-category search.
@@ -798,6 +797,8 @@ impl CangjieServer {
                                 &doc.metadata.topic,
                                 &doc.metadata.title,
                                 &doc.text,
+                                offset,
+                                max_length,
                             );
                         }
                         Ok(None) => {}
@@ -1053,6 +1054,8 @@ mod tests {
                 super::GetTopicParams {
                     topic: "functions".to_string(),
                     category: None,
+                    offset: 0,
+                    max_length: 10000,
                 },
             ))
             .await;

@@ -177,14 +177,12 @@ pub fn command_to_tool_call(cmd: &Commands) -> Option<CallToolRequestParams> {
             category,
             top_k,
             offset,
-            extract_code,
             package,
         } => {
             let mut args = json!({
                 "query": query,
                 "top_k": top_k,
                 "offset": offset,
-                "extract_code": extract_code,
             });
             if let Some(cat) = category {
                 args["category"] = json!(cat);
@@ -194,8 +192,17 @@ pub fn command_to_tool_call(cmd: &Commands) -> Option<CallToolRequestParams> {
             }
             Some(make_params("cangjie_search_docs", args))
         }
-        Commands::Topic { name, category } => {
-            let mut args = json!({ "topic": name });
+        Commands::Topic {
+            name,
+            category,
+            offset,
+            max_length,
+        } => {
+            let mut args = json!({
+                "topic": name,
+                "offset": offset,
+                "max_length": max_length,
+            });
             if let Some(cat) = category {
                 args["category"] = json!(cat);
             }

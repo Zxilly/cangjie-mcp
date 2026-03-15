@@ -1,7 +1,5 @@
 use cangjie_indexer::document::chunker::{chunk_document, chunk_documents};
-use cangjie_indexer::document::loader::{
-    extract_code_blocks, extract_title_from_content, load_document_from_content,
-};
+use cangjie_indexer::document::loader::{extract_title_from_content, load_document_from_content};
 use cangjie_indexer::document::source::DocumentSource;
 use cangjie_mcp_test::{sample_documents, MockDocumentSource};
 
@@ -16,7 +14,6 @@ fn test_load_and_chunk_pipeline() {
     assert_eq!(doc.metadata.topic, "example");
     assert_eq!(doc.metadata.title, "测试文档");
     assert!(doc.metadata.has_code);
-    assert_eq!(doc.metadata.code_block_count, 1);
 
     let chunks = chunk_document(&doc, 6000, 200);
     assert!(!chunks.is_empty(), "document should produce chunks");
@@ -116,26 +113,12 @@ async fn test_mock_source_empty_category() {
     assert!(titles.is_empty());
 }
 
-/// Document loader: multiple code blocks should be counted correctly.
+/// Document loader: code detection should work for documents with code blocks.
 #[test]
 fn test_load_document_multiple_code_blocks() {
     let content = "# Multi Code\n\n```cangjie\nlet a = 1\n```\n\ntext\n\n```python\nprint(1)\n```\n\nmore text\n\n```bash\necho hi\n```\n".to_string();
     let doc = load_document_from_content(content, "test/multi.md", "test", "multi").unwrap();
-    assert_eq!(doc.metadata.code_block_count, 3);
     assert!(doc.metadata.has_code);
-}
-
-/// extract_code_blocks should capture surrounding heading as context.
-#[test]
-fn test_code_block_context_extraction() {
-    let content = "# Introduction\n\nSome text.\n\n## Example\n\n```cangjie\nfunc foo() {}\n```\n";
-    let blocks = extract_code_blocks(content);
-    assert_eq!(blocks.len(), 1);
-    assert_eq!(blocks[0].language, "cangjie");
-    assert!(
-        blocks[0].context.contains("Example"),
-        "context should contain the nearest heading"
-    );
 }
 
 /// Title extraction should return filename stem when no H1 heading exists.

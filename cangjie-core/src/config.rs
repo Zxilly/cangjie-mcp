@@ -37,6 +37,7 @@ pub const DEFAULT_EMBEDDING_DIM: usize = 384;
 pub const SIMILARITY_THRESHOLD: f64 = 0.6;
 pub const MAX_SUGGESTIONS: usize = 5;
 pub const PACKAGE_FETCH_MULTIPLIER: usize = 3;
+pub const DEFAULT_TOPIC_MAX_LENGTH: usize = 10000;
 pub const CATEGORY_FILTER_MULTIPLIER: usize = 4;
 pub const VECTOR_BATCH_SIZE: usize = 64;
 pub const INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
