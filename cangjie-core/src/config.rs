@@ -321,6 +321,11 @@ pub fn log_startup_info(settings: &Settings, index_info: &IndexInfo) {
             "BM25"
         };
         info!("Search: {search_mode}");
+        info!(
+            "Chunk: max_size={}, overlap={}",
+            settings.chunk_max_size,
+            settings.chunk_overlap,
+        );
         if settings.has_embedding() {
             let model = match settings.embedding_type {
                 EmbeddingType::Local => &settings.local_model,

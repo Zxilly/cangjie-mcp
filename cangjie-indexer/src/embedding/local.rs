@@ -68,4 +68,8 @@ impl Embedder for LocalEmbedder {
     fn model_name(&self) -> &str {
         &self.model_name
     }
+
+    fn max_input_chars(&self) -> Option<usize> {
+        super::model_max_input_chars(&self.model_name)
+    }
 }

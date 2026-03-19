@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use tracing::info;
 
-use crate::document::chunker::chunk_documents;
+use crate::document::chunker::{self, chunk_documents};
 use crate::document::source::{DocumentSource, GitDocumentSource};
 use crate::embedding;
 use crate::search::bm25::BM25Store;
@@ -53,9 +53,35 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
         std::collections::HashMap::new()
     };
 
-    info!("Chunking documents...");
+    // Create embedder early so we can query its input limit for chunk sizing.
+    // Falls back to None (BM25-only) if creation fails.
+    let embedder = embedding::create_embedder(settings).await.unwrap_or(None);
+
+    let model_max_chars = embedder.as_ref().and_then(|e| e.max_input_chars());
+    let effective_size = chunker::effective_chunk_size(settings.chunk_max_size, model_max_chars);
+
+    if let (Some(limit), Some(ref emb)) = (model_max_chars, &embedder) {
+        if effective_size < settings.chunk_max_size {
+            info!(
+                "Chunk size adjusted: {} -> {} chars (model input limit: {} chars)",
+                settings.chunk_max_size, effective_size, limit,
+            );
+        }
+        if limit < chunker::CHUNK_OVERHEAD_BUDGET + chunker::MIN_USEFUL_CHUNK_SIZE {
+            tracing::warn!(
+                "Embedding model '{}' has a very small input limit ({} chars / ~{} tokens). \
+                 Chunk quality may be degraded. Consider using a model with larger context \
+                 (e.g., BAAI/bge-m3 with 8192 tokens).",
+                emb.model_name(),
+                limit,
+                limit * 2 / 3,
+            );
+        }
+    }
+
+    info!("Chunking documents (max_size={}, overlap={})...", effective_size, settings.chunk_overlap);
     let mut chunks =
-        chunk_documents(documents, settings.chunk_max_size, settings.chunk_overlap).await;
+        chunk_documents(documents, effective_size, settings.chunk_overlap).await;
     info!("Created {} chunks", chunks.len());
 
     // Contextual retrieval: generate LLM summaries if summary_model is configured
@@ -88,7 +114,6 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
     let mut bm25 = BM25Store::new(index_info.bm25_index_dir());
     bm25.build_from_chunks(&chunks).await?;
 
-    let embedder = embedding::create_embedder(settings).await.unwrap_or(None);
     if let Some(ref emb) = embedder {
         info!(
             "Building vector index with embedder: {}...",

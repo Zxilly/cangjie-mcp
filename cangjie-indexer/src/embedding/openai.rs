@@ -57,4 +57,9 @@ impl Embedder for OpenAIEmbedder {
     fn model_name(&self) -> &str {
         self.api.model()
     }
+
+    fn max_input_chars(&self) -> Option<usize> {
+        super::model_max_input_chars(self.model_name())
+    }
 }
+

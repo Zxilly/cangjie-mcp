@@ -4,6 +4,29 @@ use tracing::info;
 use super::{CODE_BLOCK_RE, HEADING_RE};
 use crate::{DocData, TextChunk};
 
+/// Overhead budget for prefixes added during chunk assembly:
+/// heading breadcrumb (~100) + overlap (~200) + context summary (~250).
+pub const CHUNK_OVERHEAD_BUDGET: usize = 600;
+
+/// Floor for effective chunk size. 500 chars is roughly one paragraph or code snippet.
+pub const MIN_USEFUL_CHUNK_SIZE: usize = 500;
+
+/// Compute effective chunk size accounting for the embedding model's input limit.
+///
+/// Subtracts the overhead budget from the model limit, clamps to `MIN_USEFUL_CHUNK_SIZE`,
+/// then takes the minimum of that and the user-configured max.
+/// Returns `user_max` unchanged when `model_max_chars` is `None`.
+pub fn effective_chunk_size(user_max: usize, model_max_chars: Option<usize>) -> usize {
+    match model_max_chars {
+        Some(model_limit) => {
+            let usable = model_limit.saturating_sub(CHUNK_OVERHEAD_BUDGET);
+            let effective = usable.max(MIN_USEFUL_CHUNK_SIZE);
+            effective.min(user_max)
+        }
+        None => user_max,
+    }
+}
+
 /// Parse the heading hierarchy active at each byte offset of the document.
 ///
 /// Returns a sorted vec of `(byte_offset, level, heading_text)` for every
@@ -348,5 +371,35 @@ mod tests {
     fn test_strip_chunk_artifacts_plain() {
         let text = "Plain text with no artifacts.";
         assert_eq!(strip_chunk_artifacts(text), "Plain text with no artifacts.");
+    }
+
+    #[test]
+    fn test_effective_chunk_size_no_model_limit() {
+        assert_eq!(effective_chunk_size(6000, None), 6000);
+    }
+
+    #[test]
+    fn test_effective_chunk_size_model_much_larger() {
+        assert_eq!(effective_chunk_size(6000, Some(12000)), 6000);
+    }
+
+    #[test]
+    fn test_effective_chunk_size_model_smaller() {
+        assert_eq!(effective_chunk_size(6000, Some(1500)), 900);
+    }
+
+    #[test]
+    fn test_effective_chunk_size_user_smaller_than_model() {
+        assert_eq!(effective_chunk_size(800, Some(1500)), 800);
+    }
+
+    #[test]
+    fn test_effective_chunk_size_model_very_small() {
+        assert_eq!(effective_chunk_size(6000, Some(180)), 500);
+    }
+
+    #[test]
+    fn test_effective_chunk_size_model_at_overhead_boundary() {
+        assert_eq!(effective_chunk_size(6000, Some(600)), 500);
     }
 }
