@@ -79,9 +79,11 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
         }
     }
 
-    info!("Chunking documents (max_size={}, overlap={})...", effective_size, settings.chunk_overlap);
-    let mut chunks =
-        chunk_documents(documents, effective_size, settings.chunk_overlap).await;
+    info!(
+        "Chunking documents (max_size={}, overlap={})...",
+        effective_size, settings.chunk_overlap
+    );
+    let mut chunks = chunk_documents(documents, effective_size, settings.chunk_overlap).await;
     info!("Created {} chunks", chunks.len());
 
     // Contextual retrieval: generate LLM summaries if summary_model is configured

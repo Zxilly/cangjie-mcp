@@ -62,4 +62,3 @@ impl Embedder for OpenAIEmbedder {
         super::model_max_input_chars(self.model_name())
     }
 }
-

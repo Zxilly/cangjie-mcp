@@ -35,12 +35,12 @@ pub trait Embedder: Send + Sync {
 /// the model's token limit. Returns `None` for unknown models.
 pub fn model_max_input_chars(model_name: &str) -> Option<usize> {
     match model_name {
-        s if s.contains("MiniLM") => Some(180),              // 128 tokens
-        s if s.contains("bge-m3") => Some(12000),            // 8192 tokens
-        s if s.contains("bge-large") => Some(750),           // 512 tokens
-        s if s.contains("bge-small") => Some(750),           // 512 tokens
-        s if s.contains("e5") => Some(750),                  // 512 tokens
-        s if s.contains("text-embedding-3") => Some(12000),  // 8191 tokens
+        s if s.contains("MiniLM") => Some(180),    // 128 tokens
+        s if s.contains("bge-m3") => Some(12000),  // 8192 tokens
+        s if s.contains("bge-large") => Some(750), // 512 tokens
+        s if s.contains("bge-small") => Some(750), // 512 tokens
+        s if s.contains("e5") => Some(750),        // 512 tokens
+        s if s.contains("text-embedding-3") => Some(12000), // 8191 tokens
         s if s.contains("text-embedding-ada") => Some(12000), // 8191 tokens
         _ => None,
     }
