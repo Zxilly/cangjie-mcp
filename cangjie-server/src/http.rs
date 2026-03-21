@@ -16,8 +16,8 @@ use cangjie_indexer::IndexMetadata;
 // ── Shared state ────────────────────────────────────────────────────────────
 
 struct AppState {
-    search_index: LocalSearchIndex,
-    doc_source: Box<dyn DocumentSource>,
+    search_index: Arc<LocalSearchIndex>,
+    doc_source: Arc<dyn DocumentSource>,
     index_metadata: IndexMetadata,
     topics_cache: HashMap<String, Vec<TopicEntry>>,
 }
@@ -193,8 +193,8 @@ async fn topic_detail_handler(
 // ── App builder ─────────────────────────────────────────────────────────────
 
 pub async fn create_http_app(
-    search_index: LocalSearchIndex,
-    doc_source: Box<dyn DocumentSource>,
+    search_index: Arc<LocalSearchIndex>,
+    doc_source: Arc<dyn DocumentSource>,
     index_metadata: IndexMetadata,
 ) -> Router {
     // Pre-compute topics cache

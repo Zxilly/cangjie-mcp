@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use cangjie_indexer::search::bm25::BM25Store;
@@ -21,7 +23,8 @@ async fn build_test_app() -> (TempDir, axum::Router) {
     let search_index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
     let docs = sample_documents();
-    let doc_source = Box::new(MockDocumentSource::from_docs(&docs));
+    let doc_source: Arc<dyn cangjie_indexer::document::source::DocumentSource> =
+        Arc::new(MockDocumentSource::from_docs(&docs));
 
     let metadata = IndexMetadata {
         version: "test".to_string(),
@@ -31,7 +34,7 @@ async fn build_test_app() -> (TempDir, axum::Router) {
         search_mode: SearchMode::Bm25,
     };
 
-    let app = create_http_app(search_index, doc_source, metadata).await;
+    let app = create_http_app(Arc::new(search_index), doc_source, metadata).await;
     (tmp, app)
 }
 

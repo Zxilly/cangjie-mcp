@@ -9,6 +9,7 @@ license = "MIT"
 default = ["lsp", "http"]
 lsp = ["dep:cangjie-lsp"]
 http = ["dep:axum", "dep:tower-http"]
+streamable-http = ["http", "rmcp/transport-streamable-http-server", "dep:tokio-util"]
 local = ["cangjie-indexer/local"]
 legacy = ["cangjie-indexer/legacy"]
 local-cuda = ["cangjie-indexer/local-cuda"]
@@ -31,6 +32,7 @@ tracing = "0.1"
 anyhow = "1"
 strsim = "0.11"
 async-trait = "0.1"
+tokio-util = { version = "0.7", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

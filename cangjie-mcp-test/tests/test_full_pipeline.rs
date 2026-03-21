@@ -5,6 +5,8 @@
 //!
 //! These tests require network access.
 
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
@@ -33,7 +35,7 @@ fn real_settings(data_dir: std::path::PathBuf) -> Settings {
 }
 
 /// Clone repo, load docs, chunk, build BM25 index. Returns everything needed for search.
-async fn build_real_index() -> (TempDir, BM25Store, Box<dyn DocumentSource>) {
+async fn build_real_index() -> (TempDir, BM25Store, Arc<dyn DocumentSource>) {
     let tmp = TempDir::new().unwrap();
 
     // Clone and checkout
@@ -57,7 +59,7 @@ async fn build_real_index() -> (TempDir, BM25Store, Box<dyn DocumentSource>) {
 
     // Rebuild source for trait object (can't move out of `source` after loading docs)
     let source2 = GitDocumentSource::new(tmp.path().join("docs_repo"), DocLang::Zh).unwrap();
-    (tmp, bm25, Box::new(source2))
+    (tmp, bm25, Arc::new(source2) as Arc<dyn DocumentSource>)
 }
 
 #[tokio::test]
@@ -164,7 +166,7 @@ async fn test_real_docs_http_app_search() {
         search_mode: SearchMode::Bm25,
     };
 
-    let app = create_http_app(search_index, doc_source, metadata).await;
+    let app = create_http_app(Arc::new(search_index), doc_source, metadata).await;
 
     // Test search
     let req = Request::builder()

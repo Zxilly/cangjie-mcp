@@ -3,6 +3,9 @@ pub mod mcp_handler;
 #[cfg(feature = "http")]
 pub mod http;
 
+#[cfg(feature = "streamable-http")]
+pub mod streamable;
+
 #[cfg(feature = "lsp")]
 pub mod lsp_pool;
 

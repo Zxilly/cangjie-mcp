@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
@@ -12,15 +13,16 @@ use cangjie_core::config::{
     DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K, DEFAULT_SERVER_ENABLE_HTTP2, DEFAULT_SERVER_HOST,
     DEFAULT_SERVER_PORT,
 };
-use cangjie_indexer::document::source::GitDocumentSource;
+use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource};
 use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::IndexMetadata;
 use cangjie_server::http::create_http_app;
+use cangjie_server::streamable::{create_mcp_service, CancellationToken, McpServerConfig};
 
 #[derive(Parser)]
 #[command(
     name = "cangjie-mcp-server",
-    about = "HTTP query server for Cangjie programming language documentation",
+    about = "HTTP query server and remote MCP server for Cangjie programming language documentation",
     version
 )]
 struct Cli {
@@ -124,6 +126,14 @@ struct Cli {
     /// Use pre-built index, optionally specifying a version (for Docker runtime)
     #[arg(long, env = "CANGJIE_PREBUILT", num_args = 0..=1, default_missing_value = "true", value_name = "VERSION")]
     prebuilt: Option<String>,
+
+    /// Path to mount the MCP endpoint
+    #[arg(long = "mcp-path", env = "CANGJIE_MCP_PATH", default_value = "/mcp")]
+    mcp_path: String,
+
+    /// Disable MCP endpoint (serve REST API only)
+    #[arg(long = "no-mcp", env = "CANGJIE_NO_MCP")]
+    no_mcp: bool,
 }
 
 impl Cli {
@@ -186,7 +196,29 @@ async fn main() -> Result<()> {
 
     let doc_source = GitDocumentSource::new(settings.docs_repo_dir(), index_info.lang)?;
 
-    let app = create_http_app(search_index, Box::new(doc_source), index_metadata).await;
+    let search_index = Arc::new(search_index);
+    let doc_source: Arc<dyn DocumentSource> = Arc::new(doc_source);
+
+    let mut app = create_http_app(search_index.clone(), doc_source.clone(), index_metadata).await;
+
+    let ct = if !cli.no_mcp {
+        let ct = CancellationToken::new();
+        let mcp_server =
+            cangjie_server::CangjieServer::with_shared_state(settings, search_index, doc_source);
+
+        let mcp_config = McpServerConfig {
+            stateful_mode: true,
+            cancellation_token: ct.child_token(),
+            ..Default::default()
+        };
+        let mcp_service = create_mcp_service(mcp_server, mcp_config);
+
+        info!("MCP endpoint enabled at {}", cli.mcp_path);
+        app = app.nest_service(&cli.mcp_path, mcp_service);
+        Some(ct)
+    } else {
+        None
+    };
 
     let bind_addr = format!("{}:{}", cli.host, cli.port);
     info!("Starting HTTP server on {bind_addr}...");
@@ -194,7 +226,13 @@ async fn main() -> Result<()> {
     if cli.server_enable_http2 {
         info!("HTTP/2 enabled on server.");
     }
-    axum::serve(listener, app).await?;
+    if let Some(ct) = ct {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move { ct.cancelled().await })
+            .await?;
+    } else {
+        axum::serve(listener, app).await?;
+    }
 
     Ok(())
 }

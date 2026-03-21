@@ -299,16 +299,15 @@ impl CangjieServer {
         self.lsp_pool.as_ref()
     }
 
-    /// Create a `CangjieServer` with pre-initialized state (for testing).
-    #[doc(hidden)]
-    pub fn with_local_state(
+    /// Create a `CangjieServer` with pre-initialized shared state.
+    pub fn with_shared_state(
         settings: Settings,
-        search: LocalSearchIndex,
-        docs: Box<dyn DocumentSource>,
+        search: Arc<LocalSearchIndex>,
+        docs: Arc<dyn DocumentSource>,
     ) -> Self {
         let inner = InnerState {
-            search: SearchBackend::Local(Arc::new(search)),
-            docs: Arc::from(docs),
+            search: SearchBackend::Local(search),
+            docs,
         };
         Self {
             state: Arc::new(RwLock::new(Some(inner))),
@@ -317,6 +316,16 @@ impl CangjieServer {
             #[cfg(feature = "lsp")]
             lsp_pool: None,
         }
+    }
+
+    /// Create a `CangjieServer` with pre-initialized state (for testing).
+    #[doc(hidden)]
+    pub fn with_local_state(
+        settings: Settings,
+        search: LocalSearchIndex,
+        docs: Box<dyn DocumentSource>,
+    ) -> Self {
+        Self::with_shared_state(settings, Arc::new(search), Arc::from(docs))
     }
 
     /// Initialize the server (clone repo, build index, etc.)

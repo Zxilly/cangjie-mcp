@@ -21,7 +21,7 @@ local-accelerate = ["cangjie-server/local-accelerate"]
 
 [dependencies]
 cangjie-core = { path = "../cangjie-core" }
-cangjie-server = { path = "../cangjie-server", features = ["http"] }
+cangjie-server = { path = "../cangjie-server", features = ["http", "streamable-http"] }
 cangjie-indexer = { path = "../cangjie-indexer" }
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
