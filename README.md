@@ -11,7 +11,7 @@
 ## 功能
 
 - **文档搜索**: 基于向量检索的仓颉语言文档搜索
-- **代码智能**: 基于 LSP 的代码补全、跳转定义、查找引用等功能
+- **代码智能**: 基于 LSP 的跳转定义、查找引用、悬停信息等功能
 - **可选远程文档服务**: 支持连接远程文档/索引服务，减少本地资源占用，适合开箱即用或团队共享
 
 ## 快速开始
@@ -25,6 +25,8 @@ uvx cangjie-mcp
 # 使用 npx (Node.js 侧推荐)
 npx cangjie-mcp
 ```
+
+> **注意**：`cangjie-mcp`（不带子命令）会启动 MCP stdio 服务器，该模式通过标准输入/输出与 AI 编程助手通信，直接在终端运行只会看到空白界面。请参照下方"快速配置"章节将其接入 AI 编程助手使用。如需在终端使用，请使用 `cangjie-mcp query`、`cangjie-mcp lsp` 等子命令。
 
 ## 安装
 
@@ -248,7 +250,7 @@ npx skills add Zxilly/cangjie-mcp
 
 | 工具名称 | 功能 |
 |---------|------|
-| `cangjie_lsp` | 统一 LSP 入口，通过 `operation` 执行 definition、references、hover、document_symbol、diagnostics、workspace_symbol、incoming/outgoing calls、type hierarchy、rename 和 completion |
+| `cangjie_lsp` | 统一 LSP 入口，通过 `operation` 执行 definition、references、hover、document_symbol、diagnostics、workspace_symbol、incoming/outgoing calls 和 type hierarchy |
 
 ## 命令行参考
 

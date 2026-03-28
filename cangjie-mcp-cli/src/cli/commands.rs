@@ -44,7 +44,6 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
         LspCommand::References {
             file,
@@ -56,7 +55,6 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
         LspCommand::Hover {
             file,
@@ -68,56 +66,24 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
         LspCommand::Symbols { file } => LspRequest {
             operation: LspOperation::DocumentSymbol,
             file_path: Some(file.clone()),
             target: None,
             query: None,
-            new_name: None,
         },
         LspCommand::Diagnostics { file } => LspRequest {
             operation: LspOperation::Diagnostics,
             file_path: Some(file.clone()),
             target: None,
             query: None,
-            new_name: None,
         },
         LspCommand::WorkspaceSymbol { query } => LspRequest {
             operation: LspOperation::WorkspaceSymbol,
             file_path: None,
             target: None,
             query: Some(query.clone()),
-            new_name: None,
-        },
-        LspCommand::Completion {
-            file,
-            line,
-            character,
-        } => LspRequest {
-            operation: LspOperation::Completion,
-            file_path: Some(file.clone()),
-            target: Some(LspTarget::Position {
-                line: *line,
-                character: *character,
-            }),
-            query: None,
-            new_name: None,
-        },
-        LspCommand::Rename {
-            file,
-            symbol,
-            new_name,
-        } => LspRequest {
-            operation: LspOperation::Rename,
-            file_path: Some(file.clone()),
-            target: Some(LspTarget::Symbol {
-                symbol: symbol.clone(),
-                line_hint: None,
-            }),
-            query: None,
-            new_name: Some(new_name.clone()),
         },
         LspCommand::IncomingCalls {
             file,
@@ -129,7 +95,6 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
         LspCommand::OutgoingCalls {
             file,
@@ -141,7 +106,6 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
         LspCommand::TypeSupertypes {
             file,
@@ -153,7 +117,6 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
         LspCommand::TypeSubtypes {
             file,
@@ -165,7 +128,6 @@ fn lsp_command_to_request(cmd: &LspCommand) -> LspRequest {
             file_path: Some(file.clone()),
             target: build_lsp_target(symbol, line, character),
             query: None,
-            new_name: None,
         },
     }
 }

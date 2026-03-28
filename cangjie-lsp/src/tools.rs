@@ -2,9 +2,8 @@ use crate::types::{
     CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, Diagnostic,
     DiagnosticSeverity, DocumentSymbol, DocumentSymbolResponse, GotoDefinitionResponse, Hover,
     HoverContents, Location, LocationLink, MarkedString, NumberOrString, SymbolKind,
-    TypeHierarchyItem, WorkspaceEdit,
+    TypeHierarchyItem,
 };
-use crate::types::{CompletionItem, CompletionResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -40,26 +39,6 @@ pub struct HoverOutput {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<LocationResult>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CompletionItemOutput {
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub documentation: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub insert_text: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CompletionResult {
-    pub items: Vec<CompletionItemOutput>,
-    pub count: usize,
-    pub is_incomplete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -170,28 +149,6 @@ pub struct TypeHierarchyItemOutput {
 pub struct TypeHierarchyResult {
     pub items: Vec<TypeHierarchyItemOutput>,
     pub count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FileEdit {
-    pub file_path: String,
-    pub edits: Vec<TextEditOutput>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TextEditOutput {
-    pub line: u32,
-    pub character: u32,
-    pub end_line: u32,
-    pub end_character: u32,
-    pub new_text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RenameResult {
-    pub files: Vec<FileEdit>,
-    pub file_count: usize,
-    pub edit_count: usize,
 }
 
 // -- Helpers -----------------------------------------------------------------
@@ -331,37 +288,6 @@ fn extract_diagnostic_code(code: &NumberOrString) -> String {
     match code {
         NumberOrString::Number(n) => n.to_string(),
         NumberOrString::String(s) => s.clone(),
-    }
-}
-
-fn completion_kind_name(kind: lsp_types::CompletionItemKind) -> &'static str {
-    match kind {
-        lsp_types::CompletionItemKind::TEXT => "text",
-        lsp_types::CompletionItemKind::METHOD => "method",
-        lsp_types::CompletionItemKind::FUNCTION => "function",
-        lsp_types::CompletionItemKind::CONSTRUCTOR => "constructor",
-        lsp_types::CompletionItemKind::FIELD => "field",
-        lsp_types::CompletionItemKind::VARIABLE => "variable",
-        lsp_types::CompletionItemKind::CLASS => "class",
-        lsp_types::CompletionItemKind::INTERFACE => "interface",
-        lsp_types::CompletionItemKind::MODULE => "module",
-        lsp_types::CompletionItemKind::PROPERTY => "property",
-        lsp_types::CompletionItemKind::UNIT => "unit",
-        lsp_types::CompletionItemKind::VALUE => "value",
-        lsp_types::CompletionItemKind::ENUM => "enum",
-        lsp_types::CompletionItemKind::KEYWORD => "keyword",
-        lsp_types::CompletionItemKind::SNIPPET => "snippet",
-        lsp_types::CompletionItemKind::COLOR => "color",
-        lsp_types::CompletionItemKind::FILE => "file",
-        lsp_types::CompletionItemKind::REFERENCE => "reference",
-        lsp_types::CompletionItemKind::FOLDER => "folder",
-        lsp_types::CompletionItemKind::ENUM_MEMBER => "enum_member",
-        lsp_types::CompletionItemKind::CONSTANT => "constant",
-        lsp_types::CompletionItemKind::STRUCT => "struct",
-        lsp_types::CompletionItemKind::EVENT => "event",
-        lsp_types::CompletionItemKind::OPERATOR => "operator",
-        lsp_types::CompletionItemKind::TYPE_PARAMETER => "type_parameter",
-        _ => "unknown",
     }
 }
 
@@ -638,75 +564,6 @@ pub fn process_type_hierarchy(result: &Value) -> TypeHierarchyResult {
     TypeHierarchyResult { items, count }
 }
 
-pub fn process_rename(result: &Value) -> RenameResult {
-    let edit: Option<WorkspaceEdit> = serde_json::from_value(result.clone()).ok();
-    let edit = match edit {
-        Some(e) => e,
-        None => return RenameResult::default(),
-    };
-
-    let mut files = Vec::new();
-    let mut total_edits = 0;
-
-    if let Some(changes) = edit.changes {
-        for (uri, text_edits) in changes {
-            let file_path = uri_to_path(uri.as_str()).to_string_lossy().to_string();
-            let edits: Vec<TextEditOutput> = text_edits
-                .iter()
-                .map(|te| TextEditOutput {
-                    line: te.range.start.line + 1,
-                    character: te.range.start.character + 1,
-                    end_line: te.range.end.line + 1,
-                    end_character: te.range.end.character + 1,
-                    new_text: te.new_text.clone(),
-                })
-                .collect();
-            total_edits += edits.len();
-            files.push(FileEdit { file_path, edits });
-        }
-    }
-
-    let file_count = files.len();
-    RenameResult {
-        files,
-        file_count,
-        edit_count: total_edits,
-    }
-}
-
-fn completion_item_to_output(item: &CompletionItem) -> CompletionItemOutput {
-    let documentation = item.documentation.as_ref().map(|docs| match docs {
-        lsp_types::Documentation::String(text) => text.clone(),
-        lsp_types::Documentation::MarkupContent(content) => content.value.clone(),
-    });
-
-    CompletionItemOutput {
-        label: item.label.clone(),
-        kind: item.kind.map(completion_kind_name).map(str::to_string),
-        detail: item.detail.clone(),
-        documentation,
-        insert_text: item.insert_text.clone(),
-    }
-}
-
-pub fn process_completion(result: &Value) -> CompletionResult {
-    let response: Option<CompletionResponse> = serde_json::from_value(result.clone()).ok();
-
-    match response {
-        Some(CompletionResponse::Array(items)) => CompletionResult {
-            count: items.len(),
-            items: items.iter().map(completion_item_to_output).collect(),
-            is_incomplete: false,
-        },
-        Some(CompletionResponse::List(list)) => CompletionResult {
-            count: list.items.len(),
-            items: list.items.iter().map(completion_item_to_output).collect(),
-            is_incomplete: list.is_incomplete,
-        },
-        None => CompletionResult::default(),
-    }
-}
-
 pub fn get_validate_error(file_path: &str) -> Option<String> {
     validate_file_path(file_path)
 }
@@ -969,25 +826,6 @@ mod tests {
         })];
         let result = process_diagnostics(&diags);
         assert_eq!(result.diagnostics[0].code, Some("42".to_string()));
-    }
-
-    #[test]
-    fn test_process_completion_list() {
-        let result = json!({
-            "isIncomplete": false,
-            "items": [
-                {
-                    "label": "println",
-                    "kind": 3,
-                    "detail": "func println(value: String)",
-                    "insertText": "println"
-                }
-            ]
-        });
-        let completion = process_completion(&result);
-        assert_eq!(completion.count, 1);
-        assert_eq!(completion.items[0].label, "println");
-        assert_eq!(completion.items[0].kind.as_deref(), Some("function"));
     }
 
     #[test]

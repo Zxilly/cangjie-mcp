@@ -656,7 +656,7 @@ fn default_true() -> bool {
 impl CangjieServer {
     #[tool(
         name = "cangjie_lsp",
-        description = "Unified Cangjie LSP entry point. Use operation to run definition, references, hover, document_symbol, diagnostics, workspace_symbol, incoming_calls, outgoing_calls, type hierarchy, rename, and completion.",
+        description = "Unified Cangjie LSP entry point. Use operation to run definition, references, hover, document_symbol, diagnostics, workspace_symbol, incoming_calls, outgoing_calls, and type hierarchy.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

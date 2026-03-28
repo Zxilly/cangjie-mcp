@@ -35,8 +35,6 @@ impl From<LspOperation> for SupportedOperation {
             LspOperation::OutgoingCalls => SupportedOperation::OutgoingCalls,
             LspOperation::TypeSupertypes => SupportedOperation::TypeSupertypes,
             LspOperation::TypeSubtypes => SupportedOperation::TypeSubtypes,
-            LspOperation::Rename => SupportedOperation::Rename,
-            LspOperation::Completion => SupportedOperation::Completion,
         }
     }
 }
@@ -54,8 +52,6 @@ pub enum LspOperation {
     OutgoingCalls,
     TypeSupertypes,
     TypeSubtypes,
-    Rename,
-    Completion,
 }
 
 impl LspOperation {
@@ -75,8 +71,6 @@ impl LspOperation {
                 | Self::OutgoingCalls
                 | Self::TypeSupertypes
                 | Self::TypeSubtypes
-                | Self::Rename
-                | Self::Completion
         )
     }
 }
@@ -104,8 +98,6 @@ pub struct LspRequest {
     pub target: Option<LspTarget>,
     #[serde(default)]
     pub query: Option<String>,
-    #[serde(default)]
-    pub new_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, PartialEq, Eq)]
@@ -227,27 +219,6 @@ fn validate_request(params: &LspRequest) -> Result<(), String> {
     {
         return Err(
             "query is required for workspace_symbol. Provide a symbol name to search, e.g. {\"query\": \"MyClass\"}"
-                .to_string(),
-        );
-    }
-
-    if matches!(params.operation, LspOperation::Rename)
-        && params
-            .new_name
-            .as_deref()
-            .is_none_or(|new_name| new_name.trim().is_empty())
-    {
-        return Err(
-            "new_name is required for rename. Provide the desired new name, e.g. {\"new_name\": \"newSymbolName\"}"
-                .to_string(),
-        );
-    }
-
-    if matches!(params.operation, LspOperation::Completion)
-        && !matches!(params.target, Some(LspTarget::Position { .. }))
-    {
-        return Err(
-            "completion requires target with kind=position. Use {\"kind\": \"position\", \"line\": 1, \"character\": 1} (symbol targets are not supported for completion)"
                 .to_string(),
         );
     }
@@ -553,7 +524,6 @@ async fn execute_lsp_request_impl(
             lsp_op!(positioned, type_supertypes, process_type_hierarchy)
         }
         LspOperation::TypeSubtypes => lsp_op!(positioned, type_subtypes, process_type_hierarchy),
-        LspOperation::Completion => lsp_op!(positioned, completion, process_completion),
         LspOperation::DocumentSymbol => lsp_op!(file_only, document_symbol, process_symbols),
         LspOperation::WorkspaceSymbol => {
             lsp_op!(query_only, workspace_symbol, process_workspace_symbols)
@@ -613,30 +583,6 @@ async fn execute_lsp_request_impl(
             }
             Err(error) => error_response(params.operation, format!("Error: {error}")),
         },
-        LspOperation::Rename => {
-            let position = resolved_position.expect("validated target");
-            match client
-                .rename(
-                    file_path.expect("validated file"),
-                    position.zero_based_line,
-                    position.zero_based_character,
-                    params.new_name.as_deref().unwrap_or_default(),
-                )
-                .await
-            {
-                Ok(result) => {
-                    let data = lsp_tools::process_rename(&result);
-                    response_with_data(
-                        params.operation,
-                        status_from_count(data.edit_count),
-                        resolved_target,
-                        &data,
-                        None,
-                    )
-                }
-                Err(error) => error_response(params.operation, format!("Error: {error}")),
-            }
-        }
     }
 }
 
@@ -698,32 +644,8 @@ mod tests {
             file_path: None,
             target: None,
             query: None,
-            new_name: None,
         };
         assert!(validate_request(&params).is_err());
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn test_validate_completion_requires_position_target() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("main.cj");
-        std::fs::write(&file_path, "main() {}").unwrap();
-        let params = LspRequest {
-            operation: LspOperation::Completion,
-            file_path: Some(file_path.to_string_lossy().to_string()),
-            target: Some(LspTarget::Symbol {
-                symbol: "main".to_string(),
-                line_hint: None,
-            }),
-            query: None,
-            new_name: None,
-        };
-        let err = validate_request(&params).unwrap_err();
-        assert!(
-            err.contains("completion requires target with kind=position"),
-            "unexpected error: {err}"
-        );
     }
 
     #[cfg(feature = "lsp")]

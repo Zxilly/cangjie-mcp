@@ -19,12 +19,11 @@ use crate::transport::{
 };
 use crate::types::{
     CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    ClientCapabilities, ClientInfo, CompletionParams, DidChangeTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentSymbolParams, GotoDefinitionParams, HoverParams,
-    InitializeParams, InitializedParams, Position, ReferenceContext, ReferenceParams, RenameParams,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
-    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
+    ClientCapabilities, ClientInfo, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    DocumentSymbolParams, GotoDefinitionParams, HoverParams, InitializeParams, InitializedParams,
+    Position, ReferenceContext, ReferenceParams, TextDocumentContentChangeEvent,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TraceValue,
+    TypeHierarchyPrepareParams, TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
     VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceFolder,
     WorkspaceSymbolParams,
 };
@@ -52,8 +51,6 @@ pub enum SupportedOperation {
     OutgoingCalls,
     TypeSupertypes,
     TypeSubtypes,
-    Rename,
-    Completion,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -420,10 +417,6 @@ fn supports_capability(raw_capabilities: &Value, operation: SupportedOperation) 
         }
         SupportedOperation::TypeSupertypes | SupportedOperation::TypeSubtypes => {
             json_capability_enabled(raw_capabilities, "typeHierarchyProvider")
-        }
-        SupportedOperation::Rename => json_capability_enabled(raw_capabilities, "renameProvider"),
-        SupportedOperation::Completion => {
-            json_capability_enabled(raw_capabilities, "completionProvider")
         }
     }
 }
@@ -1064,37 +1057,6 @@ impl CangjieClient {
             .map_err(|e| anyhow::anyhow!("LSP typeHierarchy/subtypes failed: {e}"))
     }
 
-    pub async fn rename(
-        &self,
-        file_path: &str,
-        line: u32,
-        character: u32,
-        new_name: &str,
-    ) -> Result<Value> {
-        self.ensure_open(file_path).await?;
-        let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
-        let params = RenameParams {
-            text_document_position: make_td_position(uri.clone(), line, character),
-            new_name: new_name.to_string(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-        };
-        self.document_request("textDocument/rename", &params, &uri)
-            .await
-    }
-
-    pub async fn completion(&self, file_path: &str, line: u32, character: u32) -> Result<Value> {
-        self.ensure_open(file_path).await?;
-        let uri = parse_uri(&path_to_uri(Path::new(file_path)))?;
-        let params = CompletionParams {
-            text_document_position: make_td_position(uri.clone(), line, character),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: Default::default(),
-            context: None,
-        };
-        self.document_request("textDocument/completion", &params, &uri)
-            .await
-    }
-
     fn diagnostics_key(file_path: &str) -> String {
         uri_to_path(path_to_uri(Path::new(file_path)).as_str())
             .to_string_lossy()
@@ -1250,16 +1212,10 @@ mod tests {
             "referencesProvider": true,
             "documentSymbolProvider": true,
             "workspaceSymbolProvider": true,
-            "renameProvider": true,
-            "completionProvider": { "resolveProvider": true },
             "callHierarchyProvider": true,
             "typeHierarchyProvider": true
         });
 
-        assert!(supports_capability(
-            &raw_capabilities,
-            SupportedOperation::Completion
-        ));
         assert!(supports_capability(
             &raw_capabilities,
             SupportedOperation::IncomingCalls

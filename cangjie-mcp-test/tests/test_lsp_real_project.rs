@@ -108,7 +108,6 @@ fn lsp_req(operation: LspOperation) -> LspRequest {
         file_path: None,
         target: None,
         query: None,
-        new_name: None,
     }
 }
 
@@ -452,43 +451,7 @@ async fn test_find_references() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 8. Completion
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_completion_at_position() {
-    let _lock = LSP_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    let project = match init_lsp_for_project().await {
-        Some(p) => p,
-        None => return,
-    };
-    let fp = project.join("cjbind").join("src").join("lib.cj");
-    assert!(fp.exists());
-
-    let server = build_lsp_test_server();
-    let req = LspRequest {
-        file_path: Some(fp.to_string_lossy().to_string()),
-        target: Some(LspTarget::Position {
-            line: 1,
-            character: 1,
-        }),
-        ..lsp_req(LspOperation::Completion)
-    };
-    let resp = lsp_call(&server, req).await;
-    assert!(
-        !matches!(resp.status, LspResponseStatus::Error)
-            || resp.message.as_deref().is_some_and(|m| {
-                m.contains("unsupported") || m.contains("Unsupported") || m.contains("imeout")
-            }),
-        "completion should not fail with unexpected error, got: {:?} - {:?}",
-        resp.status,
-        resp.message
-    );
-    lsp::shutdown().await;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 9. Validation Errors via MCP Tool Interface
+// 8. Validation Errors via MCP Tool Interface
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -521,28 +484,6 @@ async fn test_lsp_validation_errors_comprehensive() {
     let resp = lsp_call(&server, lsp_req(LspOperation::WorkspaceSymbol)).await;
     assert_eq!(resp.status, LspResponseStatus::Error);
     assert!(resp.message.as_deref().unwrap().contains("query"));
-
-    // Missing new_name for rename
-    let resp = lsp_call(
-        &server,
-        lsp_symbol_req(LspOperation::Rename, "/tmp/test.cj", "foo"),
-    )
-    .await;
-    assert_eq!(resp.status, LspResponseStatus::Error);
-    assert!(resp.message.as_deref().unwrap().contains("new_name"));
-
-    // Completion with symbol target (should require position)
-    let resp = lsp_call(
-        &server,
-        lsp_symbol_req(LspOperation::Completion, "/tmp/test.cj", "foo"),
-    )
-    .await;
-    assert_eq!(resp.status, LspResponseStatus::Error);
-    assert!(resp
-        .message
-        .as_deref()
-        .unwrap()
-        .contains("completion requires target with kind=position"));
 
     lsp::shutdown().await;
 }

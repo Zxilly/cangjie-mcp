@@ -16,8 +16,6 @@ You have access to a unified Cangjie LSP tool for code intelligence on .cj sourc
 - `outgoing_calls`: Find callees of a function or method
 - `type_supertypes`: Find parent types and implemented interfaces
 - `type_subtypes`: Find child types and implementations
-- `rename`: Preview workspace edits for renaming a symbol
-- `completion`: Get code completion suggestions at a position
 
 ## Usage
 
@@ -26,8 +24,6 @@ You have access to a unified Cangjie LSP tool for code intelligence on .cj sourc
 - Use `target.kind = "position"` when you already know the exact cursor location
 - Use `target.kind = "symbol"` when you know the symbol name but not the exact position
 - `workspace_symbol` requires `query`
-- `rename` requires `new_name`
-- `completion` only supports `target.kind = "position"`
 
 ## Workflow
 
@@ -35,4 +31,3 @@ You have access to a unified Cangjie LSP tool for code intelligence on .cj sourc
 2. Use `hover`, `definition`, or `references` to understand symbols
 3. Use `diagnostics` to inspect compile errors
 4. Use `workspace_symbol` when the file is unknown
-5. Use `rename` only to preview edits, not to apply them automatically

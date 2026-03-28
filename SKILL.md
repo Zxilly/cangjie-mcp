@@ -223,7 +223,6 @@ cangjie-mcp topics --category <cat>
 cangjie-mcp lsp definition <file> --symbol <name>
 cangjie-mcp lsp references <file> --symbol <name>
 cangjie-mcp lsp hover <file> --symbol <name>
-cangjie-mcp lsp rename <file> --symbol <name> --new-name <new>
 cangjie-mcp lsp incoming-calls <file> --symbol <name>
 cangjie-mcp lsp outgoing-calls <file> --symbol <name>
 cangjie-mcp lsp type-supertypes <file> --symbol <name>
@@ -231,7 +230,6 @@ cangjie-mcp lsp type-subtypes <file> --symbol <name>
 
 # By position (1-based line and character)
 cangjie-mcp lsp definition <file> --line N --character N
-cangjie-mcp lsp completion <file> --line N --character N
 
 # File-scoped
 cangjie-mcp lsp symbols <file>

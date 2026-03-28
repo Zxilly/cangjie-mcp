@@ -3,6 +3,7 @@ pub mod client;
 pub mod config;
 pub mod daemon;
 
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -51,7 +52,27 @@ pub async fn run() -> ExitCode {
     }
 }
 
+const MCP_INIT_TIMEOUT_SECS: u64 = 5;
+
+fn mcp_not_interactive(preamble: &str) -> anyhow::Error {
+    eprintln!("cangjie-mcp: {preamble}");
+    eprintln!("This command starts an MCP stdio server for AI coding assistants.");
+    eprintln!(
+        "It communicates via stdin/stdout and is not meant to be run directly in a terminal."
+    );
+    eprintln!();
+    eprintln!("To use with an AI assistant, see: https://github.com/Zxilly/cangjie-mcp#快速配置");
+    eprintln!("For CLI usage, try: cangjie-mcp query \"泛型\"");
+    anyhow::anyhow!("not an MCP client")
+}
+
 async fn run_mcp_server(settings: Settings) -> Result<()> {
+    if std::io::stdin().is_terminal() {
+        return Err(mcp_not_interactive(
+            "stdin is a terminal — no MCP client detected.",
+        ));
+    }
+
     if settings.server_url.is_some() {
         info!("Using remote server - local index options are ignored.");
     }
@@ -59,17 +80,27 @@ async fn run_mcp_server(settings: Settings) -> Result<()> {
     let server = cangjie_server::CangjieServer::new(settings);
 
     let server_clone = server.clone();
-    tokio::spawn(async move {
+    let init_handle = tokio::spawn(async move {
         if let Err(e) = server_clone.initialize().await {
             tracing::error!("Failed to initialize server: {e}");
         }
     });
 
     info!("Starting MCP server on stdio...");
-    let service = server
-        .serve(rmcp::transport::stdio())
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?;
+    let service = match tokio::time::timeout(
+        std::time::Duration::from_secs(MCP_INIT_TIMEOUT_SECS),
+        server.serve(rmcp::transport::stdio()),
+    )
+    .await
+    {
+        Ok(result) => result.map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?,
+        Err(_) => {
+            init_handle.abort();
+            return Err(mcp_not_interactive(&format!(
+                "No MCP initialize request received within {MCP_INIT_TIMEOUT_SECS} seconds."
+            )));
+        }
+    };
     service.waiting().await?;
 
     Ok(())

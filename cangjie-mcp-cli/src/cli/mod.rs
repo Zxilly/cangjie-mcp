@@ -299,25 +299,6 @@ pub enum LspCommand {
         /// Search query
         query: String,
     },
-    /// Get completions at position
-    Completion {
-        file: String,
-        /// Line number (1-based)
-        #[arg(long)]
-        line: u32,
-        /// Character position (1-based)
-        #[arg(long, alias = "char")]
-        character: u32,
-    },
-    /// Rename symbol
-    Rename {
-        file: String,
-        #[arg(long)]
-        symbol: String,
-        /// New name for the symbol
-        #[arg(long)]
-        new_name: String,
-    },
     /// Find incoming calls
     IncomingCalls {
         file: String,
