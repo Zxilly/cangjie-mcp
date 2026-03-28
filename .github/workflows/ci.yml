@@ -107,3 +107,49 @@ jobs:
       - name: Show sccache stats
         shell: bash
         run: ${SCCACHE_PATH} --show-stats
+
+  lsp-test:
+    name: LSP Integration Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Cangjie SDK
+        uses: Zxilly/setup-cangjie@v2
+        with:
+          channel: lts
+
+      - name: Clone test project (cjbind)
+        run: git clone --depth 1 https://github.com/cjbind/cjbind.git ${{ runner.temp }}/cjbind
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "33.5"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-targets: "false"
+
+      - name: Run LSP integration tests
+        run: cargo test -p cangjie-mcp-test --test test_lsp_envsetup --test test_lsp_real_project -- --test-threads=1
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: sccache
+          CANGJIE_LSP_TEST_PROJECT: ${{ runner.temp }}/cjbind
+
+      - name: Show sccache stats
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats

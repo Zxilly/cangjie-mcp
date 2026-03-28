@@ -217,6 +217,163 @@ pub fn sample_documents() -> Vec<DocData> {
     ]
 }
 
+/// Return a large document that spans multiple chunks when using small chunk sizes.
+pub fn large_document() -> DocData {
+    use std::fmt::Write;
+    let mut sections = String::with_capacity(8192);
+    write!(sections, "# 仓颉语言完整指南\n\n## 第一章：基础语法\n\n").unwrap();
+    write!(
+        sections,
+        "仓颉（Cangjie）是一门面向现代应用开发的编程语言，支持多种编程范式。"
+    )
+    .unwrap();
+    write!(sections, "它提供了强大的类型系统、模式匹配和协程支持。\n\n").unwrap();
+    write!(sections, "```cangjie\nfunc main() {{\n    let message = \"Hello, Cangjie!\"\n    println(message)\n}}\n```\n\n").unwrap();
+    for i in 2..=8 {
+        write!(sections, "## 第{i}章：高级特性 Part {i}\n\n").unwrap();
+        write!(
+            sections,
+            "本章介绍仓颉语言的第{i}个高级特性。包括泛型编程、错误处理、异步编程等重要概念。\n\n"
+        )
+        .unwrap();
+        write!(sections, "```cangjie\n// 示例代码 {i}\nfunc example{i}() {{\n    let x = {i}\n    println(x)\n}}\n```\n\n").unwrap();
+        for j in 0..5 {
+            write!(
+                sections,
+                "这是第{i}章第{j}段的详细说明文字，用来确保文档长度足够产生多个分块。"
+            )
+            .unwrap();
+            write!(sections, "仓颉语言提供了丰富的标准库和工具链支持。\n\n").unwrap();
+        }
+    }
+    DocData {
+        text: sections,
+        metadata: DocMetadata {
+            file_path: "syntax/complete_guide.md".to_string(),
+            category: "syntax".to_string(),
+            topic: "complete_guide".to_string(),
+            title: "仓颉语言完整指南".to_string(),
+            code_block_count: 8,
+            has_code: true,
+            ..Default::default()
+        },
+        doc_id: "syntax/complete_guide.md".to_string(),
+    }
+}
+
+/// Return chunks that simulate cross-category duplicate topic names.
+pub fn cross_category_chunks() -> Vec<TextChunk> {
+    vec![
+        TextChunk {
+            text: "# 语法概述\n\n仓颉语法简洁而富有表现力，支持类型推导和模式匹配。".to_string(),
+            metadata: DocMetadata {
+                file_path: "syntax/overview.md".to_string(),
+                category: "syntax".to_string(),
+                topic: "overview".to_string(),
+                title: "语法概述".to_string(),
+                has_code: false,
+                code_block_count: 0,
+                ..Default::default()
+            },
+        },
+        TextChunk {
+            text: "# 标准库概述\n\n标准库提供 IO、集合、网络等基础模块。\n\n```cangjie\nimport std.collection.*\n```".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/overview.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "overview".to_string(),
+                title: "标准库概述".to_string(),
+                has_code: true,
+                code_block_count: 1,
+                ..Default::default()
+            },
+        },
+        TextChunk {
+            text: "# CJPM 概述\n\nCJPM 是仓颉的官方包管理器和构建工具。".to_string(),
+            metadata: DocMetadata {
+                file_path: "cjpm/overview.md".to_string(),
+                category: "cjpm".to_string(),
+                topic: "overview".to_string(),
+                title: "CJPM 概述".to_string(),
+                has_code: false,
+                code_block_count: 0,
+                ..Default::default()
+            },
+        },
+    ]
+}
+
+/// Convert a slice of `TextChunk` into `Vec<DocData>`.
+pub fn chunks_to_docs(chunks: &[TextChunk]) -> Vec<DocData> {
+    chunks
+        .iter()
+        .map(|c| DocData {
+            doc_id: c.metadata.file_path.clone(),
+            text: c.text.clone(),
+            metadata: c.metadata.clone(),
+        })
+        .collect()
+}
+
+/// Return documents matching cross_category_chunks for MockDocumentSource.
+pub fn cross_category_documents() -> Vec<DocData> {
+    chunks_to_docs(&cross_category_chunks())
+}
+
+/// Return chunks simulating stdlib package documentation with import statements.
+pub fn stdlib_package_chunks() -> Vec<TextChunk> {
+    vec![
+        TextChunk {
+            text: "# ArrayList\n\nimport std.collection\n\nArrayList 是一个动态数组实现。\n\n```cangjie\nlet list = ArrayList<Int>()\nlist.add(1)\nlist.add(2)\nprintln(list.size) // 2\n```".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_arraylist.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_arraylist".to_string(),
+                title: "ArrayList".to_string(),
+                has_code: true,
+                code_block_count: 1,
+                ..Default::default()
+            },
+        },
+        TextChunk {
+            text: "# HashMap\n\nimport std.collection\n\nHashMap 是键值对存储容器。\n\n```cangjie\nlet map = HashMap<String, Int>()\nmap.put(\"key\", 42)\n```".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/collection_hashmap.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "collection_hashmap".to_string(),
+                title: "HashMap".to_string(),
+                has_code: true,
+                code_block_count: 1,
+                ..Default::default()
+            },
+        },
+        TextChunk {
+            text: "# File IO\n\nimport std.fs\n\n文件读写操作。\n\n```cangjie\nlet content = File.readText(\"data.txt\")\nprintln(content)\n```".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/fs_file.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "fs_file".to_string(),
+                title: "File IO".to_string(),
+                has_code: true,
+                code_block_count: 1,
+                ..Default::default()
+            },
+        },
+        TextChunk {
+            text: "# HTTP Client\n\nimport std.net.http\n\nHTTP 客户端用于发送网络请求。\n\n```cangjie\nlet resp = HttpClient.get(\"https://example.com\")\nprintln(resp.body)\n```".to_string(),
+            metadata: DocMetadata {
+                file_path: "stdlib/net_http.md".to_string(),
+                category: "stdlib".to_string(),
+                topic: "net_http".to_string(),
+                title: "HTTP Client".to_string(),
+                has_code: true,
+                code_block_count: 1,
+                ..Default::default()
+            },
+        },
+    ]
+}
+
 /// An in-memory `DocumentSource` implementation for testing.
 pub struct MockDocumentSource {
     documents: HashMap<String, DocData>,

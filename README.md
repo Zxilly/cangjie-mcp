@@ -91,6 +91,29 @@ cangjie-mcp-server --embedding local --port 8765
 cangjie-mcp --server-url http://localhost:8765
 ```
 
+### Remote MCP 模式
+
+`cangjie-mcp-server` 默认在 `/mcp` 路径同时提供 [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) MCP 端点。MCP 客户端可以直接连接该端点，无需本地运行 `cangjie-mcp`：
+
+```bash
+# 启动服务器（默认在 /mcp 提供 MCP 端点）
+cangjie-mcp-server --port 8765
+
+# MCP 客户端连接 http://localhost:8765/mcp 即可使用文档搜索工具
+```
+
+在支持远程 MCP 的客户端中配置：
+
+```json
+{
+  "mcpServers": {
+    "cangjie": {
+      "url": "http://localhost:8765/mcp"
+    }
+  }
+}
+```
+
 ## 快速配置
 
 公共文档服务器已部署在 `https://cj-mcp.learningman.top`，连接后无需本地加载嵌入模型，开箱即用。
@@ -262,7 +285,7 @@ cangjie-mcp config init            # 生成默认配置文件
 
 ### cangjie-mcp-server
 
-启动 HTTP 查询服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务。该服务器为独立二进制，需单独构建。
+启动 HTTP 查询服务器和 Remote MCP 服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务，同时在 `/mcp` 路径提供 Streamable HTTP MCP 端点。该服务器为独立二进制，需单独构建。
 
 ```bash
 cangjie-mcp-server [OPTIONS]
@@ -274,6 +297,8 @@ cangjie-mcp-server [OPTIONS]
 |---------|---------|-------|------|
 | `--host TEXT` | `CANGJIE_SERVER_HOST` | `127.0.0.1` | HTTP 服务器监听地址 |
 | `-p, --port INT` | `CANGJIE_SERVER_PORT` | `8765` | HTTP 服务器监听端口 |
+| `--mcp-path TEXT` | `CANGJIE_MCP_PATH` | `/mcp` | MCP 端点挂载路径 |
+| `--no-mcp` | `CANGJIE_NO_MCP` | - | 禁用 MCP 端点（仅提供 REST API） |
 
 #### HTTP API
 
@@ -284,6 +309,10 @@ cangjie-mcp-server [OPTIONS]
 | `POST` | `/search` | 向量搜索 |
 | `GET` | `/topics` | 列出所有分类和主题 |
 | `GET` | `/topics/{category}/{topic}` | 获取文档内容 |
+
+#### MCP 端点
+
+默认在 `/mcp` 路径提供 Streamable HTTP MCP 服务，暴露 `cangjie_search_docs`、`cangjie_get_topic`、`cangjie_list_topics` 三个工具。使用 `--no-mcp` 可禁用此端点。
 
 ### Daemon 管理
 
