@@ -206,15 +206,11 @@ fn unsupported_response(operation: LspOperation, message: impl Into<String>) -> 
 fn validate_request(params: &LspRequest) -> Result<(), String> {
     let op_name = format!("{:?}", params.operation).to_lowercase();
 
-    if params.operation.requires_file_path() {
-        let Some(file_path) = params.file_path.as_deref() else {
-            return Err(format!(
-                "file_path is required for {op_name}. Provide an absolute path to a .cj file, e.g. {{\"file_path\": \"/path/to/file.cj\"}}"
-            ));
-        };
-        if let Some(err) = lsp_tools::get_validate_error(file_path) {
-            return Err(err);
-        }
+    // Phase 1: Check required parameters are present
+    if params.operation.requires_file_path() && params.file_path.is_none() {
+        return Err(format!(
+            "file_path is required for {op_name}. Provide an absolute path to a .cj file, e.g. {{\"file_path\": \"/path/to/file.cj\"}}"
+        ));
     }
 
     if params.operation.requires_target() && params.target.is_none() {
@@ -254,6 +250,15 @@ fn validate_request(params: &LspRequest) -> Result<(), String> {
             "completion requires target with kind=position. Use {\"kind\": \"position\", \"line\": 1, \"character\": 1} (symbol targets are not supported for completion)"
                 .to_string(),
         );
+    }
+
+    // Phase 2: Validate parameter values (e.g. file exists on disk)
+    if let Some(file_path) = params.file_path.as_deref() {
+        if params.operation.requires_file_path() {
+            if let Some(err) = lsp_tools::get_validate_error(file_path) {
+                return Err(err);
+            }
+        }
     }
 
     Ok(())

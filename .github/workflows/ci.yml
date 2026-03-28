@@ -30,11 +30,6 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          cache-targets: "false"
-
       - name: cargo clippy (default features)
         run: cargo clippy --workspace --all-targets -- -W clippy::all -D warnings
         env:
@@ -90,11 +85,6 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          cache-targets: "false"
-
       - name: cargo test
         run: cargo test --workspace
         env:
@@ -137,11 +127,6 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          cache-targets: "false"
 
       - name: Run LSP integration tests
         run: cargo test -p cangjie-mcp-test --test test_lsp_envsetup --test test_lsp_real_project -- --test-threads=1
