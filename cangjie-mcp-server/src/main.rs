@@ -206,11 +206,9 @@ async fn main() -> Result<()> {
         let mcp_server =
             cangjie_server::CangjieServer::with_shared_state(settings, search_index, doc_source);
 
-        let mcp_config = McpServerConfig {
-            stateful_mode: true,
-            cancellation_token: ct.child_token(),
-            ..Default::default()
-        };
+        let mcp_config = McpServerConfig::default()
+            .with_stateful_mode(true)
+            .with_cancellation_token(ct.child_token());
         let mcp_service = create_mcp_service(mcp_server, mcp_config);
 
         info!("MCP endpoint enabled at {}", cli.mcp_path);
