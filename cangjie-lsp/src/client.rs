@@ -21,9 +21,9 @@ use crate::types::{
     CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     ClientCapabilities, ClientInfo, CompletionParams, DidChangeTextDocumentParams,
     DidOpenTextDocumentParams, DocumentSymbolParams, GotoDefinitionParams, HoverParams,
-    InitializeParams, InitializeResult, InitializedParams, Position, ReferenceContext,
-    ReferenceParams, RenameParams, TextDocumentContentChangeEvent, TextDocumentIdentifier,
-    TextDocumentItem, TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
+    InitializeParams, InitializedParams, Position, ReferenceContext, ReferenceParams, RenameParams,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, TraceValue, TypeHierarchyPrepareParams,
     TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
     VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceFolder,
     WorkspaceSymbolParams,
@@ -707,8 +707,6 @@ impl CangjieClient {
             .request("initialize", LspParams::new(&init_params)?)
             .await
             .map_err(|e| anyhow::anyhow!("LSP initialization failed: {e}"))?;
-        let _init_result: InitializeResult = serde_json::from_value(init_result_value.clone())
-            .map_err(|e| anyhow::anyhow!("Failed to decode initialize result: {e}"))?;
 
         debug!("[LSP] initialized");
         self.client
