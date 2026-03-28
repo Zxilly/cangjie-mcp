@@ -27,24 +27,11 @@ jobs:
         with:
           components: clippy
 
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-
       - name: cargo clippy (default features)
         run: cargo clippy --workspace --all-targets -- -W clippy::all -D warnings
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: sccache
 
       - name: cargo clippy (local feature)
         run: cargo clippy --workspace --all-targets --features cangjie-mcp-cli/local,cangjie-server/local,cangjie-indexer/local,cangjie-mcp-server/local -- -W clippy::all -D warnings
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: sccache
-
-      - name: Show sccache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
 
   fmt:
     name: Format
@@ -82,21 +69,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-
       - name: cargo test
         run: cargo test --workspace
         env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: sccache
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_EMBEDDING_MODEL: ${{ secrets.OPENAI_EMBEDDING_MODEL_NORMAL }}
-
-      - name: Show sccache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
 
   lsp-test:
     name: LSP Integration Test (${{ matrix.os }})
@@ -125,16 +103,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-
       - name: Run LSP integration tests
         run: cargo test -p cangjie-mcp-test --test test_lsp_envsetup --test test_lsp_real_project -- --test-threads=1
         env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: sccache
           CANGJIE_LSP_TEST_PROJECT: ${{ runner.temp }}/cjbind
-
-      - name: Show sccache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
