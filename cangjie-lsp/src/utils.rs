@@ -152,6 +152,27 @@ fn clean_path_components(path: &Path) -> PathBuf {
     parts.iter().collect()
 }
 
+/// Convert an MSYS2-style path (`/c/Users/…`) to a Windows path (`C:/Users/…`).
+///
+/// Only applies on Windows. Recognises the pattern `/<letter>/…` where `<letter>`
+/// is a single ASCII letter (the drive letter).  All other inputs are returned
+/// unchanged.
+pub fn normalize_msys2_path(path: &str) -> String {
+    if cfg!(windows) {
+        let bytes = path.as_bytes();
+        // Match: starts with '/', second byte is ASCII alpha, third is '/' or end-of-string
+        if bytes.len() >= 2
+            && bytes[0] == b'/'
+            && bytes[1].is_ascii_alphabetic()
+            && (bytes.len() == 2 || bytes[2] == b'/')
+        {
+            let drive = (bytes[1] as char).to_ascii_uppercase();
+            return format!("{drive}:{}", &path[2..]);
+        }
+    }
+    path.to_string()
+}
+
 pub fn strip_trailing_separator(path_str: &str) -> &str {
     path_str
         .strip_suffix('/')
@@ -591,6 +612,25 @@ commitId = "bbb222"
         assert_eq!(parsed.requires.len(), 2);
         assert_eq!(parsed.requires["dep_a"].commit_id, "aaa111");
         assert_eq!(parsed.requires["dep_b"].commit_id, "bbb222");
+    }
+
+    #[test]
+    fn test_normalize_msys2_path() {
+        if cfg!(windows) {
+            assert_eq!(normalize_msys2_path("/c/Users/test"), "C:/Users/test");
+            assert_eq!(normalize_msys2_path("/C/Users/test"), "C:/Users/test");
+            assert_eq!(normalize_msys2_path("/d/project"), "D:/project");
+            // Just a drive letter, no trailing slash
+            assert_eq!(normalize_msys2_path("/c"), "C:");
+        } else {
+            // On non-Windows, paths are returned unchanged
+            assert_eq!(normalize_msys2_path("/c/Users/test"), "/c/Users/test");
+        }
+        // Not MSYS2 patterns — always unchanged
+        assert_eq!(normalize_msys2_path("/home/user"), "/home/user");
+        assert_eq!(normalize_msys2_path("C:/Users"), "C:/Users");
+        assert_eq!(normalize_msys2_path(""), "");
+        assert_eq!(normalize_msys2_path("/"), "/");
     }
 
     #[test]

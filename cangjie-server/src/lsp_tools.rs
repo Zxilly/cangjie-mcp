@@ -396,10 +396,20 @@ pub(crate) async fn execute_lsp_request(
 
 #[cfg(feature = "lsp")]
 async fn execute_lsp_request_impl(
-    params: LspRequest,
+    mut params: LspRequest,
     lsp_pool: Option<&crate::lsp_pool::LspPool>,
     working_dir: Option<std::path::PathBuf>,
 ) -> String {
+    // Normalize MSYS2-style paths (e.g. /c/Users/… → C:/Users/…) from tool inputs
+    if let Some(ref mut fp) = params.file_path {
+        *fp = cangjie_lsp::utils::normalize_msys2_path(fp);
+    }
+    let working_dir = working_dir.map(|wd| {
+        std::path::PathBuf::from(cangjie_lsp::utils::normalize_msys2_path(
+            &wd.to_string_lossy(),
+        ))
+    });
+
     if let Err(message) = validate_request(&params) {
         return error_response(params.operation, message);
     }
