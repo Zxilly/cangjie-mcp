@@ -455,73 +455,9 @@ fn collect_md_files_recursive(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::{add_fake_remote, create_test_repo, create_test_repo_with_remote};
     use std::process::Command;
     use tempfile::TempDir;
-
-    /// Create a test git repository with a directory structure containing markdown files.
-    fn create_test_repo() -> (TempDir, gix::Repository) {
-        let tmp = TempDir::new().unwrap();
-
-        let base = tmp
-            .path()
-            .join("docs")
-            .join("dev-guide")
-            .join("source_zh_cn");
-
-        let syntax_dir = base.join("syntax");
-        std::fs::create_dir_all(&syntax_dir).unwrap();
-        std::fs::write(
-            syntax_dir.join("functions.md"),
-            "# Functions\n\nContent about functions.",
-        )
-        .unwrap();
-        std::fs::write(
-            syntax_dir.join("variables.md"),
-            "# Variables\n\nContent about variables.",
-        )
-        .unwrap();
-
-        let stdlib_dir = base.join("stdlib");
-        std::fs::create_dir_all(&stdlib_dir).unwrap();
-        std::fs::write(
-            stdlib_dir.join("collections.md"),
-            "# Collections\n\nContent about collections.",
-        )
-        .unwrap();
-
-        let hidden = base.join("_hidden");
-        std::fs::create_dir_all(&hidden).unwrap();
-        std::fs::write(hidden.join("secret.md"), "# Secret").unwrap();
-
-        let dotdir = base.join(".dotdir");
-        std::fs::create_dir_all(&dotdir).unwrap();
-        std::fs::write(dotdir.join("hidden.md"), "# Hidden").unwrap();
-
-        std::fs::write(base.join("readme.md"), "# Readme\n\nTop-level readme.").unwrap();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "initial commit"])
-            .env("GIT_AUTHOR_NAME", "test")
-            .env("GIT_AUTHOR_EMAIL", "test@test.com")
-            .env("GIT_COMMITTER_NAME", "test")
-            .env("GIT_COMMITTER_EMAIL", "test@test.com")
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
-        let repo = gix::open(tmp.path()).unwrap();
-        (tmp, repo)
-    }
 
     #[test]
     fn test_new_and_is_cloned() {
@@ -623,6 +559,8 @@ mod tests {
 
     #[test]
     fn test_collect_md_ignores_non_md() {
+        use crate::testutil::git_init_and_commit;
+
         let tmp = TempDir::new().unwrap();
 
         let dir = tmp.path().join("content");
@@ -631,25 +569,7 @@ mod tests {
         std::fs::write(dir.join("image.png"), "not-a-real-png").unwrap();
         std::fs::write(dir.join("script.js"), "console.log('hi')").unwrap();
 
-        Command::new("git")
-            .args(["init"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "init"])
-            .env("GIT_AUTHOR_NAME", "test")
-            .env("GIT_AUTHOR_EMAIL", "test@test.com")
-            .env("GIT_COMMITTER_NAME", "test")
-            .env("GIT_COMMITTER_EMAIL", "test@test.com")
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
+        git_init_and_commit(tmp.path());
 
         let repo = gix::open(tmp.path()).unwrap();
         let tree = repo.head_commit().unwrap().tree().unwrap();
@@ -799,32 +719,9 @@ mod tests {
         assert_eq!(files, sorted);
     }
 
-    fn create_test_repo_with_remote() -> (TempDir, gix::Repository) {
-        let (tmp, _) = create_test_repo();
-        Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        Command::new("git")
-            .args(["update-ref", "refs/remotes/origin/main", &commit_hash])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
-        let repo = gix::open(tmp.path()).unwrap();
-        (tmp, repo)
-    }
-
     #[test]
     fn test_checkout_latest_with_remote_main() {
-        let (tmp, _repo) = create_test_repo_with_remote();
+        let (tmp, _repo) = create_test_repo_with_remote("main");
         let mut repo = gix::open(tmp.path()).unwrap();
 
         let result = checkout(&mut repo, "latest");
@@ -847,24 +744,7 @@ mod tests {
 
     #[test]
     fn test_checkout_latest_with_remote_master() {
-        let (tmp, _repo) = create_test_repo();
-        Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        Command::new("git")
-            .args(["update-ref", "refs/remotes/origin/master", &commit_hash])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
+        let (tmp, _repo) = create_test_repo_with_remote("master");
         let mut repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&mut repo, "latest");
         assert!(
@@ -898,24 +778,7 @@ mod tests {
 
     #[test]
     fn test_checkout_remote_branch() {
-        let (tmp, _repo) = create_test_repo();
-        Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        Command::new("git")
-            .args(["update-ref", "refs/remotes/origin/dev", &commit_hash])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
+        let (tmp, _repo) = create_test_repo_with_remote("dev");
         let mut repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&mut repo, "dev");
         assert!(
@@ -939,11 +802,6 @@ mod tests {
     fn test_checkout_remote_branch_already_on_branch() {
         let (tmp, _repo) = create_test_repo();
         Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
             .args(["branch", "feature"])
             .current_dir(tmp.path())
             .status()
@@ -953,17 +811,7 @@ mod tests {
             .current_dir(tmp.path())
             .status()
             .unwrap();
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        Command::new("git")
-            .args(["update-ref", "refs/remotes/origin/feature", &commit_hash])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
+        add_fake_remote(&tmp, "feature");
 
         let mut repo = gix::open(tmp.path()).unwrap();
         let result = checkout(&mut repo, "feature");
@@ -996,7 +844,7 @@ mod tests {
 
     #[test]
     fn test_sync_branch_with_remote_tracking() {
-        let (tmp, _repo) = create_test_repo_with_remote();
+        let (tmp, _repo) = create_test_repo_with_remote("main");
         Command::new("git")
             .args(["branch", "-f", "main"])
             .current_dir(tmp.path())
@@ -1041,24 +889,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_checkout_async_with_remote_branch() {
-        let (tmp, _repo) = create_test_repo();
-        Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        Command::new("git")
-            .args(["update-ref", "refs/remotes/origin/main", &commit_hash])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
+        let (tmp, _repo) = create_test_repo_with_remote("main");
         let mut mgr = GitManager::new(tmp.path().to_path_buf());
         let result = mgr.checkout("latest").await;
         assert!(
@@ -1074,24 +905,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_version_async() {
-        let (tmp, _repo) = create_test_repo();
-        Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        Command::new("git")
-            .args(["update-ref", "refs/remotes/origin/main", &commit_hash])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
+        let (tmp, _repo) = create_test_repo_with_remote("main");
         let mut mgr = GitManager::new(tmp.path().to_path_buf());
         let resolved = mgr.resolve_version("latest").await;
         assert!(
@@ -1113,11 +927,6 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_version_tag() {
         let (tmp, _repo) = create_test_repo();
-        Command::new("git")
-            .args(["remote", "add", "origin", "https://example.com/fake.git"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
         Command::new("git")
             .args(["tag", "v3.0.0"])
             .current_dir(tmp.path())

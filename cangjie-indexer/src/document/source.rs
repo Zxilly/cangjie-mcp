@@ -338,111 +338,23 @@ impl DocumentSource for GitDocumentSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use crate::testutil::{create_test_repo, git_init_and_commit};
     use tempfile::TempDir;
 
-    /// Create a test git repository with the expected doc structure for GitDocumentSource.
-    ///
-    /// Structure:
-    ///   docs/dev-guide/source_zh_cn/
-    ///     syntax/
-    ///       functions.md   - "# Functions\n\nContent about functions."
-    ///       variables.md   - "# Variables\n\nContent about variables."
-    ///     stdlib/
-    ///       collections.md - "# Collections\n\nContent about collections."
-    ///     _hidden/
-    ///       secret.md      - "# Secret"
-    fn create_test_repo() -> TempDir {
-        let tmp = TempDir::new().unwrap();
-
-        let base = tmp
-            .path()
-            .join("docs")
-            .join("dev-guide")
-            .join("source_zh_cn");
-
-        // syntax category
-        let syntax_dir = base.join("syntax");
-        std::fs::create_dir_all(&syntax_dir).unwrap();
-        std::fs::write(
-            syntax_dir.join("functions.md"),
-            "# Functions\n\nContent about functions.",
-        )
-        .unwrap();
-        std::fs::write(
-            syntax_dir.join("variables.md"),
-            "# Variables\n\nContent about variables.",
-        )
-        .unwrap();
-
-        // stdlib category
-        let stdlib_dir = base.join("stdlib");
-        std::fs::create_dir_all(&stdlib_dir).unwrap();
-        std::fs::write(
-            stdlib_dir.join("collections.md"),
-            "# Collections\n\nContent about collections.",
-        )
-        .unwrap();
-
-        // hidden dir (should be ignored by list_dirs)
-        let hidden = base.join("_hidden");
-        std::fs::create_dir_all(&hidden).unwrap();
-        std::fs::write(hidden.join("secret.md"), "# Secret").unwrap();
-
-        // Stage and commit via git CLI
-        Command::new("git")
-            .args(["init"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "initial commit"])
-            .env("GIT_AUTHOR_NAME", "test")
-            .env("GIT_AUTHOR_EMAIL", "test@test.com")
-            .env("GIT_COMMITTER_NAME", "test")
-            .env("GIT_COMMITTER_EMAIL", "test@test.com")
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
-        tmp
+    fn create_test_repo_tmp() -> TempDir {
+        create_test_repo().0
     }
 
     fn create_test_repo_without_docs_base() -> TempDir {
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("README.md"), "# Placeholder").unwrap();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "initial commit"])
-            .env("GIT_AUTHOR_NAME", "test")
-            .env("GIT_AUTHOR_EMAIL", "test@test.com")
-            .env("GIT_COMMITTER_NAME", "test")
-            .env("GIT_COMMITTER_EMAIL", "test@test.com")
-            .current_dir(tmp.path())
-            .status()
-            .unwrap();
-
+        git_init_and_commit(tmp.path());
         tmp
     }
 
     #[tokio::test]
     async fn test_git_source_is_available() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
         assert!(source.is_available().await);
     }
@@ -464,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_categories() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let categories = source.get_categories().await.unwrap();
@@ -485,7 +397,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topics_in_category() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let topics = source.get_topics_in_category("syntax").await.unwrap();
@@ -496,7 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topics_in_category_stdlib() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let topics = source.get_topics_in_category("stdlib").await.unwrap();
@@ -505,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_by_topic() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -523,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_not_found() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -535,7 +447,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_not_found_in_nonexistent_category() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -547,7 +459,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_not_found_no_category() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -559,7 +471,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_load_all_documents() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let docs = source.load_all_documents().await.unwrap();
@@ -573,7 +485,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_all_topic_names() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let names = source.get_all_topic_names().await.unwrap();
@@ -589,7 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topic_titles() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let titles = source.get_topic_titles("syntax").await.unwrap();
@@ -600,7 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_topic_titles_stdlib() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let titles = source.get_topic_titles("stdlib").await.unwrap();
@@ -610,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_build_topic_index() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
 
         let index = build_topic_index(tmp.path(), "docs/dev-guide/source_zh_cn").unwrap();
         assert_eq!(index.get("functions").unwrap(), &vec!["syntax".to_string()]);
@@ -624,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_read_file() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
 
         let content = read_file(
             tmp.path(),
@@ -637,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_read_file_not_found() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
 
         let result = read_file(tmp.path(), "nonexistent/file.md");
         assert!(result.is_err());
@@ -645,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_list_dirs() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
 
         let dirs = list_dirs(tmp.path(), "docs/dev-guide/source_zh_cn").unwrap();
         assert!(dirs.contains(&"syntax".to_string()));
@@ -656,7 +568,7 @@ mod tests {
 
     #[test]
     fn test_list_md_files() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
 
         let files = list_md_files(tmp.path(), "docs/dev-guide/source_zh_cn/syntax").unwrap();
         assert!(files.contains(&"functions.md".to_string()));
@@ -666,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_collect_md_files_recursive_basic() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let repo = gix::open(tmp.path()).unwrap();
 
         let tree = repo.head_commit().unwrap().tree().unwrap();
@@ -686,7 +598,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_by_topic_without_category() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
@@ -702,7 +614,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_source_get_document_by_topic_without_category_syntax() {
-        let tmp = create_test_repo();
+        let tmp = create_test_repo_tmp();
         let source = GitDocumentSource::new(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
 
         let doc = source
