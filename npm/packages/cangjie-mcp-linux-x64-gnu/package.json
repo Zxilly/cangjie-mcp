@@ -1,6 +1,6 @@
 {
   "name": "@cangjie-mcp/cangjie-mcp-linux-x64-gnu",
-  "version": "0.3.7",
+  "version": "0.3.9",
   "description": "Prebuilt cangjie CLI binary for Linux x64 (glibc >= 2.28).",
   "author": "Zxilly <zxilly@outlook.com>",
   "license": "MIT",
