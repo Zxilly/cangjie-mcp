@@ -12,8 +12,12 @@ pub const DEFAULT_RRF_K: u32 = 60;
 pub const DEFAULT_RERANK_MODEL: &str = "BAAI/bge-reranker-v2-m3";
 pub const DEFAULT_RERANK_TOP_K: usize = 5;
 pub const DEFAULT_RERANK_INITIAL_K: usize = 20;
-pub const DEFAULT_CHUNK_MAX_SIZE: usize = 6000;
-pub const DEFAULT_CHUNK_OVERLAP: usize = 200;
+pub const DEFAULT_CHUNK_OVERLAP_CHARS: usize = 100;
+pub const CODE_DENSE_THRESHOLD: f64 = 0.6;
+pub const CODE_MIXED_THRESHOLD: f64 = 0.2;
+pub const DEFAULT_CODE_DENSE_CHARS: usize = 800;
+pub const DEFAULT_CODE_MIXED_CHARS: usize = 1200;
+pub const DEFAULT_TEXT_HEAVY_CHARS: usize = 1600;
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.siliconflow.cn/v1";
 pub const DEFAULT_OPENAI_MODEL: &str = "BAAI/bge-m3";
 pub const DEFAULT_DATA_DIR_NAME: &str = ".cangjie-mcp";
@@ -182,7 +186,8 @@ pub struct Settings {
     pub rerank_top_k: usize,
     pub rerank_initial_k: usize,
     pub rrf_k: u32,
-    pub chunk_max_size: usize,
+    pub chunk_overlap_chars: usize,
+    pub max_chunk_chars: Option<usize>,
     pub data_dir: PathBuf,
     pub server_url: Option<String>,
     pub openai_api_key: Option<String>,
@@ -193,7 +198,6 @@ pub struct Settings {
     pub http_tcp_keepalive_secs: u64,
     pub http_enable_http2: bool,
     pub server_enable_http2: bool,
-    pub chunk_overlap: usize,
     pub max_per_file: usize,
     pub summary_model: Option<String>,
     pub prebuilt: PrebuiltMode,
@@ -211,7 +215,8 @@ impl Default for Settings {
             rerank_top_k: DEFAULT_RERANK_TOP_K,
             rerank_initial_k: DEFAULT_RERANK_INITIAL_K,
             rrf_k: DEFAULT_RRF_K,
-            chunk_max_size: DEFAULT_CHUNK_MAX_SIZE,
+            chunk_overlap_chars: DEFAULT_CHUNK_OVERLAP_CHARS,
+            max_chunk_chars: None,
             data_dir: get_default_data_dir(),
             server_url: None,
             openai_api_key: None,
@@ -222,7 +227,6 @@ impl Default for Settings {
             http_tcp_keepalive_secs: DEFAULT_HTTP_TCP_KEEPALIVE_SECS,
             http_enable_http2: DEFAULT_HTTP_ENABLE_HTTP2,
             server_enable_http2: DEFAULT_SERVER_ENABLE_HTTP2,
-            chunk_overlap: DEFAULT_CHUNK_OVERLAP,
             max_per_file: DEFAULT_MAX_PER_FILE,
             summary_model: None,
             prebuilt: PrebuiltMode::Off,
@@ -322,8 +326,8 @@ pub fn log_startup_info(settings: &Settings, index_info: &IndexInfo) {
         };
         info!("Search: {search_mode}");
         info!(
-            "Chunk: max_size={}, overlap={}",
-            settings.chunk_max_size, settings.chunk_overlap,
+            "Chunk: overlap_chars={}, max_chunk_chars={:?}",
+            settings.chunk_overlap_chars, settings.max_chunk_chars,
         );
         if settings.has_embedding() {
             let model = match settings.embedding_type {
@@ -465,6 +469,13 @@ mod tests {
         assert_eq!("local".parse::<RerankType>().unwrap(), RerankType::Local);
         assert_eq!("openai".parse::<RerankType>().unwrap(), RerankType::OpenAI);
         assert!("invalid".parse::<RerankType>().is_err());
+    }
+
+    #[test]
+    fn test_default_settings_chunk_config() {
+        let s = Settings::default();
+        assert_eq!(s.chunk_overlap_chars, DEFAULT_CHUNK_OVERLAP_CHARS);
+        assert!(s.max_chunk_chars.is_none());
     }
 
     #[test]

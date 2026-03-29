@@ -657,6 +657,7 @@ dependencies = [
  "text-splitter",
  "tokio",
  "tracing",
+ "tree-sitter-cangjie",
  "zerocopy",
 ]
 
@@ -5900,6 +5901,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -6142,6 +6144,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strength_reduce"
@@ -6463,6 +6471,7 @@ dependencies = [
  "pulldown-cmark",
  "strum 0.27.2",
  "thiserror 2.0.18",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -7031,6 +7040,35 @@ dependencies = [
  "num-integer",
  "strength_reduce",
 ]
+
+[[package]]
+name = "tree-sitter"
+version = "0.26.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7a6592b1aec0109df37b6bafea77eb4e61466e37b0a5a98bef4f89bfb81b7a2"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-cangjie"
+version = "0.1.0"
+source = "git+https://gitcode.com/Cangjie-SIG/tree-sitter-cangjie.git#ff447b577b45e12a350398a672308174baa1c8ad"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
 
 [[package]]
 name = "try-lock"

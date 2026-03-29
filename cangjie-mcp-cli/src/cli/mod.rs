@@ -6,12 +6,11 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 
 use cangjie_core::config::{
-    self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_MAX_SIZE,
-    DEFAULT_CHUNK_OVERLAP, DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2,
-    DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS, DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST,
-    DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL, DEFAULT_MAX_PER_FILE,
-    DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, DEFAULT_RERANK_INITIAL_K, DEFAULT_RERANK_MODEL,
-    DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
+    self, DocLang, EmbeddingType, RerankType, Settings, DEFAULT_CHUNK_OVERLAP_CHARS,
+    DEFAULT_DOCS_VERSION, DEFAULT_HTTP_ENABLE_HTTP2, DEFAULT_HTTP_POOL_IDLE_TIMEOUT_SECS,
+    DEFAULT_HTTP_POOL_MAX_IDLE_PER_HOST, DEFAULT_HTTP_TCP_KEEPALIVE_SECS, DEFAULT_LOCAL_MODEL,
+    DEFAULT_MAX_PER_FILE, DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, DEFAULT_RERANK_INITIAL_K,
+    DEFAULT_RERANK_MODEL, DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K,
 };
 
 pub const DEFAULT_DAEMON_TIMEOUT_MINUTES: u64 = 30;
@@ -108,13 +107,13 @@ pub struct ServerOptions {
     #[arg(long = "rerank-initial-k", env = "CANGJIE_RERANK_INITIAL_K", default_value_t = DEFAULT_RERANK_INITIAL_K, global = true)]
     pub rerank_initial_k: usize,
 
-    /// Max chunk size in characters
-    #[arg(long = "chunk-size", env = "CANGJIE_CHUNK_MAX_SIZE", default_value_t = DEFAULT_CHUNK_MAX_SIZE, global = true)]
-    pub chunk_max_size: usize,
+    /// Max chunk size in characters (omit to use dynamic detection)
+    #[arg(long = "chunk-size", env = "CANGJIE_CHUNK_MAX_SIZE", global = true)]
+    pub max_chunk_chars: Option<usize>,
 
     /// Chunk overlap in characters
-    #[arg(long = "chunk-overlap", env = "CANGJIE_CHUNK_OVERLAP", default_value_t = DEFAULT_CHUNK_OVERLAP, global = true)]
-    pub chunk_overlap: usize,
+    #[arg(long = "chunk-overlap", env = "CANGJIE_CHUNK_OVERLAP", default_value_t = DEFAULT_CHUNK_OVERLAP_CHARS, global = true)]
+    pub chunk_overlap_chars: usize,
 
     /// Maximum search results per file
     #[arg(long = "max-per-file", env = "CANGJIE_MAX_PER_FILE", default_value_t = DEFAULT_MAX_PER_FILE, global = true)]
@@ -170,8 +169,8 @@ impl ServerOptions {
             rerank_top_k: self.rerank_top_k,
             rerank_initial_k: self.rerank_initial_k,
             rrf_k: self.rrf_k,
-            chunk_max_size: self.chunk_max_size,
-            chunk_overlap: self.chunk_overlap,
+            max_chunk_chars: self.max_chunk_chars,
+            chunk_overlap_chars: self.chunk_overlap_chars,
             max_per_file: self.max_per_file,
             summary_model: self.summary_model.clone(),
             data_dir: self

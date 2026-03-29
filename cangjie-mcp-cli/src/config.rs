@@ -178,8 +178,10 @@ pub fn settings_from_env() -> Settings {
         rerank_top_k: env_usize("CANGJIE_RERANK_TOP_K", DEFAULT_RERANK_TOP_K),
         rerank_initial_k: env_usize("CANGJIE_RERANK_INITIAL_K", DEFAULT_RERANK_INITIAL_K),
         rrf_k: env_u32("CANGJIE_RRF_K", DEFAULT_RRF_K),
-        chunk_max_size: env_usize("CANGJIE_CHUNK_MAX_SIZE", DEFAULT_CHUNK_MAX_SIZE),
-        chunk_overlap: env_usize("CANGJIE_CHUNK_OVERLAP", DEFAULT_CHUNK_OVERLAP),
+        max_chunk_chars: std::env::var("CANGJIE_CHUNK_MAX_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok()),
+        chunk_overlap_chars: env_usize("CANGJIE_CHUNK_OVERLAP", DEFAULT_CHUNK_OVERLAP_CHARS),
         max_per_file: env_usize("CANGJIE_MAX_PER_FILE", DEFAULT_MAX_PER_FILE),
         summary_model: env_opt("CANGJIE_SUMMARY_MODEL"),
         data_dir: env_opt("CANGJIE_DATA_DIR")
@@ -236,9 +238,9 @@ pub fn generate_default_config() -> String {
 # rerank_top_k = 5
 # rerank_initial_k = 20
 
-# Chunk settings
-# chunk_size = 6000
-# chunk_overlap = 200
+# Chunk settings (omit chunk_size to enable dynamic detection: 800/1200/1600 based on code density)
+# chunk_size = 1200
+# chunk_overlap = 100
 # max_per_file = 2
 
 # LLM model for chunk context summaries

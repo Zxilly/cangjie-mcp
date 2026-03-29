@@ -986,7 +986,7 @@ mod tests {
     fn test_get_info_without_cangjie_home() {
         temp_env::with_var("CANGJIE_HOME", None::<&str>, || {
             let settings = Settings {
-                chunk_max_size: 6000,
+                max_chunk_chars: Some(6000),
                 data_dir: std::path::PathBuf::from("/tmp/test-info"),
                 openai_base_url: "https://api.example.com".to_string(),
                 openai_model: "test".to_string(),
@@ -1021,7 +1021,7 @@ mod tests {
     fn test_get_info_with_cangjie_home() {
         temp_env::with_var("CANGJIE_HOME", Some("/some/path"), || {
             let settings = Settings {
-                chunk_max_size: 6000,
+                max_chunk_chars: Some(6000),
                 data_dir: std::path::PathBuf::from("/tmp/test-info"),
                 openai_base_url: "https://api.example.com".to_string(),
                 openai_model: "test".to_string(),
@@ -1050,7 +1050,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_topic_not_initialized() {
         let settings = Settings {
-            chunk_max_size: 6000,
+            max_chunk_chars: Some(6000),
             data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),
@@ -1075,7 +1075,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_topics_not_initialized() {
         let settings = Settings {
-            chunk_max_size: 6000,
+            max_chunk_chars: Some(6000),
             data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
             openai_base_url: "https://api.example.com".to_string(),
             openai_model: "test".to_string(),

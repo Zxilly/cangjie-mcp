@@ -15,7 +15,7 @@ fn test_load_and_chunk_pipeline() {
     assert_eq!(doc.metadata.title, "测试文档");
     assert!(doc.metadata.has_code);
 
-    let chunks = chunk_document(&doc, 6000, 200);
+    let chunks = chunk_document(&doc, Some(6000), 200);
     assert!(!chunks.is_empty(), "document should produce chunks");
     // All chunks should carry the same category/topic metadata
     for chunk in &chunks {
@@ -29,7 +29,7 @@ fn test_chunk_preserves_code_detection() {
     let content_with_code =
         "# Code Doc\n\nSome text.\n\n```cangjie\nlet x = 1\n```\n\nMore text.\n".to_string();
     let doc = load_document_from_content(content_with_code, "a/b.md", "a", "b").unwrap();
-    let chunks = chunk_document(&doc, 6000, 200);
+    let chunks = chunk_document(&doc, Some(6000), 200);
     assert!(
         chunks.iter().any(|c| c.metadata.has_code),
         "at least one chunk should have has_code = true"
@@ -37,7 +37,7 @@ fn test_chunk_preserves_code_detection() {
 
     let content_no_code = "# Plain Doc\n\nJust text, no code blocks.\n".to_string();
     let doc2 = load_document_from_content(content_no_code, "a/c.md", "a", "c").unwrap();
-    let chunks2 = chunk_document(&doc2, 6000, 200);
+    let chunks2 = chunk_document(&doc2, Some(6000), 200);
     assert!(
         chunks2.iter().all(|c| !c.metadata.has_code),
         "chunks without code blocks should have has_code = false"
@@ -141,7 +141,7 @@ fn test_chunk_content_completeness() {
     let content =
         format!("# 完整性测试\n\n{section}\n\n## 第二节\n\n{section}\n\n## 第三节\n\n{section}");
     let doc = load_document_from_content(content.clone(), "test/big.md", "test", "big").unwrap();
-    let chunks = chunk_document(&doc, 500, 200);
+    let chunks = chunk_document(&doc, Some(500), 200);
 
     assert!(chunks.len() > 1, "should split into multiple chunks");
 
@@ -156,7 +156,7 @@ fn test_chunk_content_completeness() {
 #[tokio::test]
 async fn test_chunk_documents_mixed_code_detection() {
     let docs = sample_documents();
-    let chunks = chunk_documents(docs, 6000, 200).await;
+    let chunks = chunk_documents(docs, Some(6000), 200).await;
 
     let code_chunks: Vec<_> = chunks.iter().filter(|c| c.metadata.has_code).collect();
     let no_code_chunks: Vec<_> = chunks.iter().filter(|c| !c.metadata.has_code).collect();

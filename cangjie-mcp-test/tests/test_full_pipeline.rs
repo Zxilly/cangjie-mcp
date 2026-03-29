@@ -49,7 +49,7 @@ async fn build_real_index() -> (TempDir, BM25Store, Arc<dyn DocumentSource>) {
     assert!(docs.len() > 10, "should load many documents");
 
     // Chunk
-    let chunks = chunk_documents(docs, 6000, 200).await;
+    let chunks = chunk_documents(docs, Some(6000), 200).await;
     assert!(!chunks.is_empty(), "chunking should produce chunks");
 
     // Build BM25
@@ -136,7 +136,7 @@ async fn test_real_docs_local_search_index_query() {
 
     let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
     let docs = source.load_all_documents().await.unwrap();
-    let chunks = chunk_documents(docs, 6000, 200).await;
+    let chunks = chunk_documents(docs, Some(6000), 200).await;
 
     let bm25_dir = tmp.path().join("bm25_index");
     let mut bm25 = BM25Store::new(bm25_dir);

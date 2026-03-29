@@ -52,3 +52,5 @@ npm/packages/cangjie-mcp/artifacts/*
 !npm/packages/cangjie-mcp/artifacts/.gitignore
 npm/packages/cangjie-mcp-source/workspace/*
 !npm/packages/cangjie-mcp-source/workspace/.gitkeep
+
+ref/

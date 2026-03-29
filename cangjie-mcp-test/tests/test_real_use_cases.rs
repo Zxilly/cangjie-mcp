@@ -183,7 +183,7 @@ async fn test_workflow_list_then_get_topic() {
 async fn test_topic_pagination_large_document() {
     let large_doc = large_document();
     let docs = vec![large_doc.clone()];
-    let chunks = chunk_documents(docs.clone(), 500, 100).await;
+    let chunks = chunk_documents(docs.clone(), Some(500), 100).await;
 
     let (_tmp, server) = build_server(&chunks, &docs).await;
 
@@ -832,7 +832,7 @@ async fn test_http_topic_detail_all_categories() {
 async fn test_large_document_chunking_and_search() {
     let large_doc = large_document();
     let docs = vec![large_doc];
-    let chunks = chunk_documents(docs, 500, 100).await;
+    let chunks = chunk_documents(docs, Some(500), 100).await;
 
     assert!(
         chunks.len() > 3,
