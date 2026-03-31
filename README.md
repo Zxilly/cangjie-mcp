@@ -95,22 +95,37 @@ cangjie-mcp --server-url http://localhost:8765
 
 ### Remote MCP 模式
 
-`cangjie-mcp-server` 默认在 `/mcp` 路径同时提供 [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) MCP 端点。MCP 客户端可以直接连接该端点，无需本地运行 `cangjie-mcp`：
+`cangjie-mcp-server` 同时提供两种远程 MCP 传输方式，MCP 客户端可以直接连接，无需本地运行 `cangjie-mcp`：
+
+- **Streamable HTTP**（默认在 `/mcp`）— [MCP 规范推荐的现代传输方式](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http)
+- **SSE**（默认在 `/sse`）— 旧版 SSE 传输，兼容不支持 Streamable HTTP 的客户端
+
+> **注意**：Remote MCP 模式下 LSP 工具（`cangjie_lsp`）不可用。LSP 需要访问本地文件系统和仓颉 SDK，仅在 stdio 模式（`cangjie-mcp`）中提供。
 
 ```bash
-# 启动服务器（默认在 /mcp 提供 MCP 端点）
+# 启动服务器（同时提供 Streamable HTTP 和 SSE）
 cangjie-mcp-server --port 8765
-
-# MCP 客户端连接 http://localhost:8765/mcp 即可使用文档搜索工具
 ```
 
-在支持远程 MCP 的客户端中配置：
+在支持远程 MCP 的客户端中配置（Streamable HTTP）：
 
 ```json
 {
   "mcpServers": {
     "cangjie": {
       "url": "http://localhost:8765/mcp"
+    }
+  }
+}
+```
+
+对于仅支持旧版 SSE 传输的客户端：
+
+```json
+{
+  "mcpServers": {
+    "cangjie": {
+      "url": "http://localhost:8765/sse"
     }
   }
 }
@@ -287,7 +302,7 @@ cangjie-mcp config init            # 生成默认配置文件
 
 ### cangjie-mcp-server
 
-启动 HTTP 查询服务器和 Remote MCP 服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务，同时在 `/mcp` 路径提供 Streamable HTTP MCP 端点。该服务器为独立二进制，需单独构建。
+启动 HTTP 查询服务器和 Remote MCP 服务器，加载本地检索索引（BM25 + 向量索引），通过 HTTP 提供查询服务，同时提供 Streamable HTTP（`/mcp`）和旧版 SSE（`/sse`）两种 MCP 传输方式。该服务器为独立二进制，需单独构建。
 
 ```bash
 cangjie-mcp-server [OPTIONS]
@@ -299,8 +314,9 @@ cangjie-mcp-server [OPTIONS]
 |---------|---------|-------|------|
 | `--host TEXT` | `CANGJIE_SERVER_HOST` | `127.0.0.1` | HTTP 服务器监听地址 |
 | `-p, --port INT` | `CANGJIE_SERVER_PORT` | `8765` | HTTP 服务器监听端口 |
-| `--mcp-path TEXT` | `CANGJIE_MCP_PATH` | `/mcp` | MCP 端点挂载路径 |
-| `--no-mcp` | `CANGJIE_NO_MCP` | - | 禁用 MCP 端点（仅提供 REST API） |
+| `--mcp-path TEXT` | `CANGJIE_MCP_PATH` | `/mcp` | Streamable HTTP MCP 端点挂载路径 |
+| `--no-mcp` | `CANGJIE_NO_MCP` | - | 禁用 Streamable HTTP MCP 端点 |
+| `--no-sse` | `CANGJIE_NO_SSE` | - | 禁用旧版 SSE 传输端点 |
 
 #### HTTP API
 
@@ -314,7 +330,14 @@ cangjie-mcp-server [OPTIONS]
 
 #### MCP 端点
 
-默认在 `/mcp` 路径提供 Streamable HTTP MCP 服务，暴露 `cangjie_search_docs`、`cangjie_get_topic`、`cangjie_list_topics` 三个工具。使用 `--no-mcp` 可禁用此端点。
+默认同时提供两种 MCP 传输方式，暴露 `cangjie_search_docs`、`cangjie_get_topic`、`cangjie_list_topics` 三个工具：
+
+| 传输方式 | 端点 | 说明 |
+|---------|------|------|
+| Streamable HTTP | `/mcp`（可通过 `--mcp-path` 配置） | 现代 MCP 传输，使用 `--no-mcp` 禁用 |
+| SSE（旧版） | `GET /sse` + `POST /sse` | 兼容旧客户端，使用 `--no-sse` 禁用 |
+
+> **注意**：Remote MCP 模式下 LSP 工具不可用，仅提供文档搜索相关工具。
 
 ### Daemon 管理
 

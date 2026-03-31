@@ -3,6 +3,9 @@ pub mod mcp_handler;
 #[cfg(feature = "http")]
 pub mod http;
 
+#[cfg(feature = "sse")]
+pub mod sse;
+
 #[cfg(feature = "streamable-http")]
 pub mod streamable;
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cangjie-remote": {
+      "type": "http",
+      "url": "https://cj-mcp.learningman.top/mcp"
+    }
+  }
+}

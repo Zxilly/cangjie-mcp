@@ -17,6 +17,7 @@ use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource};
 use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::IndexMetadata;
 use cangjie_server::http::create_http_app;
+use cangjie_server::sse::create_sse_router;
 use cangjie_server::streamable::{create_mcp_service, CancellationToken, McpServerConfig};
 
 #[derive(Parser)]
@@ -138,6 +139,10 @@ struct Cli {
     /// Disable MCP endpoint (serve REST API only)
     #[arg(long = "no-mcp", env = "CANGJIE_NO_MCP")]
     no_mcp: bool,
+
+    /// Disable legacy SSE transport (GET /sse + POST /message)
+    #[arg(long = "no-sse", env = "CANGJIE_NO_SSE")]
+    no_sse: bool,
 }
 
 impl Cli {
@@ -205,6 +210,21 @@ async fn main() -> Result<()> {
     let doc_source: Arc<dyn DocumentSource> = Arc::new(doc_source);
 
     let mut app = create_http_app(search_index.clone(), doc_source.clone(), index_metadata).await;
+
+    if !cli.no_sse {
+        let settings_clone = settings.clone();
+        let idx = search_index.clone();
+        let docs = doc_source.clone();
+        let sse_router = create_sse_router(move || {
+            cangjie_server::CangjieServer::with_shared_state(
+                settings_clone.clone(),
+                idx.clone(),
+                docs.clone(),
+            )
+        });
+        info!("Legacy SSE transport enabled at /sse");
+        app = app.merge(sse_router);
+    }
 
     let ct = if !cli.no_mcp {
         let ct = CancellationToken::new();

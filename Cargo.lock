@@ -749,6 +749,7 @@ dependencies = [
  "cangjie-core",
  "cangjie-indexer",
  "cangjie-lsp",
+ "futures",
  "rmcp",
  "serde",
  "serde_json",
