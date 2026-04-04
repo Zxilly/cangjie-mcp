@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the cangjie-mcp Docker image with build args and secrets from .env."""
 
+import argparse
 import os
 import subprocess
 import sys
@@ -38,6 +39,12 @@ def load_env(path: Path) -> dict[str, str]:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Build the cangjie-mcp Docker image.")
+    parser.add_argument(
+        "--no-cache", action="store_true", help="Disable Docker build cache"
+    )
+    args = parser.parse_args()
+
     env_path = PROJECT_DIR / ".env"
     if not env_path.exists():
         print("ERROR: .env file not found.", file=sys.stderr)
@@ -55,6 +62,9 @@ def main():
         sys.exit(1)
 
     cmd = ["docker", "build"]
+
+    if args.no_cache:
+        cmd += ["--no-cache"]
 
     for arg in BUILD_ARGS:
         value = os.environ.get(arg) or env.get(arg)
