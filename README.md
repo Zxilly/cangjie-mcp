@@ -141,10 +141,10 @@ cangjie-mcp-server --port 8765
 <summary>Claude Code（推荐）</summary>
 
 ```bash
-claude mcp add \
+claude mcp add cangjie \
   -e CANGJIE_SERVER_URL=https://cj-mcp.learningman.top \
   -e CANGJIE_HOME=/path/to/cangjie-sdk \
-  cangjie -- uvx cangjie-mcp
+  -- uvx cangjie-mcp
 ```
 
 </details>
