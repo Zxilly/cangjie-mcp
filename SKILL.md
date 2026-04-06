@@ -204,17 +204,12 @@ cangjie-mcp query "<search terms>"
 cangjie-mcp query "<terms>" --category <cat> --top-k 10 --offset 0
 cangjie-mcp query "<terms>" --extract-code              # extract code examples
 cangjie-mcp query "<terms>" --package std.collection     # filter by stdlib package
-cangjie-mcp topic <topic-name>
-cangjie-mcp topic <topic-name> --category <cat>
-cangjie-mcp topics
-cangjie-mcp topics --category <cat>
 ```
 
 **Recommended workflow:**
-1. `cangjie-mcp topics` — discover categories and topic names (includes names by default)
-2. `cangjie-mcp query "<terms>"` — semantic search for concepts (returns code examples by default)
+1. `cangjie-mcp query "<terms>"` — semantic search for concepts (returns code examples by default)
+2. `cangjie-mcp query "<terms>" --category <cat>` — narrow results to a specific category
 3. `cangjie-mcp query "<terms>" --package <pkg>` — search stdlib APIs
-4. `cangjie-mcp topic <name>` — retrieve full documentation for a specific topic
 
 ## LSP Code Intelligence
 
@@ -253,6 +248,4 @@ cangjie-mcp daemon logs --follow
 ## Output Format
 
 - `query` — Markdown with ranked results, one section per match
-- `topic` — plain text documentation content with title header
-- `topics` — readable list grouped by category
 - `lsp` — JSON (structured data for programmatic use)

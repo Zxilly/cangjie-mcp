@@ -393,18 +393,13 @@ async fn test_http_full_workflow() {
     assert!(!results.is_empty(), "search should return results");
 }
 
-/// HTTP search with rerank parameter.
+/// HTTP search with basic pagination parameters.
 #[tokio::test]
-async fn test_http_search_with_rerank_flag() {
+async fn test_http_search_with_top_k() {
     let chunks = sample_chunks();
     let (_tmp, app) = build_http_app(&chunks).await;
 
-    let (status, result) = http_post(
-        app,
-        "/search",
-        r#"{"query":"变量","top_k":5,"rerank":false}"#,
-    )
-    .await;
+    let (status, result) = http_post(app, "/search", r#"{"query":"变量","top_k":5}"#).await;
     assert_eq!(status, StatusCode::OK);
     let results = result["results"].as_array().unwrap();
     assert!(!results.is_empty());

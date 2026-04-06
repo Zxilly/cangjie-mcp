@@ -179,7 +179,7 @@ async fn test_local_search_index_query_bm25_only() {
     let settings = test_settings(tmp.path().to_path_buf());
     let index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
-    let results = index.query("函数定义", 5, None, false).await.unwrap();
+    let results = index.query("函数定义", 5, None).await.unwrap();
     assert!(!results.is_empty());
     assert!(results[0].score > 0.0);
     assert!(
@@ -200,7 +200,7 @@ async fn test_local_search_index_query_with_category() {
     let settings = test_settings(tmp.path().to_path_buf());
     let index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
-    let results = index.query("函数", 10, Some("cjpm"), false).await.unwrap();
+    let results = index.query("函数", 10, Some("cjpm")).await.unwrap();
     for r in &results {
         assert_eq!(r.metadata.category, "cjpm");
     }
@@ -213,6 +213,6 @@ async fn test_local_search_index_query_no_stores() {
     let settings = test_settings(tmp.path().to_path_buf());
     let index = LocalSearchIndex::new(settings).await;
 
-    let results = index.query("anything", 5, None, false).await.unwrap();
+    let results = index.query("anything", 5, None).await.unwrap();
     assert!(results.is_empty(), "no stores = empty results");
 }

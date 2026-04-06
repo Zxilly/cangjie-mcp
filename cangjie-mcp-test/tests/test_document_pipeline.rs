@@ -51,66 +51,8 @@ async fn test_mock_document_source() {
 
     assert!(source.is_available().await);
 
-    // Categories
-    let categories = source.get_categories().await.unwrap();
-    assert!(categories.contains(&"syntax".to_string()));
-    assert!(categories.contains(&"stdlib".to_string()));
-    assert!(categories.contains(&"cjpm".to_string()));
-
-    // Topics in category
-    let syntax_topics = source.get_topics_in_category("syntax").await.unwrap();
-    assert!(syntax_topics.contains(&"functions".to_string()));
-    assert!(syntax_topics.contains(&"variables".to_string()));
-
-    // Get document by topic
-    let doc = source
-        .get_document_by_topic("functions", Some("syntax"))
-        .await
-        .unwrap();
-    assert!(doc.is_some());
-    let doc = doc.unwrap();
-    assert_eq!(doc.metadata.topic, "functions");
-    assert!(doc.text.contains("函数"));
-
-    // Get document without specifying category
-    let doc2 = source
-        .get_document_by_topic("collections", None)
-        .await
-        .unwrap();
-    assert!(doc2.is_some());
-    assert_eq!(doc2.unwrap().metadata.category, "stdlib");
-
-    // Non-existent topic
-    let missing = source
-        .get_document_by_topic("nonexistent", None)
-        .await
-        .unwrap();
-    assert!(missing.is_none());
-
-    // All topic names
-    let all_topics = source.get_all_topic_names().await.unwrap();
-    assert!(all_topics.len() >= 4);
-
-    // Topic titles
-    let titles = source.get_topic_titles("syntax").await.unwrap();
-    assert_eq!(titles.get("functions").unwrap(), "函数定义");
-
-    // Load all
     let all_docs = source.load_all_documents().await.unwrap();
     assert_eq!(all_docs.len(), docs.len());
-}
-
-/// Empty or nonexistent category should return empty topic list, not error.
-#[tokio::test]
-async fn test_mock_source_empty_category() {
-    let docs = sample_documents();
-    let source = MockDocumentSource::from_docs(&docs);
-
-    let topics = source.get_topics_in_category("nonexistent").await.unwrap();
-    assert!(topics.is_empty());
-
-    let titles = source.get_topic_titles("nonexistent").await.unwrap();
-    assert!(titles.is_empty());
 }
 
 /// Document loader: code detection should work for documents with code blocks.

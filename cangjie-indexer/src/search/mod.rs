@@ -190,16 +190,16 @@ impl LocalSearchIndex {
         query: &str,
         top_k: usize,
         category: Option<&str>,
-        rerank: bool,
     ) -> Result<Vec<SearchResult>> {
         let has_bm25 = self.bm25_store.is_some();
         let has_vector = self.vector_store.is_some() && self.embedder.is_some();
+        let use_rerank = self.reranker.is_enabled();
 
         if !has_bm25 && !has_vector {
             return Ok(Vec::new());
         }
 
-        let fetch_k = if rerank && self.reranker.is_enabled() {
+        let fetch_k = if use_rerank {
             self.settings.rerank_initial_k.max(top_k)
         } else {
             top_k
@@ -247,7 +247,7 @@ impl LocalSearchIndex {
                 fetch_k,
             );
 
-            if rerank && self.reranker.is_enabled() && !fused.is_empty() {
+            if use_rerank && !fused.is_empty() {
                 let fallback = fused.clone();
                 fused = self
                     .reranker
@@ -270,7 +270,7 @@ impl LocalSearchIndex {
                 bm25_multi_query_search(bm25, query, fetch_k, category, self.settings.rrf_k)
                     .await?;
 
-            if rerank && self.reranker.is_enabled() && !results.is_empty() {
+            if use_rerank && !results.is_empty() {
                 match self.reranker.rerank(query, results.clone(), top_k).await {
                     Ok(reranked) => reranked,
                     Err(e) => {
@@ -312,7 +312,6 @@ struct RemoteInfoResponse {
 struct RemoteSearchRequest {
     query: String,
     top_k: usize,
-    rerank: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     category: Option<String>,
 }
@@ -371,12 +370,10 @@ impl RemoteSearchIndex {
         query: &str,
         top_k: usize,
         category: Option<&str>,
-        rerank: bool,
     ) -> Result<Vec<SearchResult>> {
         let payload = RemoteSearchRequest {
             query: query.to_string(),
             top_k,
-            rerank,
             category: category.map(|s| s.to_string()),
         };
 
@@ -466,7 +463,7 @@ mod tests {
             embedding_cache: new_embedding_cache(),
         };
 
-        let results = index.query("test", 5, None, false).await.unwrap();
+        let results = index.query("test", 5, None).await.unwrap();
         assert!(
             results.is_empty(),
             "Expected empty results when no stores are configured"
@@ -488,10 +485,7 @@ mod tests {
             embedding_cache: new_embedding_cache(),
         };
 
-        let results = index
-            .query("\u{53d8}\u{91cf}", 3, None, false)
-            .await
-            .unwrap();
+        let results = index.query("\u{53d8}\u{91cf}", 3, None).await.unwrap();
         assert!(
             !results.is_empty(),
             "BM25 search should return results for a matching query"
@@ -515,7 +509,7 @@ mod tests {
 
         // Search with category filter for "basics"
         let results = index
-            .query("\u{51fd}\u{6570}", 5, Some("basics"), false)
+            .query("\u{51fd}\u{6570}", 5, Some("basics"))
             .await
             .unwrap();
         for r in &results {
@@ -570,10 +564,7 @@ mod tests {
         };
 
         // Request top_k=2, should not return more than 2 results
-        let results = index
-            .query("\u{7f16}\u{7a0b}", 2, None, false)
-            .await
-            .unwrap();
+        let results = index.query("\u{7f16}\u{7a0b}", 2, None).await.unwrap();
         assert!(results.len() <= 2, "Should return at most top_k results");
     }
 
@@ -594,7 +585,7 @@ mod tests {
         };
 
         let results = index
-            .query("\u{53d8}\u{91cf}", 5, Some("nonexistent_category"), false)
+            .query("\u{53d8}\u{91cf}", 5, Some("nonexistent_category"))
             .await
             .unwrap();
         assert!(

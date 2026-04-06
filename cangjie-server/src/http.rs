@@ -25,15 +25,10 @@ struct SearchRequest {
     #[serde(default = "default_top_k")]
     top_k: usize,
     category: Option<String>,
-    #[serde(default = "default_true")]
-    rerank: bool,
 }
 
 fn default_top_k() -> usize {
     cangjie_core::config::DEFAULT_TOP_K
-}
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Debug, Serialize)]
@@ -93,7 +88,7 @@ async fn search_handler(
     let category = req.category.as_deref();
     let results = state
         .search_index
-        .query(&req.query, req.top_k, category, req.rerank)
+        .query(&req.query, req.top_k, category)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

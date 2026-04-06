@@ -256,8 +256,6 @@ npx skills add Zxilly/cangjie-mcp
 | 工具名称 | 功能 |
 |---------|------|
 | `cangjie_search_docs` | 语义搜索仓颉文档 |
-| `cangjie_get_topic` | 获取指定主题的完整内容 |
-| `cangjie_list_topics` | 列出所有可用主题 |
 
 ### 代码智能
 
@@ -276,8 +274,6 @@ npx skills add Zxilly/cangjie-mcp
 ```bash
 cangjie-mcp                        # 启动 MCP stdio 服务器（无参数时默认行为）
 cangjie-mcp query "泛型"           # CLI 搜索（自动启动后台 daemon）
-cangjie-mcp topic functions        # 获取完整文档
-cangjie-mcp topics -c stdlib       # 列出 stdlib 分类下的主题
 cangjie-mcp lsp hover main.cj --symbol main  # LSP 操作
 cangjie-mcp index                  # 构建搜索索引
 cangjie-mcp config init            # 生成默认配置文件
@@ -325,12 +321,10 @@ cangjie-mcp-server [OPTIONS]
 | `GET` | `/health` | 健康检查 |
 | `GET` | `/info` | 索引元数据 |
 | `POST` | `/search` | 向量搜索 |
-| `GET` | `/topics` | 列出所有分类和主题 |
-| `GET` | `/topics/{category}/{topic}` | 获取文档内容 |
 
 #### MCP 端点
 
-默认同时提供两种 MCP 传输方式，暴露 `cangjie_search_docs`、`cangjie_get_topic`、`cangjie_list_topics` 三个工具：
+默认同时提供两种 MCP 传输方式，暴露 `cangjie_search_docs` 工具：
 
 | 传输方式 | 端点 | 说明 |
 |---------|------|------|
@@ -341,7 +335,7 @@ cangjie-mcp-server [OPTIONS]
 
 ### Daemon 管理
 
-CLI 工具命令（`query`、`topic`、`lsp` 等）会自动在后台启动 daemon 进程，复用已初始化的服务实例以加速响应。daemon 空闲超时后自动退出。
+CLI 工具命令（`query`、`lsp` 等）会自动在后台启动 daemon 进程，复用已初始化的服务实例以加速响应。daemon 空闲超时后自动退出。
 
 ```bash
 cangjie-mcp daemon status           # 查看 daemon 状态

@@ -272,8 +272,8 @@ impl CangjieServer {
         };
 
         match search {
-            SearchBackend::Local(local) => local.query(query, top_k, category, true).await,
-            SearchBackend::Remote(remote) => remote.query(query, top_k, category, true).await,
+            SearchBackend::Local(local) => local.query(query, top_k, category).await,
+            SearchBackend::Remote(remote) => remote.query(query, top_k, category).await,
         }
     }
 

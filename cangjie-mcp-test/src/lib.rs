@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
@@ -303,23 +302,6 @@ pub fn cross_category_chunks() -> Vec<TextChunk> {
     ]
 }
 
-/// Convert a slice of `TextChunk` into `Vec<DocData>`.
-pub fn chunks_to_docs(chunks: &[TextChunk]) -> Vec<DocData> {
-    chunks
-        .iter()
-        .map(|c| DocData {
-            doc_id: c.metadata.file_path.clone(),
-            text: c.text.clone(),
-            metadata: c.metadata.clone(),
-        })
-        .collect()
-}
-
-/// Return documents matching cross_category_chunks for MockDocumentSource.
-pub fn cross_category_documents() -> Vec<DocData> {
-    chunks_to_docs(&cross_category_chunks())
-}
-
 /// Return chunks simulating stdlib package documentation with import statements.
 pub fn stdlib_package_chunks() -> Vec<TextChunk> {
     vec![
@@ -376,34 +358,14 @@ pub fn stdlib_package_chunks() -> Vec<TextChunk> {
 
 /// An in-memory `DocumentSource` implementation for testing.
 pub struct MockDocumentSource {
-    documents: HashMap<String, DocData>,
-    categories: HashMap<String, Vec<String>>,
+    documents: Vec<DocData>,
 }
 
 impl MockDocumentSource {
     /// Build a `MockDocumentSource` from a slice of `DocData`.
     pub fn from_docs(docs: &[DocData]) -> Self {
-        let mut documents = HashMap::new();
-        let mut categories: HashMap<String, Vec<String>> = HashMap::new();
-
-        for doc in docs {
-            let key = format!("{}:{}", doc.metadata.category, doc.metadata.topic);
-            documents.insert(key, doc.clone());
-            categories
-                .entry(doc.metadata.category.clone())
-                .or_default()
-                .push(doc.metadata.topic.clone());
-        }
-
-        // Deduplicate and sort topics within each category
-        for topics in categories.values_mut() {
-            topics.sort();
-            topics.dedup();
-        }
-
         Self {
-            documents,
-            categories,
+            documents: docs.to_vec(),
         }
     }
 }
@@ -414,62 +376,7 @@ impl DocumentSource for MockDocumentSource {
         true
     }
 
-    async fn get_categories(&self) -> anyhow::Result<Vec<String>> {
-        let mut cats: Vec<String> = self.categories.keys().cloned().collect();
-        cats.sort();
-        Ok(cats)
-    }
-
-    async fn get_topics_in_category(&self, category: &str) -> anyhow::Result<Vec<String>> {
-        Ok(self.categories.get(category).cloned().unwrap_or_default())
-    }
-
-    async fn get_document_by_topic(
-        &self,
-        topic: &str,
-        category: Option<&str>,
-    ) -> anyhow::Result<Option<DocData>> {
-        if let Some(cat) = category {
-            let key = format!("{cat}:{topic}");
-            return Ok(self.documents.get(&key).cloned());
-        }
-        // Search across all categories
-        for cat in self.categories.keys() {
-            let key = format!("{cat}:{topic}");
-            if let Some(doc) = self.documents.get(&key) {
-                return Ok(Some(doc.clone()));
-            }
-        }
-        Ok(None)
-    }
-
     async fn load_all_documents(&self) -> anyhow::Result<Vec<DocData>> {
-        Ok(self.documents.values().cloned().collect())
-    }
-
-    async fn get_all_topic_names(&self) -> anyhow::Result<Vec<String>> {
-        let mut names: Vec<String> = self
-            .categories
-            .values()
-            .flat_map(|v| v.iter().cloned())
-            .collect();
-        names.sort();
-        names.dedup();
-        Ok(names)
-    }
-
-    async fn get_topic_titles(&self, category: &str) -> anyhow::Result<HashMap<String, String>> {
-        let topics = self.categories.get(category).cloned().unwrap_or_default();
-        let mut titles = HashMap::new();
-        for topic in &topics {
-            let key = format!("{category}:{topic}");
-            let title = self
-                .documents
-                .get(&key)
-                .map(|d| d.metadata.title.clone())
-                .unwrap_or_default();
-            titles.insert(topic.clone(), title);
-        }
-        Ok(titles)
+        Ok(self.documents.clone())
     }
 }

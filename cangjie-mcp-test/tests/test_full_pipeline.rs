@@ -148,7 +148,7 @@ async fn test_real_docs_local_search_index_query() {
     bm25.build_from_chunks(&chunks).await.unwrap();
 
     let index = LocalSearchIndex::with_bm25(settings, bm25).await;
-    let results = index.query("变量声明", 5, None, false).await.unwrap();
+    let results = index.query("变量声明", 5, None).await.unwrap();
     assert!(
         !results.is_empty(),
         "LocalSearchIndex query should return results"
