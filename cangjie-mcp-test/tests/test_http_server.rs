@@ -5,13 +5,13 @@ use axum::http::{Request, StatusCode};
 use cangjie_indexer::search::bm25::BM25Store;
 use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::{IndexMetadata, SearchMode};
-use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings, MockDocumentSource};
+use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings};
 use cangjie_server::http::create_http_app;
 use http_body_util::BodyExt;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-/// Build a fully-wired HTTP app backed by real BM25 + MockDocumentSource.
+/// Build a fully-wired HTTP app backed by real BM25.
 async fn build_test_app() -> (TempDir, axum::Router) {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_index");
@@ -23,8 +23,6 @@ async fn build_test_app() -> (TempDir, axum::Router) {
     let search_index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
     let docs = sample_documents();
-    let doc_source: Arc<dyn cangjie_indexer::document::source::DocumentSource> =
-        Arc::new(MockDocumentSource::from_docs(&docs));
 
     let metadata = IndexMetadata {
         version: "test".to_string(),
@@ -34,7 +32,7 @@ async fn build_test_app() -> (TempDir, axum::Router) {
         search_mode: SearchMode::Bm25,
     };
 
-    let app = create_http_app(Arc::new(search_index), doc_source, metadata).await;
+    let app = create_http_app(Arc::new(search_index), metadata).await;
     (tmp, app)
 }
 
@@ -85,39 +83,6 @@ async fn test_search_empty_query() {
     let (_tmp, app) = build_test_app().await;
     let (status, _body) = post_json(app, "/search", r#"{"query":""}"#).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_topics_endpoint() {
-    let (_tmp, app) = build_test_app().await;
-    let (status, body) = get(app, "/topics").await;
-    assert_eq!(status, StatusCode::OK);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let categories = v["categories"].as_object().unwrap();
-    assert!(!categories.is_empty(), "categories should not be empty");
-    assert!(categories.contains_key("syntax"));
-    assert!(categories.contains_key("stdlib"));
-    assert!(categories.contains_key("cjpm"));
-}
-
-#[tokio::test]
-async fn test_topic_detail() {
-    let (_tmp, app) = build_test_app().await;
-    let (status, body) = get(app, "/topics/syntax/functions").await;
-    assert_eq!(status, StatusCode::OK);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(v["content"].as_str().unwrap().contains("函数"));
-    assert_eq!(v["category"], "syntax");
-    assert_eq!(v["topic"], "functions");
-}
-
-#[tokio::test]
-async fn test_topic_not_found() {
-    let (_tmp, app) = build_test_app().await;
-    let (status, body) = get(app, "/topics/nonexistent/fake").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(v["error"].as_str().is_some());
 }
 
 #[tokio::test]
@@ -180,19 +145,6 @@ async fn test_search_result_metadata_fields() {
     assert!(first["metadata"]["topic"].is_string());
     assert!(first["metadata"]["title"].is_string());
     assert!(first["metadata"]["has_code"].is_boolean());
-}
-
-#[tokio::test]
-async fn test_topic_detail_response_fields() {
-    let (_tmp, app) = build_test_app().await;
-    let (status, body) = get(app, "/topics/cjpm/getting_started").await;
-    assert_eq!(status, StatusCode::OK);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(v["content"].as_str().unwrap().contains("CJPM"));
-    assert_eq!(v["category"], "cjpm");
-    assert_eq!(v["topic"], "getting_started");
-    assert!(!v["file_path"].as_str().unwrap().is_empty());
-    assert!(!v["title"].as_str().unwrap().is_empty());
 }
 
 #[tokio::test]

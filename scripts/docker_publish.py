@@ -13,6 +13,7 @@ REPO = f"{REGISTRY}/zxilly/cangjie_mcp"
 # Build-time ARGs defined in Dockerfile
 BUILD_ARGS = [
     "CANGJIE_DOCS_VERSION",
+    "CANGJIE_RUNTIME_VERSION",
     "CANGJIE_DOCS_LANG",
     "OPENAI_EMBEDDING_MODEL",
     "OPENAI_BASE_URL",
@@ -39,6 +40,7 @@ def load_env(path: Path) -> dict[str, str]:
 
 
 CANGJIE_DOCS_REPO = "https://gitcode.com/Cangjie/cangjie_docs.git"
+CANGJIE_RUNTIME_REPO = "https://gitcode.com/Cangjie/cangjie_runtime.git"
 
 
 def resolve_cangjie_version(docs_version: str) -> str:

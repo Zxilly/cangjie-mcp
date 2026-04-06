@@ -159,10 +159,10 @@ async fn run_tool_command(cmd: &Commands, daemon_timeout: u64) -> Result<()> {
     let result = client::call_tool(params).await?;
 
     if result.is_error.unwrap_or(false) {
-        cli::output::print_tool_result(&result, cmd);
+        cli::output::print_tool_result(&result);
         anyhow::bail!("tool returned an error");
     }
 
-    cli::output::print_tool_result(&result, cmd);
+    cli::output::print_tool_result(&result);
     Ok(())
 }

@@ -5,10 +5,9 @@ use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
 use gix::refs::Target;
 use tracing::{info, warn};
 
-const DOCS_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_docs.git";
-
 pub struct GitManager {
     repo_dir: PathBuf,
+    url: String,
     repo: Option<gix::Repository>,
 }
 
@@ -83,9 +82,10 @@ fn ensure_committer_for_ref_edits(repo: &mut gix::Repository) -> Result<()> {
 }
 
 impl GitManager {
-    pub fn new(repo_dir: PathBuf) -> Self {
+    pub fn new(repo_dir: PathBuf, url: String) -> Self {
         Self {
             repo_dir,
+            url,
             repo: None,
         }
     }
@@ -102,6 +102,7 @@ impl GitManager {
         repo_dir: &Path,
         repo: Option<gix::Repository>,
         fetch: bool,
+        url: &str,
     ) -> Result<gix::Repository> {
         if repo_dir.exists() && repo_dir.join(".git").exists() {
             let mut repo = match repo {
@@ -114,11 +115,11 @@ impl GitManager {
             }
             Ok(repo)
         } else {
-            info!("Cloning repository from {}...", DOCS_REPO_URL);
+            info!("Cloning repository from {}...", url);
             if let Some(parent) = repo_dir.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let (mut checkout, _) = gix::prepare_clone(DOCS_REPO_URL, repo_dir)
+            let (mut checkout, _) = gix::prepare_clone(url, repo_dir)
                 .context("Failed to prepare clone")?
                 .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
                 .context("Failed to fetch during clone")?;
@@ -171,10 +172,12 @@ impl GitManager {
     pub async fn ensure_cloned(&mut self, fetch: bool) -> Result<()> {
         let repo_dir = self.repo_dir.clone();
         let repo = self.repo.take();
+        let url = self.url.clone();
 
-        let repo = tokio::task::spawn_blocking(move || Self::open_or_clone(&repo_dir, repo, fetch))
-            .await
-            .context("ensure_cloned task panicked")??;
+        let repo =
+            tokio::task::spawn_blocking(move || Self::open_or_clone(&repo_dir, repo, fetch, &url))
+                .await
+                .context("ensure_cloned task panicked")??;
 
         self.repo = Some(repo);
         Ok(())
@@ -184,9 +187,10 @@ impl GitManager {
         let repo_dir = self.repo_dir.clone();
         let repo = self.repo.take();
         let version = version.to_string();
+        let url = self.url.clone();
 
         let repo = tokio::task::spawn_blocking(move || -> Result<gix::Repository> {
-            let mut repo = Self::open_or_clone(&repo_dir, repo, true)?;
+            let mut repo = Self::open_or_clone(&repo_dir, repo, true, &url)?;
             checkout(&mut repo, &version)?;
             Ok(repo)
         })
@@ -201,10 +205,11 @@ impl GitManager {
         let repo_dir = self.repo_dir.clone();
         let repo = self.repo.take();
         let version = version.to_string();
+        let url = self.url.clone();
 
         let (repo, resolved) =
             tokio::task::spawn_blocking(move || -> Result<(gix::Repository, String)> {
-                let mut repo = Self::open_or_clone(&repo_dir, repo, true)?;
+                let mut repo = Self::open_or_clone(&repo_dir, repo, true, &url)?;
                 checkout(&mut repo, &version)?;
                 let resolved = Self::resolve_after_checkout(&repo)?;
                 Ok((repo, resolved))
@@ -457,31 +462,36 @@ mod tests {
     use super::*;
     use crate::testutil::{add_fake_remote, create_test_repo, create_test_repo_with_remote};
     use std::process::Command;
+
+    /// Test helper: create GitManager without a real URL (tests don't clone).
+    fn test_mgr(repo_dir: std::path::PathBuf) -> GitManager {
+        GitManager::new(repo_dir, String::new())
+    }
     use tempfile::TempDir;
 
     #[test]
     fn test_new_and_is_cloned() {
         let tmp = TempDir::new().unwrap();
         let nonexistent = tmp.path().join("nonexistent");
-        let mgr = GitManager::new(nonexistent);
+        let mgr = test_mgr(nonexistent);
         assert!(!mgr.is_cloned());
 
         let (tmp2, _repo) = create_test_repo();
-        let mgr2 = GitManager::new(tmp2.path().to_path_buf());
+        let mgr2 = test_mgr(tmp2.path().to_path_buf());
         assert!(mgr2.is_cloned());
     }
 
     #[test]
     fn test_repo_returns_none_initially() {
         let tmp = TempDir::new().unwrap();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
         assert!(mgr.repo().is_none());
     }
 
     #[tokio::test]
     async fn test_read_file_from_tree() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let content = mgr
             .read_file_from_tree("docs/dev-guide/source_zh_cn/syntax/functions.md")
@@ -494,7 +504,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_file_not_found() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let result = mgr
             .read_file_from_tree("docs/dev-guide/source_zh_cn/nonexistent.md")
@@ -505,7 +515,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_tree_dirs() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let dirs = mgr
             .list_tree_dirs("docs/dev-guide/source_zh_cn")
@@ -527,7 +537,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_md_files() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let files = mgr
             .list_md_files("docs/dev-guide/source_zh_cn/syntax")
@@ -542,7 +552,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_md_files_nested() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let files = mgr
             .list_md_files("docs/dev-guide/source_zh_cn")
@@ -586,7 +596,7 @@ mod tests {
     fn test_open_or_clone_existing() {
         let (tmp, _repo) = create_test_repo();
 
-        let result = GitManager::open_or_clone(tmp.path(), None, false);
+        let result = GitManager::open_or_clone(tmp.path(), None, false, "");
         assert!(result.is_ok());
     }
 
@@ -594,7 +604,7 @@ mod tests {
     fn test_open_or_clone_with_repo_passed_in() {
         let (tmp, repo) = create_test_repo();
 
-        let result = GitManager::open_or_clone(tmp.path(), Some(repo), false);
+        let result = GitManager::open_or_clone(tmp.path(), Some(repo), false, "");
         assert!(result.is_ok());
     }
 
@@ -687,7 +697,7 @@ mod tests {
     #[tokio::test]
     async fn test_ensure_cloned_existing_repo() {
         let (tmp, _repo) = create_test_repo();
-        let mut mgr = GitManager::new(tmp.path().to_path_buf());
+        let mut mgr = test_mgr(tmp.path().to_path_buf());
         assert!(mgr.repo().is_none());
 
         let result = mgr.ensure_cloned(false).await;
@@ -698,7 +708,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_tree_dirs_nonexistent_path() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let result = mgr.list_tree_dirs("nonexistent/path").await;
         assert!(result.is_err());
@@ -707,7 +717,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_md_files_returns_sorted() {
         let (tmp, _repo) = create_test_repo();
-        let mgr = GitManager::new(tmp.path().to_path_buf());
+        let mgr = test_mgr(tmp.path().to_path_buf());
 
         let files = mgr
             .list_md_files("docs/dev-guide/source_zh_cn/syntax")
@@ -890,7 +900,7 @@ mod tests {
     #[tokio::test]
     async fn test_checkout_async_with_remote_branch() {
         let (tmp, _repo) = create_test_repo_with_remote("main");
-        let mut mgr = GitManager::new(tmp.path().to_path_buf());
+        let mut mgr = test_mgr(tmp.path().to_path_buf());
         let result = mgr.checkout("latest").await;
         assert!(
             result.is_ok(),
@@ -906,7 +916,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_version_async() {
         let (tmp, _repo) = create_test_repo_with_remote("main");
-        let mut mgr = GitManager::new(tmp.path().to_path_buf());
+        let mut mgr = test_mgr(tmp.path().to_path_buf());
         let resolved = mgr.resolve_version("latest").await;
         assert!(
             resolved.is_ok(),
@@ -933,7 +943,7 @@ mod tests {
             .status()
             .unwrap();
 
-        let mut mgr = GitManager::new(tmp.path().to_path_buf());
+        let mut mgr = test_mgr(tmp.path().to_path_buf());
         let resolved = mgr.resolve_version("v3.0.0").await;
         assert!(
             resolved.is_ok(),

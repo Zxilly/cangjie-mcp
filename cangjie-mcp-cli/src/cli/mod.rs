@@ -49,6 +49,14 @@ pub struct ServerOptions {
     #[arg(long = "docs-version", short = 'v', env = "CANGJIE_DOCS_VERSION", default_value = DEFAULT_DOCS_VERSION, global = true)]
     pub docs_version: String,
 
+    /// Runtime stdlib documentation version (git tag, defaults to docs-version)
+    #[arg(
+        long = "runtime-version",
+        env = "CANGJIE_RUNTIME_VERSION",
+        global = true
+    )]
+    pub runtime_version: Option<String>,
+
     /// Documentation language (zh/en)
     #[arg(
         long,
@@ -161,6 +169,10 @@ impl ServerOptions {
     pub fn to_settings(&self) -> Settings {
         Settings {
             docs_version: self.docs_version.clone(),
+            runtime_version: self
+                .runtime_version
+                .clone()
+                .unwrap_or_else(|| self.docs_version.clone()),
             docs_lang: self.lang,
             embedding_type: self.embedding,
             local_model: self.local_model.clone(),
@@ -210,26 +222,6 @@ pub enum Commands {
         /// Filter by stdlib package name
         #[arg(long)]
         package: Option<String>,
-    },
-    /// Get documentation for a topic (with pagination)
-    Topic {
-        /// Topic name
-        name: String,
-        /// Optional category filter
-        #[arg(long, short = 'c')]
-        category: Option<String>,
-        /// Byte offset to start reading from
-        #[arg(long, default_value_t = 0)]
-        offset: usize,
-        /// Maximum number of bytes to return
-        #[arg(long, default_value_t = 10000)]
-        max_length: usize,
-    },
-    /// List available documentation topics
-    Topics {
-        /// Optional category filter
-        #[arg(long, short = 'c')]
-        category: Option<String>,
     },
     /// LSP code intelligence operations
     Lsp {

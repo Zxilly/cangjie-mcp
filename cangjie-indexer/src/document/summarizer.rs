@@ -6,12 +6,12 @@ use cangjie_core::api_types::ChatResponse;
 
 /// Chunk context summarizer that calls an OpenAI-compatible Chat API.
 #[derive(Clone)]
-pub struct ChunkSummarizer {
+pub(crate) struct ChunkSummarizer {
     api: ApiClient,
 }
 
 impl ChunkSummarizer {
-    pub fn new(api: ApiClient) -> Self {
+    pub(crate) fn new(api: ApiClient) -> Self {
         Self { api }
     }
 
@@ -87,7 +87,7 @@ pub async fn save_context_cache(
 /// Apply context summaries to chunks by prepending `<context>...</context>\n\n`.
 ///
 /// Uses concurrency-limited LLM calls for chunks that don't have a cached summary.
-pub async fn apply_context_summaries(
+pub(crate) async fn apply_context_summaries(
     chunks: &mut [crate::TextChunk],
     doc_texts: &std::collections::HashMap<String, String>,
     summarizer: &ChunkSummarizer,

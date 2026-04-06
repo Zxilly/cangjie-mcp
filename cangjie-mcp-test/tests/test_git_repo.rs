@@ -8,7 +8,7 @@ use tempfile::TempDir;
 async fn clone_repo() -> (TempDir, GitManager) {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
-    let mut mgr = GitManager::new(repo_dir);
+    let mut mgr = GitManager::new(repo_dir, cangjie_core::config::DOCS_REPO_URL.to_string());
     mgr.ensure_cloned(false).await.unwrap();
     (tmp, mgr)
 }
@@ -24,7 +24,7 @@ async fn test_clone_and_is_cloned() {
 async fn test_resolve_version_latest() {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
-    let mut mgr = GitManager::new(repo_dir);
+    let mut mgr = GitManager::new(repo_dir, cangjie_core::config::DOCS_REPO_URL.to_string());
 
     let resolved = mgr.resolve_version("latest").await.unwrap();
     // "latest" resolves to branch(short_hash) format or a tag
@@ -96,7 +96,7 @@ async fn test_read_file_from_tree() {
 async fn test_checkout_nonexistent_version_fails() {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
-    let mut mgr = GitManager::new(repo_dir);
+    let mut mgr = GitManager::new(repo_dir, cangjie_core::config::DOCS_REPO_URL.to_string());
 
     let result = mgr.checkout("nonexistent_version_xyz_12345").await;
     assert!(
@@ -109,7 +109,7 @@ async fn test_checkout_nonexistent_version_fails() {
 async fn test_ensure_cloned_twice_is_idempotent() {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
-    let mut mgr = GitManager::new(repo_dir);
+    let mut mgr = GitManager::new(repo_dir, cangjie_core::config::DOCS_REPO_URL.to_string());
 
     mgr.ensure_cloned(false).await.unwrap();
     assert!(mgr.is_cloned());

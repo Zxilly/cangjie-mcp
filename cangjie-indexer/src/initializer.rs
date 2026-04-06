@@ -30,9 +30,25 @@ async fn index_is_ready(index_info: &IndexInfo) -> bool {
 /// Build the BM25 (and optionally vector) index from documentation.
 async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> {
     info!("Loading documents...");
-    let doc_source = GitDocumentSource::new(index_info.docs_repo_dir(), index_info.lang)?;
+    let docs_source = GitDocumentSource::for_docs(index_info.docs_repo_dir(), index_info.lang)?;
+    let runtime_source =
+        GitDocumentSource::for_runtime(index_info.runtime_repo_dir(), index_info.lang)?;
 
-    let documents = doc_source.load_all_documents().await?;
+    // Load from both repos concurrently
+    let (docs_result, runtime_result) = tokio::join!(
+        docs_source.load_all_documents(),
+        runtime_source.load_all_documents(),
+    );
+    let mut documents = docs_result?;
+    match runtime_result {
+        Ok(runtime_docs) => {
+            info!("Loaded {} runtime stdlib documents", runtime_docs.len());
+            documents.extend(runtime_docs);
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load runtime documents: {e}");
+        }
+    }
     if documents.is_empty() {
         bail!(
             "No documents found for version={}, lang={}",
@@ -215,18 +231,34 @@ pub async fn initialize_and_index(settings: &Settings) -> Result<IndexInfo> {
 
     use crate::repo::GitManager;
 
-    // Resolve version (ensures repo is cloned, fetched, and checked out)
-    let mut git_mgr = GitManager::new(settings.docs_repo_dir());
-    let resolved_version = git_mgr
-        .resolve_version(&settings.docs_version)
-        .await
-        .context("Failed to resolve documentation version")?;
-    info!(
-        "Resolved version: {} -> {}",
-        settings.docs_version, resolved_version
+    // Resolve versions concurrently (ensures repos are cloned, fetched, and checked out)
+    let mut git_mgr = GitManager::new(
+        settings.docs_repo_dir(),
+        cangjie_core::config::DOCS_REPO_URL.to_string(),
+    );
+    let mut runtime_mgr = GitManager::new(
+        settings.runtime_repo_dir(),
+        cangjie_core::config::RUNTIME_REPO_URL.to_string(),
     );
 
-    let index_info = IndexInfo::from_settings(settings, &resolved_version);
+    let (docs_result, runtime_result) = tokio::join!(
+        git_mgr.resolve_version(&settings.docs_version),
+        runtime_mgr.resolve_version(&settings.runtime_version),
+    );
+    let resolved_version = docs_result.context("Failed to resolve documentation version")?;
+    let runtime_resolved =
+        runtime_result.context("Failed to resolve runtime documentation version")?;
+    info!(
+        "Resolved docs version: {} -> {}",
+        settings.docs_version, resolved_version
+    );
+    info!(
+        "Resolved runtime version: {} -> {}",
+        settings.runtime_version, runtime_resolved
+    );
+
+    let combined_version = format!("{}+rt-{}", resolved_version, runtime_resolved);
+    let index_info = IndexInfo::from_settings(settings, &combined_version);
 
     if index_is_ready(&index_info).await {
         info!(

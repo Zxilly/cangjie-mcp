@@ -10,13 +10,12 @@ use axum::http::{Request, StatusCode};
 use cangjie_indexer::document::chunker::chunk_documents;
 use cangjie_indexer::search::bm25::BM25Store;
 use cangjie_indexer::search::LocalSearchIndex;
-use cangjie_indexer::{DocData, DocMetadata, IndexMetadata, SearchMode, TextChunk};
+use cangjie_indexer::{DocMetadata, IndexMetadata, SearchMode, TextChunk};
 use cangjie_mcp_test::{
-    chunks_to_docs, cross_category_chunks, cross_category_documents, large_document, sample_chunks,
-    sample_documents, stdlib_package_chunks, test_settings, MockDocumentSource,
+    cross_category_chunks, large_document, sample_chunks, stdlib_package_chunks, test_settings,
 };
 use cangjie_server::http::create_http_app;
-use cangjie_server::mcp_handler::{GetTopicParams, ListTopicsParams, SearchDocsParams};
+use cangjie_server::mcp_handler::SearchDocsParams;
 use cangjie_server::{CangjieServer, Parameters};
 use http_body_util::BodyExt;
 use tempfile::TempDir;
@@ -24,39 +23,36 @@ use tower::ServiceExt;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async fn build_server(chunks: &[TextChunk], docs: &[DocData]) -> (TempDir, CangjieServer) {
+async fn build_server(chunks: &[TextChunk]) -> (TempDir, CangjieServer) {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25");
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(chunks).await.unwrap();
     let settings = test_settings(tmp.path().to_path_buf());
-    let source = Box::new(MockDocumentSource::from_docs(docs));
     let search = LocalSearchIndex::with_bm25(settings.clone(), bm25).await;
-    let server = CangjieServer::with_local_state(settings, search, source);
+    let server = CangjieServer::with_local_state(settings, search);
     (tmp, server)
 }
 
 async fn build_default_server() -> (TempDir, CangjieServer) {
-    build_server(&sample_chunks(), &sample_documents()).await
+    build_server(&sample_chunks()).await
 }
 
-async fn build_http_app(chunks: &[TextChunk], docs: &[DocData]) -> (TempDir, axum::Router) {
+async fn build_http_app(chunks: &[TextChunk]) -> (TempDir, axum::Router) {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25");
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(chunks).await.unwrap();
     let settings = test_settings(tmp.path().to_path_buf());
     let search_index = LocalSearchIndex::with_bm25(settings, bm25).await;
-    let doc_source: Arc<dyn cangjie_indexer::document::source::DocumentSource> =
-        Arc::new(MockDocumentSource::from_docs(docs));
     let metadata = IndexMetadata {
         version: "test".to_string(),
         lang: "zh".to_string(),
         embedding_model: "none".to_string(),
-        document_count: docs.len(),
+        document_count: chunks.len(),
         search_mode: SearchMode::Bm25,
     };
-    let app = create_http_app(Arc::new(search_index), doc_source, metadata).await;
+    let app = create_http_app(Arc::new(search_index), metadata).await;
     (tmp, app)
 }
 
@@ -84,168 +80,8 @@ async fn http_post(app: axum::Router, uri: &str, json: &str) -> (StatusCode, ser
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1. User Workflow: Search → Get Topic → Paginate
 // ═══════════════════════════════════════════════════════════════════════════
-
-/// Simulate the typical user workflow:
-/// 1. Search for a concept
-/// 2. Pick the most relevant result
-/// 3. Read the full topic document
-/// 4. Paginate through large content
-#[tokio::test]
-async fn test_workflow_search_then_get_topic() {
-    let (_tmp, server) = build_default_server().await;
-
-    // Step 1: User searches for "函数定义"
-    let search_result = server
-        .search_docs(Parameters(SearchDocsParams {
-            query: "函数定义".into(),
-            top_k: 5,
-            offset: 0,
-            category: None,
-            package: None,
-        }))
-        .await;
-
-    assert!(
-        search_result.contains("函数"),
-        "search should find function-related docs"
-    );
-    // The result mentions the topic "functions" in the syntax category
-    assert!(
-        search_result.contains("syntax") || search_result.contains("functions"),
-        "search result should reference the source topic/category"
-    );
-
-    // Step 2: User reads the full topic document
-    let topic_result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-
-    assert!(topic_result.contains("函数"));
-    assert!(topic_result.contains("**Topic:** functions"));
-    assert!(topic_result.contains("**Category:** syntax"));
-}
-
-/// Simulate a user discovering available topics, then drilling into one.
-#[tokio::test]
-async fn test_workflow_list_then_get_topic() {
-    let (_tmp, server) = build_default_server().await;
-
-    // Step 1: List all topics (compact mode)
-    let list_compact = server
-        .list_topics(Parameters(ListTopicsParams {
-            category: None,
-            detail: false,
-        }))
-        .await;
-
-    assert!(list_compact.contains("syntax"));
-    assert!(list_compact.contains("stdlib"));
-    assert!(list_compact.contains("cjpm"));
-
-    // Step 2: Drill into syntax category with detail
-    let list_detail = server
-        .list_topics(Parameters(ListTopicsParams {
-            category: Some("syntax".into()),
-            detail: true,
-        }))
-        .await;
-
-    assert!(list_detail.contains("functions"));
-    assert!(list_detail.contains("variables"));
-
-    // Step 3: Read a specific topic
-    let topic = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "variables".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-
-    assert!(topic.contains("变量"));
-    assert!(topic.contains("let"));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. Topic Pagination for Large Documents
-// ═══════════════════════════════════════════════════════════════════════════
-
-/// Test paginated reading of a large document via get_topic.
-#[tokio::test]
-async fn test_topic_pagination_large_document() {
-    let large_doc = large_document();
-    let docs = vec![large_doc.clone()];
-    let chunks = chunk_documents(docs.clone(), Some(500), 100).await;
-
-    let (_tmp, server) = build_server(&chunks, &docs).await;
-
-    // Read first page (small max_length to force pagination)
-    let page1 = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "complete_guide".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 200,
-        }))
-        .await;
-
-    assert!(
-        page1.contains("仓颉语言完整指南"),
-        "first page should have the title"
-    );
-    assert!(
-        page1.contains("Content truncated") || page1.contains("offset="),
-        "large document should indicate more content available"
-    );
-
-    // Read second page using the suggested offset
-    let page2 = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "complete_guide".into(),
-            category: Some("syntax".into()),
-            offset: 200,
-            max_length: 200,
-        }))
-        .await;
-
-    // Second page should have different content from the first
-    assert!(
-        page2.contains("Content range:"),
-        "second page should show content range, got:\n{page2}"
-    );
-}
-
-/// Test reading an entire document in one go with large max_length.
-#[tokio::test]
-async fn test_topic_full_read_no_truncation() {
-    let (_tmp, server) = build_default_server().await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 100000,
-        }))
-        .await;
-
-    assert!(
-        !result.contains("Content truncated"),
-        "small document should not be truncated with large max_length"
-    );
-    assert!(result.contains("func"));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 3. Search Quality and Relevance
+// 1. Search Quality and Relevance
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Search for Chinese programming concepts — results should be relevant.
@@ -348,8 +184,7 @@ async fn test_search_no_match_graceful() {
 #[tokio::test]
 async fn test_search_package_filter_std_collection() {
     let chunks = stdlib_package_chunks();
-    let docs = chunks_to_docs(&chunks);
-    let (_tmp, server) = build_server(&chunks, &docs).await;
+    let (_tmp, server) = build_server(&chunks).await;
 
     let result = server
         .search_docs(Parameters(SearchDocsParams {
@@ -374,8 +209,7 @@ async fn test_search_package_filter_std_collection() {
 #[tokio::test]
 async fn test_search_package_filter_excludes_others() {
     let chunks = stdlib_package_chunks();
-    let docs = chunks_to_docs(&chunks);
-    let (_tmp, server) = build_server(&chunks, &docs).await;
+    let (_tmp, server) = build_server(&chunks).await;
 
     let result = server
         .search_docs(Parameters(SearchDocsParams {
@@ -401,114 +235,8 @@ async fn test_search_package_filter_excludes_others() {
 // 5. Cross-category Topics (same topic name in different categories)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// When the same topic name exists in multiple categories, specifying category
-/// should return the correct one.
-#[tokio::test]
-async fn test_cross_category_topic_disambiguation() {
-    let chunks = cross_category_chunks();
-    let docs = cross_category_documents();
-    let (_tmp, server) = build_server(&chunks, &docs).await;
-
-    // Get "overview" from syntax
-    let syntax_overview = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "overview".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-    assert!(
-        syntax_overview.contains("语法概述"),
-        "should get syntax overview, got: {syntax_overview}"
-    );
-
-    // Get "overview" from stdlib
-    let stdlib_overview = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "overview".into(),
-            category: Some("stdlib".into()),
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-    assert!(
-        stdlib_overview.contains("标准库概述"),
-        "should get stdlib overview, got: {stdlib_overview}"
-    );
-}
-
-/// Without specifying category, get_topic should still return a result
-/// for a topic that exists in multiple categories.
-#[tokio::test]
-async fn test_cross_category_topic_without_category() {
-    let chunks = cross_category_chunks();
-    let docs = cross_category_documents();
-    let (_tmp, server) = build_server(&chunks, &docs).await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "overview".into(),
-            category: None,
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-
-    // Should return one of the overviews (implementation picks first match)
-    assert!(
-        result.contains("概述"),
-        "should find an overview topic without category filter"
-    );
-    assert!(
-        result.contains("**Topic:** overview"),
-        "should show topic metadata"
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// 6. Fuzzy Matching and Typo Tolerance
-// ═══════════════════════════════════════════════════════════════════════════
-
-/// Test that typos in topic names produce helpful suggestions.
-#[tokio::test]
-async fn test_topic_typo_suggestions_multiple() {
-    let (_tmp, server) = build_default_server().await;
-
-    // Various typos
-    let typos = vec![
-        ("variabls", "variables"),     // missing 'e'
-        ("functons", "functions"),     // missing 'i'
-        ("collectons", "collections"), // missing 'i'
-    ];
-
-    for (typo, expected) in typos {
-        let result = server
-            .get_topic(Parameters(GetTopicParams {
-                topic: typo.into(),
-                category: None,
-                offset: 0,
-                max_length: 10000,
-            }))
-            .await;
-
-        assert!(
-            result.contains("not found"),
-            "typo '{typo}' should trigger not found"
-        );
-        assert!(
-            result.contains("Did you mean"),
-            "typo '{typo}' should provide suggestions"
-        );
-        assert!(
-            result.contains(expected),
-            "suggestions for '{typo}' should include '{expected}', got: {result}"
-        );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 7. Concurrent Access
+// 5. Concurrent Access
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Multiple concurrent searches should all succeed.
@@ -545,42 +273,8 @@ async fn test_concurrent_searches() {
     }
 }
 
-/// Concurrent mix of search, get_topic, and list_topics.
-#[tokio::test]
-async fn test_concurrent_mixed_operations() {
-    let (_tmp, server) = build_default_server().await;
-
-    let s1 = server.clone();
-    let s2 = server.clone();
-    let s3 = server.clone();
-
-    let (search, topic, list) = tokio::join!(
-        s1.search_docs(Parameters(SearchDocsParams {
-            query: "函数".into(),
-            top_k: 5,
-            offset: 0,
-            category: None,
-            package: None,
-        })),
-        s2.get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 10000,
-        })),
-        s3.list_topics(Parameters(ListTopicsParams {
-            category: None,
-            detail: true,
-        })),
-    );
-
-    assert!(search.contains("Found") || search.contains("showing"));
-    assert!(topic.contains("函数"));
-    assert!(list.contains("syntax"));
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// 8. Edge Cases and Boundary Conditions
+// 6. Edge Cases and Boundary Conditions
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Unicode edge cases in search queries.
@@ -633,47 +327,6 @@ async fn test_search_offset_beyond_results() {
     assert_eq!(count, 0, "offset beyond results should return 0 items");
 }
 
-/// get_topic with offset beyond document content.
-#[tokio::test]
-async fn test_topic_offset_beyond_content() {
-    let (_tmp, server) = build_default_server().await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("syntax".into()),
-            offset: 999999,
-            max_length: 10000,
-        }))
-        .await;
-
-    // Should handle gracefully — return empty content or indicate end
-    assert!(
-        result.contains("functions"),
-        "should still contain topic metadata even with large offset"
-    );
-}
-
-/// get_topic with max_length = 1 (minimum).
-#[tokio::test]
-async fn test_topic_minimum_max_length() {
-    let (_tmp, server) = build_default_server().await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 1,
-        }))
-        .await;
-
-    assert!(
-        result.contains("Content truncated") || result.contains("offset="),
-        "max_length=1 should truncate content"
-    );
-}
-
 /// Empty category string should be treated as None.
 #[tokio::test]
 async fn test_search_empty_category_treated_as_none() {
@@ -716,8 +369,7 @@ async fn test_search_empty_category_treated_as_none() {
 #[tokio::test]
 async fn test_http_full_workflow() {
     let chunks = sample_chunks();
-    let docs = sample_documents();
-    let (_tmp, app) = build_http_app(&chunks, &docs).await;
+    let (_tmp, app) = build_http_app(&chunks).await;
 
     // Step 1: Health check
     let req = Request::builder()
@@ -739,26 +391,13 @@ async fn test_http_full_workflow() {
     assert_eq!(status, StatusCode::OK);
     let results = search_result["results"].as_array().unwrap();
     assert!(!results.is_empty(), "search should return results");
-
-    // Step 4: Browse topics
-    let (status, topics) = http_get(app.clone(), "/topics").await;
-    assert_eq!(status, StatusCode::OK);
-    let categories = topics["categories"].as_object().unwrap();
-    assert!(categories.contains_key("syntax"));
-
-    // Step 5: Read a specific topic
-    let (status, detail) = http_get(app.clone(), "/topics/syntax/functions").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(detail["content"].as_str().unwrap().contains("函数"));
-    assert_eq!(detail["topic"], "functions");
 }
 
 /// HTTP search with rerank parameter.
 #[tokio::test]
 async fn test_http_search_with_rerank_flag() {
     let chunks = sample_chunks();
-    let docs = sample_documents();
-    let (_tmp, app) = build_http_app(&chunks, &docs).await;
+    let (_tmp, app) = build_http_app(&chunks).await;
 
     let (status, result) = http_post(
         app,
@@ -775,8 +414,7 @@ async fn test_http_search_with_rerank_flag() {
 #[tokio::test]
 async fn test_http_search_category_filter_json() {
     let chunks = sample_chunks();
-    let docs = sample_documents();
-    let (_tmp, app) = build_http_app(&chunks, &docs).await;
+    let (_tmp, app) = build_http_app(&chunks).await;
 
     let (status, result) = http_post(
         app,
@@ -795,35 +433,8 @@ async fn test_http_search_category_filter_json() {
     }
 }
 
-/// HTTP topic detail for every category.
-#[tokio::test]
-async fn test_http_topic_detail_all_categories() {
-    let chunks = sample_chunks();
-    let docs = sample_documents();
-    let (_tmp, app) = build_http_app(&chunks, &docs).await;
-
-    let test_cases = vec![
-        ("/topics/syntax/functions", "函数"),
-        ("/topics/syntax/variables", "变量"),
-        ("/topics/stdlib/collections", "集合"),
-        ("/topics/cjpm/getting_started", "CJPM"),
-    ];
-
-    for (uri, expected_content) in test_cases {
-        let (status, detail) = http_get(app.clone(), uri).await;
-        assert_eq!(status, StatusCode::OK, "GET {uri} should return 200");
-        assert!(
-            detail["content"]
-                .as_str()
-                .unwrap_or("")
-                .contains(expected_content),
-            "GET {uri} should contain '{expected_content}'"
-        );
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// 10. Document Processing → Search Pipeline
+// 9. Document Processing → Search Pipeline
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Verify that chunk_documents → BM25 build → search produces sensible results
@@ -936,8 +547,7 @@ async fn test_search_deduplication_across_chunks() {
         },
     });
 
-    let docs = chunks_to_docs(&chunks);
-    let (_tmp, server) = build_server(&chunks, &docs).await;
+    let (_tmp, server) = build_server(&chunks).await;
 
     // With small top_k, should maximize document coverage (show both docs)
     let result = server
@@ -984,29 +594,5 @@ async fn test_all_tools_uninitialized_error() {
     assert!(
         search.contains("not initialized") || search.contains("error"),
         "search should report uninitialized, got: {search}"
-    );
-
-    let topic = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: None,
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-    assert!(
-        topic.contains("not initialized"),
-        "get_topic should report uninitialized"
-    );
-
-    let list = server
-        .list_topics(Parameters(ListTopicsParams {
-            category: None,
-            detail: false,
-        }))
-        .await;
-    assert!(
-        list.contains("not initialized"),
-        "list_topics should report uninitialized"
     );
 }

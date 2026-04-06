@@ -30,7 +30,7 @@ fn build_http_client(settings: &Settings, timeout: Duration) -> Result<reqwest::
 
 /// A generic HTTP client with base-URL handling and optional retry support.
 #[derive(Clone)]
-pub struct HttpClient {
+pub(crate) struct HttpClient {
     base_url: String,
     client: reqwest::Client,
 }
@@ -45,11 +45,6 @@ impl HttpClient {
 
     fn url_for(&self, endpoint: &str) -> String {
         format!("{}/{}", self.base_url, endpoint)
-    }
-
-    /// Create a GET request to `{base_url}/{endpoint}`.
-    pub fn get(&self, endpoint: &str) -> reqwest::RequestBuilder {
-        self.client.get(self.url_for(endpoint))
     }
 
     /// Create a POST request to `{base_url}/{endpoint}`.
@@ -110,7 +105,7 @@ impl HttpClient {
 
 /// An authenticated HTTP client for OpenAI-compatible API endpoints.
 #[derive(Clone)]
-pub struct ApiClient {
+pub(crate) struct ApiClient {
     http: HttpClient,
     model: String,
     auth_header: String,

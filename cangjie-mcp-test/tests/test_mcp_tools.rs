@@ -2,9 +2,9 @@ use cangjie_core::config::{MAX_TOP_K, MIN_TOP_K};
 use cangjie_indexer::search::bm25::BM25Store;
 use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::{DocMetadata, TextChunk};
-use cangjie_mcp_test::{sample_chunks, sample_documents, test_settings, MockDocumentSource};
+use cangjie_mcp_test::{sample_chunks, test_settings};
 use cangjie_server::lsp_tools::{LspOperation, LspRequest};
-use cangjie_server::mcp_handler::{GetTopicParams, ListTopicsParams, SearchDocsParams};
+use cangjie_server::mcp_handler::SearchDocsParams;
 use cangjie_server::{CangjieServer, Parameters};
 use rmcp::model::Meta;
 use tempfile::TempDir;
@@ -15,10 +15,8 @@ async fn build_test_server() -> (TempDir, CangjieServer) {
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(&sample_chunks()).await.unwrap();
     let settings = test_settings(tmp.path().to_path_buf());
-    let docs = sample_documents();
-    let source = Box::new(MockDocumentSource::from_docs(&docs));
     let search = LocalSearchIndex::with_bm25(settings.clone(), bm25).await;
-    let server = CangjieServer::with_local_state(settings, search, source);
+    let server = CangjieServer::with_local_state(settings, search);
     (tmp, server)
 }
 
@@ -28,10 +26,8 @@ async fn build_test_server_with_chunks(chunks: Vec<TextChunk>) -> (TempDir, Cang
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(&chunks).await.unwrap();
     let settings = test_settings(tmp.path().to_path_buf());
-    let docs = sample_documents();
-    let source = Box::new(MockDocumentSource::from_docs(&docs));
     let search = LocalSearchIndex::with_bm25(settings.clone(), bm25).await;
-    let server = CangjieServer::with_local_state(settings, search, source);
+    let server = CangjieServer::with_local_state(settings, search);
     (tmp, server)
 }
 
@@ -166,83 +162,6 @@ async fn test_search_docs_package_filter() {
 }
 
 #[tokio::test]
-async fn test_get_topic_found() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("syntax".into()),
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-
-    assert!(
-        result.contains("函数"),
-        "topic content should contain '函数'"
-    );
-    assert!(
-        result.contains("**Category:** syntax"),
-        "should show category metadata"
-    );
-    assert!(
-        result.contains("**Topic:** functions"),
-        "should show topic metadata"
-    );
-}
-
-#[tokio::test]
-async fn test_get_topic_not_found_with_suggestions() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functons".into(), // typo: missing 'i'
-            category: None,
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-
-    assert!(
-        result.contains("not found"),
-        "response should indicate topic not found, got: {result}"
-    );
-    assert!(
-        result.contains("Did you mean"),
-        "response should contain suggestions, got: {result}"
-    );
-    assert!(
-        result.contains("functions"),
-        "suggestions should include 'functions', got: {result}"
-    );
-}
-
-#[tokio::test]
-async fn test_get_topic_wrong_category_fallbacks_to_correct_category() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .get_topic(Parameters(GetTopicParams {
-            topic: "functions".into(),
-            category: Some("stdlib".into()),
-            offset: 0,
-            max_length: 10000,
-        }))
-        .await;
-
-    assert!(
-        result.contains("**Category:** syntax"),
-        "tool should fallback to correct category when provided category is wrong"
-    );
-    assert!(
-        result.contains("**Topic:** functions"),
-        "should contain the topic name"
-    );
-}
-
-#[tokio::test]
 async fn test_search_docs_allows_two_snippets_per_document_when_top_k_is_large() {
     let chunks = vec![
         TextChunk {
@@ -360,83 +279,6 @@ async fn test_search_docs_limits_to_one_snippet_per_document_when_top_k_is_small
     );
     let result_count = result.matches("### [").count();
     assert!(result_count > 0, "should return at least one result");
-}
-
-#[tokio::test]
-async fn test_list_topics_all() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .list_topics(Parameters(ListTopicsParams {
-            category: None,
-            detail: false,
-        }))
-        .await;
-
-    assert!(
-        result.contains("syntax"),
-        "should contain 'syntax' category"
-    );
-    assert!(
-        result.contains("stdlib"),
-        "should contain 'stdlib' category"
-    );
-    assert!(result.contains("cjpm"), "should contain 'cjpm' category");
-    assert!(
-        result.contains("topics total"),
-        "should show total topic count"
-    );
-    // In compact mode (detail=false), should show topic counts but not individual topic names
-    assert!(
-        result.contains("topics)"),
-        "should show topic count per category"
-    );
-}
-
-#[tokio::test]
-async fn test_list_topics_filter_category_with_detail() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .list_topics(Parameters(ListTopicsParams {
-            category: Some("syntax".into()),
-            detail: true,
-        }))
-        .await;
-
-    assert!(
-        result.contains("syntax"),
-        "should contain 'syntax' category"
-    );
-    assert!(
-        !result.contains("### stdlib"),
-        "should not contain 'stdlib' when filtered by 'syntax'"
-    );
-    assert!(
-        result.contains("functions"),
-        "syntax category should contain 'functions' topic"
-    );
-}
-
-#[tokio::test]
-async fn test_list_topics_invalid_category() {
-    let (_tmp, server) = build_test_server().await;
-
-    let result = server
-        .list_topics(Parameters(ListTopicsParams {
-            category: Some("nonexistent".into()),
-            detail: false,
-        }))
-        .await;
-
-    assert!(
-        result.contains("not found"),
-        "should indicate category not found, got: {result}"
-    );
-    assert!(
-        result.contains("syntax"),
-        "should list available categories including 'syntax', got: {result}"
-    );
 }
 
 #[tokio::test]

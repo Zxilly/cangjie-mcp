@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{SearchResult, SearchResultMetadata};
+use crate::SearchResult;
 
 fn dedup_key(result: &SearchResult) -> String {
     result.metadata.chunk_id.clone()
@@ -63,16 +63,8 @@ pub fn reciprocal_rank_fusion(
         .filter_map(|key| {
             let original = best_result.get(&key)?;
             Some(SearchResult {
-                text: original.text.clone(),
                 score: scores[&key],
-                metadata: SearchResultMetadata {
-                    file_path: original.metadata.file_path.clone(),
-                    category: original.metadata.category.clone(),
-                    topic: original.metadata.topic.clone(),
-                    title: original.metadata.title.clone(),
-                    has_code: original.metadata.has_code,
-                    chunk_id: original.metadata.chunk_id.clone(),
-                },
+                ..(*original).clone()
             })
         })
         .collect()
@@ -81,6 +73,7 @@ pub fn reciprocal_rank_fusion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SearchResultMetadata;
 
     fn make_result(text: &str, score: f64, file: &str, chunk_id: &str) -> SearchResult {
         SearchResult {

@@ -15,12 +15,10 @@ use tracing::info;
 use tracing::warn;
 
 use cangjie_core::config::{
-    Settings, DEFAULT_TOPIC_MAX_LENGTH, DEFAULT_TOP_K, MAX_SUGGESTIONS, MAX_TOP_K, MIN_TOP_K,
-    PACKAGE_FETCH_MULTIPLIER, SIMILARITY_THRESHOLD,
+    Settings, DEFAULT_TOP_K, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER,
 };
 use cangjie_core::prompts::get_prompt;
 use cangjie_indexer::document::chunker::strip_chunk_artifacts;
-use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource, RemoteDocumentSource};
 use cangjie_indexer::search::{LocalSearchIndex, RemoteSearchIndex};
 use cangjie_indexer::SearchResult;
 
@@ -44,19 +42,6 @@ pub struct DocsSearchResult {
     pub offset: usize,
     pub has_more: bool,
     pub next_offset: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct TopicInfo {
-    pub name: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct CategorySummary {
-    pub topic_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub topics: Option<Vec<TopicInfo>>,
 }
 
 /// Format search results as compact Markdown for LLM consumption.
@@ -99,93 +84,6 @@ fn format_results_markdown(result: &DocsSearchResult) -> String {
     out
 }
 
-/// Format a topic result as Markdown with pagination support.
-fn format_topic_markdown(
-    file_path: &str,
-    category: &str,
-    topic: &str,
-    title: &str,
-    content: &str,
-    offset: usize,
-    max_length: usize,
-) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-
-    let total_len = content.len();
-
-    // Snap byte offsets to valid UTF-8 char boundaries
-    let start = content.floor_char_boundary(offset.min(total_len));
-    let end = content.floor_char_boundary((start + max_length).min(total_len));
-    let slice = &content[start..end];
-    let has_more = end < total_len;
-
-    writeln!(out, "# {title}\n").unwrap();
-    writeln!(
-        out,
-        "**Topic:** {topic} | **Category:** {category} | **File:** {file_path}"
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "**Content range:** {start}-{end} / {total_len} bytes\n"
-    )
-    .unwrap();
-    writeln!(out, "---\n").unwrap();
-    write!(out, "{slice}").unwrap();
-
-    if has_more {
-        writeln!(out).unwrap();
-        writeln!(out, "\n---").unwrap();
-        writeln!(
-            out,
-            "_Content truncated. Use offset={end} to read the next section._"
-        )
-        .unwrap();
-    }
-
-    out
-}
-
-/// Format topics list as Markdown.
-fn format_topics_list_markdown(
-    categories: &HashMap<String, CategorySummary>,
-    total_categories: usize,
-    total_topics: usize,
-) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-    writeln!(
-        out,
-        "**{total_categories} categories, {total_topics} topics total**\n"
-    )
-    .unwrap();
-
-    let mut sorted_cats: Vec<_> = categories.iter().collect();
-    sorted_cats.sort_by_key(|(name, _)| (*name).clone());
-
-    for (cat, summary) in sorted_cats {
-        match &summary.topics {
-            Some(topics) => {
-                writeln!(out, "### {cat} ({} topics)\n", summary.topic_count).unwrap();
-                for t in topics {
-                    if t.title.is_empty() {
-                        writeln!(out, "- {}", t.name).unwrap();
-                    } else {
-                        writeln!(out, "- **{}** — {}", t.name, t.title).unwrap();
-                    }
-                }
-                writeln!(out).unwrap();
-            }
-            None => {
-                writeln!(out, "- **{cat}** ({} topics)", summary.topic_count).unwrap();
-            }
-        }
-    }
-
-    out
-}
-
 // ── Internal state ──────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -196,7 +94,6 @@ enum SearchBackend {
 
 struct InnerState {
     search: SearchBackend,
-    docs: Arc<dyn DocumentSource>,
 }
 
 // ── MCP Server ──────────────────────────────────────────────────────────────
@@ -252,10 +149,7 @@ impl CangjieServer {
     }
 
     fn docs_tool_router() -> ToolRouter<Self> {
-        ToolRouter::<Self>::new()
-            .with_route((Self::search_docs_tool_attr(), Self::search_docs))
-            .with_route((Self::get_topic_tool_attr(), Self::get_topic))
-            .with_route((Self::list_topics_tool_attr(), Self::list_topics))
+        ToolRouter::<Self>::new().with_route((Self::search_docs_tool_attr(), Self::search_docs))
     }
 
     fn build_tool_router() -> ToolRouter<Self> {
@@ -300,14 +194,9 @@ impl CangjieServer {
     }
 
     /// Create a `CangjieServer` with pre-initialized shared state.
-    pub fn with_shared_state(
-        settings: Settings,
-        search: Arc<LocalSearchIndex>,
-        docs: Arc<dyn DocumentSource>,
-    ) -> Self {
+    pub fn with_shared_state(settings: Settings, search: Arc<LocalSearchIndex>) -> Self {
         let inner = InnerState {
             search: SearchBackend::Local(search),
-            docs,
         };
         Self {
             state: Arc::new(RwLock::new(Some(inner))),
@@ -320,12 +209,8 @@ impl CangjieServer {
 
     /// Create a `CangjieServer` with pre-initialized state (for testing).
     #[doc(hidden)]
-    pub fn with_local_state(
-        settings: Settings,
-        search: LocalSearchIndex,
-        docs: Box<dyn DocumentSource>,
-    ) -> Self {
-        Self::with_shared_state(settings, Arc::new(search), Arc::from(docs))
+    pub fn with_local_state(settings: Settings, search: LocalSearchIndex) -> Self {
+        Self::with_shared_state(settings, Arc::new(search))
     }
 
     /// Initialize the server (clone repo, build index, etc.)
@@ -366,18 +251,7 @@ impl CangjieServer {
 
         cangjie_core::config::log_startup_info(&settings, &index_info);
 
-        let docs: Arc<dyn DocumentSource> = if let Some(ref url) = settings.server_url {
-            Arc::new(RemoteDocumentSource::new(&settings, url)?)
-        } else {
-            let repo_dir = settings.docs_repo_dir();
-            let lang = index_info.lang;
-            let git_source =
-                tokio::task::spawn_blocking(move || GitDocumentSource::new(repo_dir, lang))
-                    .await??;
-            Arc::new(git_source)
-        };
-
-        let inner = InnerState { search, docs };
+        let inner = InnerState { search };
         *self.state.write().await = Some(inner);
         info!("Initialization complete — tools are ready.");
         Ok(())
@@ -557,40 +431,6 @@ impl CangjieServer {
 
         selected.into_iter().map(|(result, _)| result).collect()
     }
-
-    async fn build_topic_category_map(
-        docs: &Arc<dyn DocumentSource>,
-    ) -> Result<HashMap<String, Vec<String>>> {
-        let categories = docs.get_categories().await?;
-        let mut mapping: HashMap<String, Vec<String>> = HashMap::new();
-        for cat in categories {
-            let topics = docs.get_topics_in_category(&cat).await?;
-            for topic in topics {
-                mapping.entry(topic).or_default().push(cat.clone());
-            }
-        }
-        for cats in mapping.values_mut() {
-            cats.sort();
-            cats.dedup();
-        }
-        Ok(mapping)
-    }
-
-    fn topic_display_with_categories(
-        topic: &str,
-        topic_category_map: &HashMap<String, Vec<String>>,
-    ) -> String {
-        match topic_category_map.get(topic) {
-            Some(cats) if !cats.is_empty() => {
-                if cats.len() == 1 {
-                    format!("{topic} (in {})", cats[0])
-                } else {
-                    format!("{topic} (in {})", cats.join(", "))
-                }
-            }
-            _ => topic.to_string(),
-        }
-    }
 }
 
 // ── Tool parameter types ────────────────────────────────────────────────────
@@ -615,39 +455,6 @@ pub struct SearchDocsParams {
 
 fn default_top_k() -> usize {
     DEFAULT_TOP_K
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetTopicParams {
-    /// Topic name - the documentation file name without .md extension
-    pub topic: String,
-    /// Optional category to narrow the search (e.g., 'syntax', 'stdlib')
-    #[serde(default)]
-    pub category: Option<String>,
-    /// Byte offset to start reading from (default: 0). Use for paginated reading of large documents.
-    #[serde(default)]
-    pub offset: usize,
-    /// Maximum number of bytes to return (default: 10000). Use with offset for pagination.
-    #[serde(default = "default_topic_max_length")]
-    pub max_length: usize,
-}
-
-fn default_topic_max_length() -> usize {
-    DEFAULT_TOPIC_MAX_LENGTH
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct ListTopicsParams {
-    /// Optional category to filter by (e.g., 'cjpm', 'syntax')
-    #[serde(default)]
-    pub category: Option<String>,
-    /// Whether to include full topic lists per category (default: true). Set to false for a compact summary with only category names and counts.
-    #[serde(default = "default_true")]
-    pub detail: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 // ── Tool implementations ────────────────────────────────────────────────────
@@ -758,174 +565,6 @@ impl CangjieServer {
         };
 
         format_results_markdown(&result)
-    }
-
-    #[tool(
-        name = "cangjie_get_topic",
-        description = "Get documentation for a specific topic with pagination. Returns a section of the document content. Use offset and max_length to paginate through large documents. Use cangjie_list_topics first to discover available topic names.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true
-        )
-    )]
-    pub async fn get_topic(&self, Parameters(params): Parameters<GetTopicParams>) -> String {
-        let docs = {
-            let state = self.state.read().await;
-            match state.as_ref() {
-                Some(s) => s.docs.clone(),
-                None => return "Server not initialized".to_string(),
-            }
-        };
-
-        let topic = &params.topic;
-        let category = params.category.as_deref().filter(|s| !s.is_empty());
-        let offset = params.offset;
-        let max_length = params.max_length.max(1);
-
-        let doc = docs.get_document_by_topic(topic, category).await;
-
-        match doc {
-            Ok(Some(doc)) => format_topic_markdown(
-                &doc.metadata.file_path,
-                &doc.metadata.category,
-                &doc.metadata.topic,
-                &doc.metadata.title,
-                &doc.text,
-                offset,
-                max_length,
-            ),
-            Ok(None) => {
-                // If the provided category is wrong, fallback to cross-category search.
-                if category.is_some() {
-                    match docs.get_document_by_topic(topic, None).await {
-                        Ok(Some(doc)) => {
-                            return format_topic_markdown(
-                                &doc.metadata.file_path,
-                                &doc.metadata.category,
-                                &doc.metadata.topic,
-                                &doc.metadata.title,
-                                &doc.text,
-                                offset,
-                                max_length,
-                            );
-                        }
-                        Ok(None) => {}
-                        Err(e) => return format!("Error retrieving topic '{topic}': {e}"),
-                    }
-                }
-
-                let topic_category_map = Self::build_topic_category_map(&docs)
-                    .await
-                    .unwrap_or_default();
-                let all_topics = docs.get_all_topic_names().await.unwrap_or_default();
-                let mut suggestions: Vec<(String, f64)> = all_topics
-                    .iter()
-                    .map(|t| {
-                        let sim = strsim::jaro_winkler(topic, t);
-                        (t.clone(), sim)
-                    })
-                    .filter(|(_, sim)| *sim > SIMILARITY_THRESHOLD)
-                    .collect();
-                suggestions
-                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                suggestions.truncate(MAX_SUGGESTIONS);
-
-                let mut msg = format!("Topic '{topic}' not found.");
-                if let Some(cat) = category {
-                    if let Some(cats) = topic_category_map.get(topic) {
-                        if !cats.iter().any(|c| c == cat) {
-                            msg.push_str(&format!(
-                                "\nTopic '{topic}' exists in category: {}.",
-                                cats.join(", ")
-                            ));
-                        }
-                    }
-                }
-                if !suggestions.is_empty() {
-                    let names: Vec<String> = suggestions
-                        .iter()
-                        .map(|(name, _)| {
-                            Self::topic_display_with_categories(name, &topic_category_map)
-                        })
-                        .collect();
-                    msg.push_str(&format!("\nDid you mean: {}?", names.join(", ")));
-                }
-                msg
-            }
-            Err(e) => {
-                format!("Error retrieving topic '{topic}': {e}")
-            }
-        }
-    }
-
-    #[tool(
-        name = "cangjie_list_topics",
-        description = "List available documentation topics organized by category. Returns all documentation topics with names, optionally filtered by category. Use this to discover topic names for use with cangjie_get_topic. Set detail=false for a compact summary with only category names and topic counts.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true
-        )
-    )]
-    pub async fn list_topics(&self, Parameters(params): Parameters<ListTopicsParams>) -> String {
-        let docs = {
-            let state = self.state.read().await;
-            match state.as_ref() {
-                Some(s) => s.docs.clone(),
-                None => return "Server not initialized".to_string(),
-            }
-        };
-
-        let filter_category = params.category.as_deref().filter(|s| !s.is_empty());
-
-        if let Some(cat) = filter_category {
-            let all_cats = docs.get_categories().await.unwrap_or_default();
-            if !all_cats.contains(&cat.to_string()) {
-                return format!(
-                    "Category '{}' not found.\n\nAvailable categories: {}",
-                    cat,
-                    all_cats.join(", ")
-                );
-            }
-        }
-
-        let categories_to_list = if let Some(cat) = filter_category {
-            vec![cat.to_string()]
-        } else {
-            docs.get_categories().await.unwrap_or_default()
-        };
-
-        let mut categories = HashMap::new();
-        for cat in &categories_to_list {
-            let topics = docs.get_topics_in_category(cat).await.unwrap_or_default();
-            if !topics.is_empty() {
-                let summary = if params.detail {
-                    let titles = docs.get_topic_titles(cat).await.unwrap_or_default();
-                    let infos: Vec<TopicInfo> = topics
-                        .iter()
-                        .map(|t| TopicInfo {
-                            name: t.clone(),
-                            title: titles.get(t).cloned().unwrap_or_default(),
-                        })
-                        .collect();
-                    CategorySummary {
-                        topic_count: infos.len(),
-                        topics: Some(infos),
-                    }
-                } else {
-                    CategorySummary {
-                        topic_count: topics.len(),
-                        topics: None,
-                    }
-                };
-                categories.insert(cat.clone(), summary);
-            }
-        }
-
-        let total_topics: usize = categories.values().map(|v| v.topic_count).sum();
-
-        format_topics_list_markdown(&categories, categories.len(), total_topics)
     }
 
     // ── LSP Tools ──────────────────────────────────────────────────────────
@@ -1045,53 +684,5 @@ mod tests {
                 "LSP tools should be registered when CANGJIE_HOME is set"
             );
         });
-    }
-
-    #[tokio::test]
-    async fn test_get_topic_not_initialized() {
-        let settings = Settings {
-            max_chunk_chars: Some(6000),
-            data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
-            openai_base_url: "https://api.example.com".to_string(),
-            openai_model: "test".to_string(),
-            ..Settings::default()
-        };
-
-        let server = CangjieServer::new(settings);
-        let result = server
-            .get_topic(rmcp::handler::server::wrapper::Parameters(
-                super::GetTopicParams {
-                    topic: "functions".to_string(),
-                    category: None,
-                    offset: 0,
-                    max_length: 10000,
-                },
-            ))
-            .await;
-
-        assert_eq!(result, "Server not initialized");
-    }
-
-    #[tokio::test]
-    async fn test_list_topics_not_initialized() {
-        let settings = Settings {
-            max_chunk_chars: Some(6000),
-            data_dir: std::path::PathBuf::from("/tmp/test-not-init"),
-            openai_base_url: "https://api.example.com".to_string(),
-            openai_model: "test".to_string(),
-            ..Settings::default()
-        };
-
-        let server = CangjieServer::new(settings);
-        let result = server
-            .list_topics(rmcp::handler::server::wrapper::Parameters(
-                super::ListTopicsParams {
-                    category: None,
-                    detail: false,
-                },
-            ))
-            .await;
-
-        assert_eq!(result, "Server not initialized");
     }
 }

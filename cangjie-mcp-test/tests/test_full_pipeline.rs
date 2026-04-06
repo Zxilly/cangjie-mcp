@@ -11,7 +11,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
 use cangjie_indexer::document::chunker::chunk_documents;
-use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource};
+use cangjie_indexer::document::source::{DocumentSource as _, GitDocumentSource};
 use cangjie_indexer::repo::GitManager;
 use cangjie_indexer::search::bm25::BM25Store;
 use cangjie_indexer::search::LocalSearchIndex;
@@ -35,18 +35,22 @@ fn real_settings(data_dir: std::path::PathBuf) -> Settings {
 }
 
 /// Clone repo, load docs, chunk, build BM25 index. Returns everything needed for search.
-async fn build_real_index() -> (TempDir, BM25Store, Arc<dyn DocumentSource>) {
+async fn build_real_index() -> (TempDir, BM25Store, usize) {
     let tmp = TempDir::new().unwrap();
 
     // Clone and checkout
     let repo_dir = tmp.path().join("docs_repo");
-    let mut git_mgr = GitManager::new(repo_dir.clone());
+    let mut git_mgr = GitManager::new(
+        repo_dir.clone(),
+        cangjie_core::config::DOCS_REPO_URL.to_string(),
+    );
     git_mgr.ensure_cloned(false).await.unwrap();
 
     // Load documents
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
     let docs = source.load_all_documents().await.unwrap();
-    assert!(docs.len() > 10, "should load many documents");
+    let doc_count = docs.len();
+    assert!(doc_count > 10, "should load many documents");
 
     // Chunk
     let chunks = chunk_documents(docs, Some(6000), 200).await;
@@ -57,14 +61,12 @@ async fn build_real_index() -> (TempDir, BM25Store, Arc<dyn DocumentSource>) {
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(&chunks).await.unwrap();
 
-    // Rebuild source for trait object (can't move out of `source` after loading docs)
-    let source2 = GitDocumentSource::new(tmp.path().join("docs_repo"), DocLang::Zh).unwrap();
-    (tmp, bm25, Arc::new(source2) as Arc<dyn DocumentSource>)
+    (tmp, bm25, doc_count)
 }
 
 #[tokio::test]
 async fn test_real_docs_bm25_search_chinese() {
-    let (_tmp, store, _source) = build_real_index().await;
+    let (_tmp, store, _count) = build_real_index().await;
 
     let results = store.search("函数定义", 5, None).await.unwrap();
     assert!(
@@ -76,7 +78,7 @@ async fn test_real_docs_bm25_search_chinese() {
 
 #[tokio::test]
 async fn test_real_docs_bm25_search_english_keyword() {
-    let (_tmp, store, _source) = build_real_index().await;
+    let (_tmp, store, _count) = build_real_index().await;
 
     // English keywords like "Array", "HashMap" should appear in Chinese docs
     let results = store.search("Array", 5, None).await.unwrap();
@@ -88,7 +90,7 @@ async fn test_real_docs_bm25_search_english_keyword() {
 
 #[tokio::test]
 async fn test_real_docs_bm25_search_with_category() {
-    let (_tmp, store, _source) = build_real_index().await;
+    let (_tmp, store, _count) = build_real_index().await;
 
     // Get a result first to find a real category
     let all_results = store.search("仓颉", 10, None).await.unwrap();
@@ -106,7 +108,7 @@ async fn test_real_docs_bm25_search_with_category() {
 
 #[tokio::test]
 async fn test_real_docs_search_relevance() {
-    let (_tmp, store, _source) = build_real_index().await;
+    let (_tmp, store, _count) = build_real_index().await;
 
     let results = store.search("错误处理 异常", 5, None).await.unwrap();
     assert!(!results.is_empty());
@@ -131,10 +133,13 @@ async fn test_real_docs_local_search_index_query() {
     let settings = real_settings(tmp.path().to_path_buf());
 
     let repo_dir = tmp.path().join("docs_repo");
-    let mut git_mgr = GitManager::new(repo_dir.clone());
+    let mut git_mgr = GitManager::new(
+        repo_dir.clone(),
+        cangjie_core::config::DOCS_REPO_URL.to_string(),
+    );
     git_mgr.ensure_cloned(false).await.unwrap();
 
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
     let docs = source.load_all_documents().await.unwrap();
     let chunks = chunk_documents(docs, Some(6000), 200).await;
 
@@ -152,21 +157,20 @@ async fn test_real_docs_local_search_index_query() {
 
 #[tokio::test]
 async fn test_real_docs_http_app_search() {
-    let (_tmp, bm25, doc_source) = build_real_index().await;
+    let (_tmp, bm25, doc_count) = build_real_index().await;
 
     let settings = real_settings(_tmp.path().to_path_buf());
     let search_index = LocalSearchIndex::with_bm25(settings, bm25).await;
 
-    let docs = doc_source.load_all_documents().await.unwrap();
     let metadata = IndexMetadata {
         version: "test".to_string(),
         lang: "zh".to_string(),
         embedding_model: "none".to_string(),
-        document_count: docs.len(),
+        document_count: doc_count,
         search_mode: SearchMode::Bm25,
     };
 
-    let app = create_http_app(Arc::new(search_index), doc_source, metadata).await;
+    let app = create_http_app(Arc::new(search_index), metadata).await;
 
     // Test search
     let req = Request::builder()
@@ -184,29 +188,6 @@ async fn test_real_docs_http_app_search() {
         !results.is_empty(),
         "HTTP search for '仓颉语言' should return results"
     );
-
-    // Test topics
-    let req = Request::builder()
-        .uri("/topics")
-        .body(Body::empty())
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let categories = v["categories"].as_object().unwrap();
-    assert!(
-        categories.len() > 2,
-        "real docs should have multiple categories"
-    );
-
-    // Nonexistent category should return 404 (not internal error)
-    let req = Request::builder()
-        .uri("/topics/nonexistent_category_xyz/any_topic_xyz")
-        .body(Body::empty())
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

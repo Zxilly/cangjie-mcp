@@ -154,29 +154,6 @@ pub fn command_to_tool_call(cmd: &Commands) -> Option<CallToolRequestParams> {
             }
             Some(make_params("cangjie_search_docs", args))
         }
-        Commands::Topic {
-            name,
-            category,
-            offset,
-            max_length,
-        } => {
-            let mut args = json!({
-                "topic": name,
-                "offset": offset,
-                "max_length": max_length,
-            });
-            if let Some(cat) = category {
-                args["category"] = json!(cat);
-            }
-            Some(make_params("cangjie_get_topic", args))
-        }
-        Commands::Topics { category } => {
-            let mut args = json!({});
-            if let Some(cat) = category {
-                args["category"] = json!(cat);
-            }
-            Some(make_params("cangjie_list_topics", args))
-        }
         Commands::Lsp { operation } => {
             let request = lsp_command_to_request(operation);
             let args = serde_json::to_value(&request).unwrap_or_default();

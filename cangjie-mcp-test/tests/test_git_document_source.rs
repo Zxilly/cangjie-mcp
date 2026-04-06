@@ -10,7 +10,10 @@ use tempfile::TempDir;
 async fn setup_repo() -> (TempDir, std::path::PathBuf) {
     let tmp = TempDir::new().unwrap();
     let repo_dir = tmp.path().join("docs_repo");
-    let mut mgr = GitManager::new(repo_dir.clone());
+    let mut mgr = GitManager::new(
+        repo_dir.clone(),
+        cangjie_core::config::DOCS_REPO_URL.to_string(),
+    );
     mgr.ensure_cloned(false).await.unwrap();
     (tmp, repo_dir)
 }
@@ -18,14 +21,14 @@ async fn setup_repo() -> (TempDir, std::path::PathBuf) {
 #[tokio::test]
 async fn test_git_source_is_available() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
     assert!(source.is_available().await);
 }
 
 #[tokio::test]
 async fn test_git_source_get_categories() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let categories = source.get_categories().await.unwrap();
     assert!(!categories.is_empty(), "should have at least one category");
@@ -34,7 +37,7 @@ async fn test_git_source_get_categories() {
 #[tokio::test]
 async fn test_git_source_get_topics_in_category() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let categories = source.get_categories().await.unwrap();
     assert!(!categories.is_empty());
@@ -51,7 +54,7 @@ async fn test_git_source_get_topics_in_category() {
 #[tokio::test]
 async fn test_git_source_get_document_by_topic() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let categories = source.get_categories().await.unwrap();
     let first_cat = &categories[0];
@@ -77,7 +80,7 @@ async fn test_git_source_get_document_by_topic() {
 #[tokio::test]
 async fn test_git_source_load_all_documents() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let docs = source.load_all_documents().await.unwrap();
     assert!(
@@ -98,7 +101,7 @@ async fn test_git_source_load_all_documents() {
 #[tokio::test]
 async fn test_git_source_get_all_topic_names() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let names = source.get_all_topic_names().await.unwrap();
     assert!(
@@ -111,7 +114,7 @@ async fn test_git_source_get_all_topic_names() {
 #[tokio::test]
 async fn test_git_source_get_topic_titles() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let categories = source.get_categories().await.unwrap();
     let first_cat = &categories[0];
@@ -136,7 +139,7 @@ async fn test_git_source_get_topic_titles() {
 #[tokio::test]
 async fn test_git_source_nonexistent_topic_returns_none() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let doc = source
         .get_document_by_topic("nonexistent_topic_xyz", None)
@@ -148,7 +151,7 @@ async fn test_git_source_nonexistent_topic_returns_none() {
 #[tokio::test]
 async fn test_git_source_nonexistent_category_get_topic_returns_none() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let doc = source
         .get_document_by_topic("any_topic_xyz", Some("nonexistent_category_xyz"))
@@ -160,7 +163,7 @@ async fn test_git_source_nonexistent_category_get_topic_returns_none() {
 #[tokio::test]
 async fn test_git_source_nonexistent_category_returns_empty() {
     let (_tmp, repo_dir) = setup_repo().await;
-    let source = GitDocumentSource::new(repo_dir, DocLang::Zh).unwrap();
+    let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
 
     let topics = source
         .get_topics_in_category("nonexistent_category_xyz")

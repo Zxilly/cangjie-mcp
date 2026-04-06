@@ -13,7 +13,6 @@ use cangjie_core::config::{
     DEFAULT_RERANK_TOP_K, DEFAULT_RRF_K, DEFAULT_SERVER_ENABLE_HTTP2, DEFAULT_SERVER_HOST,
     DEFAULT_SERVER_PORT,
 };
-use cangjie_indexer::document::source::{DocumentSource, GitDocumentSource};
 use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::IndexMetadata;
 use cangjie_server::http::create_http_app;
@@ -30,6 +29,10 @@ struct Cli {
     /// Documentation version (git tag)
     #[arg(long = "docs-version", short = 'v', env = "CANGJIE_DOCS_VERSION", default_value = DEFAULT_DOCS_VERSION)]
     docs_version: String,
+
+    /// Runtime stdlib documentation version
+    #[arg(long = "runtime-version", env = "CANGJIE_RUNTIME_VERSION")]
+    runtime_version: Option<String>,
 
     /// Documentation language (zh/en)
     #[arg(long, short = 'l', env = "CANGJIE_DOCS_LANG", default_value = "zh")]
@@ -149,6 +152,10 @@ impl Cli {
     fn to_settings(&self) -> Settings {
         Settings {
             docs_version: self.docs_version.clone(),
+            runtime_version: self
+                .runtime_version
+                .clone()
+                .unwrap_or_else(|| self.docs_version.clone()),
             docs_lang: self.lang,
             embedding_type: self.embedding,
             local_model: self.local_model.clone(),
@@ -202,25 +209,17 @@ async fn main() -> Result<()> {
 
     let metadata_path = index_info.index_dir().join("index_metadata.json");
     let index_metadata: IndexMetadata =
-        serde_json::from_str(&std::fs::read_to_string(&metadata_path)?)?;
-
-    let doc_source = GitDocumentSource::new(settings.docs_repo_dir(), index_info.lang)?;
+        serde_json::from_str(&tokio::fs::read_to_string(&metadata_path).await?)?;
 
     let search_index = Arc::new(search_index);
-    let doc_source: Arc<dyn DocumentSource> = Arc::new(doc_source);
 
-    let mut app = create_http_app(search_index.clone(), doc_source.clone(), index_metadata).await;
+    let mut app = create_http_app(search_index.clone(), index_metadata).await;
 
     if !cli.no_sse {
         let settings_clone = settings.clone();
         let idx = search_index.clone();
-        let docs = doc_source.clone();
         let sse_router = create_sse_router(move || {
-            cangjie_server::CangjieServer::with_shared_state(
-                settings_clone.clone(),
-                idx.clone(),
-                docs.clone(),
-            )
+            cangjie_server::CangjieServer::with_shared_state(settings_clone.clone(), idx.clone())
         });
         info!("Legacy SSE transport enabled at /sse");
         app = app.merge(sse_router);
@@ -228,8 +227,7 @@ async fn main() -> Result<()> {
 
     let ct = if !cli.no_mcp {
         let ct = CancellationToken::new();
-        let mcp_server =
-            cangjie_server::CangjieServer::with_shared_state(settings, search_index, doc_source);
+        let mcp_server = cangjie_server::CangjieServer::with_shared_state(settings, search_index);
 
         let mcp_config = McpServerConfig::default()
             .with_stateful_mode(true)
