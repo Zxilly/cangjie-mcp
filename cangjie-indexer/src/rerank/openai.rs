@@ -44,20 +44,19 @@ impl OpenAIReranker {
             .map(|r| crate::document::chunker::strip_chunk_artifacts(&r.text))
             .collect();
 
-        let response = self
+        let body: RerankResponse = self
             .api
-            .post("rerank")
-            .json(&serde_json::json!({
-                "model": self.api.model(),
-                "query": query,
-                "documents": documents,
-                "top_n": top_k,
-                "return_documents": false,
-            }))
-            .send()
+            .post_json(
+                "rerank",
+                &serde_json::json!({
+                    "model": self.api.model(),
+                    "query": query,
+                    "documents": documents,
+                    "top_n": top_k,
+                    "return_documents": false,
+                }),
+            )
             .await?;
-
-        let body: RerankResponse = response.json().await?;
 
         let mut reranked = Vec::new();
         for item in body.results {

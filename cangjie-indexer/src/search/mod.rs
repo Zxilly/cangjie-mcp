@@ -377,8 +377,7 @@ impl RemoteSearchIndex {
             category: category.map(|s| s.to_string()),
         };
 
-        let resp = self.http.post("search").json(&payload).send().await?;
-        let data: RemoteSearchResponse = resp.json().await.context("Invalid /search response")?;
+        let data: RemoteSearchResponse = self.http.post_json("search", &payload).await?;
 
         Ok(data
             .results

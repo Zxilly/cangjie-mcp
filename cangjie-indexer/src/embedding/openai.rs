@@ -48,9 +48,7 @@ impl Embedder for OpenAIEmbedder {
             }
         }
 
-        let response = self.api.post("embeddings").json(&payload).send().await?;
-
-        let body: EmbeddingsResponse = response.json().await?;
+        let body: EmbeddingsResponse = self.api.post_json("embeddings", &payload).await?;
         Ok(body.data.into_iter().map(|d| d.embedding).collect())
     }
 
