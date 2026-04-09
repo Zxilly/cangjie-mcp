@@ -3,15 +3,17 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use backon::{ExponentialBuilder, Retryable};
 use reqwest::StatusCode;
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::warn;
 
 use cangjie_core::config::Settings;
 
-const DEFAULT_POST_JSON_MAX_RETRIES: u32 = 5;
+const DEFAULT_POST_JSON_MAX_ATTEMPTS: usize = 6;
 const DEFAULT_RETRY_INITIAL_BACKOFF_SECS: u64 = 2;
 const DEFAULT_RETRY_MAX_BACKOFF_SECS: u64 = 30;
+const DEFAULT_RETRY_FACTOR: f32 = 2.0;
 
 /// Build a shared HTTP client optimized for external API calls.
 fn build_http_client(settings: &Settings, timeout: Duration) -> Result<reqwest::Client> {
@@ -63,10 +65,18 @@ fn response_headers_excerpt(headers: &reqwest::header::HeaderMap) -> String {
     }
 }
 
-async fn decode_json_response<T: DeserializeOwned>(
+struct ResponseDiagnostics {
+    status: StatusCode,
+    url: reqwest::Url,
+    headers: String,
+    body: String,
+    excerpt: String,
+}
+
+async fn read_response_diagnostics(
     response: reqwest::Response,
     request_label: &str,
-) -> Result<T> {
+) -> Result<ResponseDiagnostics> {
     let status = response.status();
     let url = response.url().clone();
     let headers = response_headers_excerpt(response.headers());
@@ -75,15 +85,39 @@ async fn decode_json_response<T: DeserializeOwned>(
     })?;
     let excerpt = response_body_excerpt(&body);
 
-    if !status.is_success() {
-        anyhow::bail!(
-            "{request_label} failed: HTTP {status} from {url}; headers: {headers}; body: {excerpt}"
-        );
+    Ok(ResponseDiagnostics {
+        status,
+        url,
+        headers,
+        body,
+        excerpt,
+    })
+}
+
+fn format_http_error(request_label: &str, diagnostics: &ResponseDiagnostics) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{request_label} failed: HTTP {} from {}; headers: {}; body: {}",
+        diagnostics.status,
+        diagnostics.url,
+        diagnostics.headers,
+        diagnostics.excerpt
+    )
+}
+
+async fn decode_json_response<T: DeserializeOwned>(
+    response: reqwest::Response,
+    request_label: &str,
+) -> Result<T> {
+    let diagnostics = read_response_diagnostics(response, request_label).await?;
+
+    if !diagnostics.status.is_success() {
+        return Err(format_http_error(request_label, &diagnostics));
     }
 
-    serde_json::from_str(&body).with_context(|| {
+    serde_json::from_str(&diagnostics.body).with_context(|| {
         format!(
-            "Invalid {request_label} response from {url} (HTTP {status}); headers: {headers}; body: {excerpt}"
+            "Invalid {request_label} response from {} (HTTP {}); headers: {}; body: {}",
+            diagnostics.url, diagnostics.status, diagnostics.headers, diagnostics.excerpt
         )
     })
 }
@@ -97,13 +131,12 @@ fn is_retryable_status(status: StatusCode) -> bool {
     )
 }
 
-fn retry_backoff_delay(retry_index: u32) -> Duration {
-    let shift = retry_index.saturating_sub(1).min(31);
-    let multiplier = 1_u64.checked_shl(shift).unwrap_or(u64::MAX);
-    let secs = DEFAULT_RETRY_INITIAL_BACKOFF_SECS
-        .saturating_mul(multiplier)
-        .min(DEFAULT_RETRY_MAX_BACKOFF_SECS);
-    Duration::from_secs(secs)
+fn retry_backoff(max_attempts: usize) -> ExponentialBuilder {
+    ExponentialBuilder::default()
+        .with_factor(DEFAULT_RETRY_FACTOR)
+        .with_min_delay(Duration::from_secs(DEFAULT_RETRY_INITIAL_BACKOFF_SECS))
+        .with_max_delay(Duration::from_secs(DEFAULT_RETRY_MAX_BACKOFF_SECS))
+        .with_max_times(max_attempts)
 }
 
 // -- HttpClient (no auth) ----------------------------------------------------
@@ -136,58 +169,55 @@ impl HttpClient {
         &self.base_url
     }
 
+    async fn send_with_retry<F>(
+        &self,
+        request_label: &str,
+        max_attempts: usize,
+        mut build_request: F,
+    ) -> Result<reqwest::Response>
+    where
+        F: FnMut() -> reqwest::RequestBuilder,
+    {
+        let send_request = || {
+            let request = build_request();
+            async move {
+                let response = request
+                    .send()
+                    .await
+                    .with_context(|| format!("Failed to {request_label}"))?;
+
+                if is_retryable_status(response.status()) {
+                    let diagnostics = read_response_diagnostics(response, request_label).await?;
+                    return Err(format_http_error(request_label, &diagnostics));
+                }
+
+                Ok(response)
+            }
+        };
+
+        send_request
+            .retry(retry_backoff(max_attempts))
+            .notify(|err: &anyhow::Error, wait: Duration| {
+                warn!("{request_label} transient failure: {err}; retrying in {wait:?}");
+            })
+            .await
+            .with_context(|| format!("Failed to {request_label} after {max_attempts} attempts"))
+    }
+
     async fn send_json_with_retry<T, F>(
         &self,
         request_label: &str,
-        max_retries: u32,
-        mut build_request: F,
+        max_attempts: usize,
+        build_request: F,
     ) -> Result<T>
     where
         T: DeserializeOwned,
         F: FnMut() -> reqwest::RequestBuilder,
     {
-        for attempt in 0..=max_retries {
-            match build_request().send().await {
-                Ok(response) => {
-                    let status = response.status();
-                    if attempt < max_retries && is_retryable_status(status) {
-                        let delay = retry_backoff_delay(attempt + 1);
-                        warn!(
-                            "{request_label} returned HTTP {} on attempt {}/{}; retrying in {:?}",
-                            status,
-                            attempt + 1,
-                            max_retries + 1,
-                            delay
-                        );
-                        tokio::time::sleep(delay).await;
-                        continue;
-                    }
-
-                    return decode_json_response(response, request_label).await;
-                }
-                Err(err) => {
-                    if attempt < max_retries {
-                        let delay = retry_backoff_delay(attempt + 1);
-                        warn!(
-                            "{request_label} attempt {}/{} failed: {}; retrying in {:?}",
-                            attempt + 1,
-                            max_retries + 1,
-                            err,
-                            delay
-                        );
-                        tokio::time::sleep(delay).await;
-                        continue;
-                    }
-
-                    anyhow::bail!(
-                        "Failed to {request_label} after {} attempts: {err}",
-                        max_retries + 1
-                    );
-                }
-            }
-        }
-
-        unreachable!("retry loop always returns or continues")
+        let response = self
+            .send_with_retry(request_label, max_attempts, build_request)
+            .await?;
+        decode_json_response(response, request_label).await
     }
 
     pub async fn post_json<P: Serialize + ?Sized, T: DeserializeOwned>(
@@ -196,7 +226,7 @@ impl HttpClient {
         payload: &P,
     ) -> Result<T> {
         let request_label = format!("POST /{endpoint}");
-        self.send_json_with_retry(&request_label, DEFAULT_POST_JSON_MAX_RETRIES, || {
+        self.send_json_with_retry(&request_label, DEFAULT_POST_JSON_MAX_ATTEMPTS, || {
             self.post(endpoint).json(payload)
         })
         .await
@@ -210,8 +240,10 @@ impl HttpClient {
     ) -> Result<T> {
         let url = self.url_for(endpoint);
         let request_label = format!("GET /{endpoint}");
-        self.send_json_with_retry(&request_label, max_retries, || self.client.get(&url))
-            .await
+        self.send_json_with_retry(&request_label, max_retries as usize, || {
+            self.client.get(&url)
+        })
+        .await
     }
 }
 
@@ -254,7 +286,7 @@ impl ApiClient {
     ) -> Result<T> {
         let request_label = format!("POST /{endpoint}");
         self.http
-            .send_json_with_retry(&request_label, DEFAULT_POST_JSON_MAX_RETRIES, || {
+            .send_json_with_retry(&request_label, DEFAULT_POST_JSON_MAX_ATTEMPTS, || {
                 self.post(endpoint).json(payload)
             })
             .await

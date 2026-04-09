@@ -52,6 +52,7 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 sqlite-vec = "0.1.7"
 zerocopy = { version = "0.8", features = ["derive"] }
 once_cell = "1"
+backon = "1.6"
 
 fastembed = { version = "5", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
 ort = { version = "=2.0.0-rc.11", optional = true, default-features = false, features = ["std", "ndarray"] }
