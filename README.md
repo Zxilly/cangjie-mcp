@@ -14,20 +14,6 @@
 - **代码智能**: 基于 LSP 的跳转定义、查找引用、悬停信息等功能
 - **可选远程文档服务**: 支持连接远程文档/索引服务，减少本地资源占用，适合开箱即用或团队共享
 
-## 快速开始
-
-推荐使用 `uvx` 或 `npx` 直接运行，无需全局安装：
-
-```bash
-# 使用 uvx (Python 侧推荐)
-uvx cangjie-mcp
-
-# 使用 npx (Node.js 侧推荐)
-npx cangjie-mcp
-```
-
-> **注意**：`cangjie-mcp`（不带子命令）会启动 MCP stdio 服务器，该模式通过标准输入/输出与 AI 编程助手通信，直接在终端运行只会看到空白界面。请参照下方"快速配置"章节将其接入 AI 编程助手使用。如需在终端使用，请使用 `cangjie-mcp query`、`cangjie-mcp lsp` 等子命令。
-
 ## 安装
 
 你可以根据偏好的包管理器，选择通过 PyPI (Python) 或 npm (Node.js) 进行安装。
@@ -81,173 +67,66 @@ MCP 服务器在本地加载检索索引（BM25 + 向量索引），直接处理
 cangjie-mcp               # 或 uvx cangjie-mcp
 ```
 
-### 远程文档服务模式（可选）
+### 远程服务模式（可选）
 
-如果你不想在本机下载/加载向量模型与索引（或希望多人/多台机器共享同一套索引），可以把检索能力以 HTTP 的方式独立部署。之后 MCP 只需要通过 `--server-url` 连接，就能直接使用文档检索能力。
+如果你不想在本机下载/加载向量模型与索引（或希望多人/多台机器共享同一套索引），可以把检索能力独立部署为 `cangjie-mcp-server`，同时对外提供：
+
+- **HTTP 查询 API**，供本地 `cangjie-mcp --server-url` 连接（LSP 工具仍在本地可用）
+- **Remote MCP 端点**，MCP 客户端无需本地运行 `cangjie-mcp` 即可直接连接
+  - Streamable HTTP（默认 `/mcp`）— [MCP 规范推荐的现代传输方式](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http)
+  - SSE（默认 `/sse`）— 旧版兼容传输
+
+> **注意**：`cangjie-mcp-server` 为独立二进制，不随 PyPI / npm 发行，需单独从源码构建。Remote MCP 模式下 LSP 工具（`cangjie_lsp`）不可用 —— 它依赖本地文件系统和仓颉 SDK，仅在 stdio 模式（`cangjie-mcp`）中提供。
 
 ```bash
-# 终端 1：启动 HTTP 查询服务器
+# 启动服务器（同时暴露 HTTP API、Streamable HTTP MCP、SSE MCP）
 cangjie-mcp-server --embedding local --port 8765
 
-# 终端 2：启动 MCP 服务器，连接远程索引
+# 方式 A：本地 stdio MCP 连接远程索引（保留 LSP）
 cangjie-mcp --server-url http://localhost:8765
-```
 
-### Remote MCP 模式
-
-`cangjie-mcp-server` 同时提供两种远程 MCP 传输方式，MCP 客户端可以直接连接，无需本地运行 `cangjie-mcp`：
-
-- **Streamable HTTP**（默认在 `/mcp`）— [MCP 规范推荐的现代传输方式](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http)
-- **SSE**（默认在 `/sse`）— 旧版 SSE 传输，兼容不支持 Streamable HTTP 的客户端
-
-> **注意**：Remote MCP 模式下 LSP 工具（`cangjie_lsp`）不可用。LSP 需要访问本地文件系统和仓颉 SDK，仅在 stdio 模式（`cangjie-mcp`）中提供。
-
-```bash
-# 启动服务器（同时提供 Streamable HTTP 和 SSE）
-cangjie-mcp-server --port 8765
-```
-
-在支持远程 MCP 的客户端中配置（Streamable HTTP）：
-
-```json
-{
-  "mcpServers": {
-    "cangjie": {
-      "url": "http://localhost:8765/mcp"
-    }
-  }
-}
-```
-
-对于仅支持旧版 SSE 传输的客户端：
-
-```json
-{
-  "mcpServers": {
-    "cangjie": {
-      "url": "http://localhost:8765/sse"
-    }
-  }
-}
+# 方式 B：客户端直接连接 Remote MCP（无需本地进程）
+#   Streamable HTTP: http://localhost:8765/mcp
+#   SSE:             http://localhost:8765/sse
 ```
 
 ## 快速配置
 
-公共文档服务器已部署在 `https://cj-mcp.learningman.top`，连接后无需本地加载嵌入模型，开箱即用。
+项目提供两部分能力，可独立安装：**MCP 服务器**（文档检索 + LSP 工具）和 **Skill**（仓颉语言速查知识）。推荐搭配使用。
 
-> **注意**：LSP 功能需要已安装仓颉 SDK，请将 `/path/to/cangjie-sdk` 替换为实际路径，或设置 `CANGJIE_HOME` 环境变量。
+### MCP 服务器
 
-<details>
-<summary>Claude Code（推荐）</summary>
-
-```bash
-claude mcp add cangjie \
-  -e CANGJIE_SERVER_URL=https://cj-mcp.learningman.top \
-  -e CANGJIE_HOME=/path/to/cangjie-sdk \
-  -- uvx cangjie-mcp
-```
-
-</details>
-
-<details>
-<summary>Cursor / Windsurf / Claude Desktop</summary>
-
-配置文件路径：
-- **Cursor**: `~/.cursor/mcp.json`
-- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`
-- **Claude Desktop (macOS)**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Claude Desktop (Windows)**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "cangjie": {
-      "command": "uvx",
-      "args": ["cangjie-mcp"],
-      "env": {
-        "CANGJIE_SERVER_URL": "https://cj-mcp.learningman.top",
-        "CANGJIE_HOME": "/path/to/cangjie-sdk"
-      }
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>VS Code (GitHub Copilot)</summary>
-
-`settings.json`:
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "cangjie": {
-        "command": "uvx",
-        "args": ["cangjie-mcp"],
-        "env": {
-          "CANGJIE_SERVER_URL": "https://cj-mcp.learningman.top",
-          "CANGJIE_HOME": "/path/to/cangjie-sdk"
-        }
-      }
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Zed</summary>
-
-`~/.config/zed/settings.json`:
-
-```json
-{
-  "context_servers": {
-    "cangjie": {
-      "command": {
-        "path": "uvx",
-        "args": ["cangjie-mcp"],
-        "env": {
-          "CANGJIE_SERVER_URL": "https://cj-mcp.learningman.top",
-          "CANGJIE_HOME": "/path/to/cangjie-sdk"
-        }
-      }
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>本地模式（不使用远程服务器）</summary>
-
-如需完全离线使用或自建索引，可不设置 `CANGJIE_SERVER_URL`，MCP 会在本地加载嵌入模型和索引：
+公共文档服务器已部署在 `https://cj-mcp.learningman.top`，直接使用 Streamable HTTP 远程 MCP，无需在本地安装任何包，也无需加载嵌入模型，开箱即用：
 
 ```bash
-claude mcp add \
-  -e CANGJIE_RERANK_TYPE=local \
-  -e CANGJIE_HOME=/path/to/cangjie-sdk \
-  cangjie -- uvx cangjie-mcp
+npx add-mcp https://cj-mcp.learningman.top/mcp
 ```
 
-</details>
+如需 LSP 代码智能工具（需要本地仓颉 SDK），改用 stdio 模式，通过 `uvx` 拉起本地进程并连接远程检索服务：
 
-## AI 编程助手 Skill
+```bash
+npx add-mcp "uvx cangjie-mcp" \
+  --env "CANGJIE_SERVER_URL=https://cj-mcp.learningman.top" \
+  --env "CANGJIE_HOME=/path/to/cangjie-sdk"
+```
 
-本项目提供了仓颉语言的 AI 编程助手技能，包含仓颉语言的语法速查、关键差异和常见陷阱等知识。
+完全离线 / 自建索引（不连接远程服务器，本地加载嵌入模型）：
 
-你可以使用以下命令直接在你的项目（例如 Cursor 项目）中安装该 Skill：
+```bash
+npx add-mcp "uvx cangjie-mcp" \
+  --env "CANGJIE_RERANK_TYPE=local" \
+  --env "CANGJIE_HOME=/path/to/cangjie-sdk"
+```
+
+> `add-mcp` 会自动识别当前环境中的 AI 编程助手（Claude Code、Cursor、Windsurf、VS Code、Zed、Claude Desktop 等）并写入对应配置，详见 [neondatabase/add-mcp](https://github.com/neondatabase/add-mcp)。使用 `-g` 全局安装，`-a <agent>` 指定目标，`--all` 写入所有受支持的客户端。
+
+### Skill
+
+本项目提供仓颉语言的 AI 编程助手技能，包含语法速查、关键差异和常见陷阱等知识。项目根目录的 [`SKILL.md`](SKILL.md) 遵循 skills 规范，可直接通过以下命令安装到你的项目：
 
 ```bash
 npx skills add Zxilly/cangjie-mcp
 ```
-
-项目根目录包含 [`SKILL.md`](SKILL.md)，遵循 skills 规范。
 
 ## 可用工具
 
