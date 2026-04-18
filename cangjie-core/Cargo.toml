@@ -1,6 +1,6 @@
 [package]
 name = "cangjie-core"
-version = "0.4.1"
+version = "0.4.3"
 edition = "2021"
 description = "Core types, configuration, and utilities for Cangjie MCP"
 license = "MIT"
