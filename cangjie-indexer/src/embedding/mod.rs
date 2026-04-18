@@ -69,7 +69,11 @@ pub async fn create_embedder(settings: &Settings) -> Result<Option<Box<dyn Embed
         EmbeddingType::Local => {
             #[cfg(feature = "local")]
             {
-                let embedder = local::LocalEmbedder::new(&settings.local_model).await?;
+                let embedder = local::LocalEmbedder::new(
+                    &settings.local_model,
+                    settings.fastembed_cache_dir(),
+                )
+                .await?;
                 Ok(Some(Box::new(embedder)))
             }
             #[cfg(not(feature = "local"))]

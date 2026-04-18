@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -15,7 +16,7 @@ pub struct LocalEmbedder {
 }
 
 impl LocalEmbedder {
-    pub async fn new(model_name: &str) -> Result<Self> {
+    pub async fn new(model_name: &str, cache_dir: PathBuf) -> Result<Self> {
         init_ort_backend();
 
         let model_enum: EmbeddingModel = model_name.parse().map_err(|e: String| {
@@ -25,8 +26,12 @@ impl LocalEmbedder {
         info!("Loading local embedding model: {}", model_name);
         let name = model_name.to_string();
         let model = tokio::task::spawn_blocking(move || {
-            TextEmbedding::try_new(InitOptions::new(model_enum).with_show_download_progress(true))
-                .context("Failed to load local embedding model")
+            TextEmbedding::try_new(
+                InitOptions::new(model_enum)
+                    .with_cache_dir(cache_dir)
+                    .with_show_download_progress(true),
+            )
+            .context("Failed to load local embedding model")
         })
         .await
         .context("Model loading task panicked")??;

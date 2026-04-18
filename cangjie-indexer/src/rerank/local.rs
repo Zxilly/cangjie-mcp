@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -11,13 +12,14 @@ pub struct LocalReranker {
 }
 
 impl LocalReranker {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(cache_dir: PathBuf) -> Result<Self> {
         crate::embedding::local::init_ort_backend();
 
         info!("Loading local reranker model: BAAI/bge-reranker-v2-m3");
-        let model = tokio::task::spawn_blocking(|| {
+        let model = tokio::task::spawn_blocking(move || {
             TextRerank::try_new(
                 fastembed::RerankInitOptions::new(RerankerModel::BGERerankerV2M3)
+                    .with_cache_dir(cache_dir)
                     .with_show_download_progress(true),
             )
             .context("Failed to load local reranker model")

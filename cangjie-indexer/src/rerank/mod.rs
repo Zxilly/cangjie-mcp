@@ -57,7 +57,7 @@ pub async fn create_reranker(settings: &Settings) -> Result<RerankerKind> {
         RerankType::Local => {
             #[cfg(feature = "local")]
             {
-                let reranker = local::LocalReranker::new().await?;
+                let reranker = local::LocalReranker::new(settings.fastembed_cache_dir()).await?;
                 Ok(RerankerKind::Local(Box::new(reranker)))
             }
             #[cfg(not(feature = "local"))]

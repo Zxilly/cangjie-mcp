@@ -160,6 +160,14 @@ cangjie-mcp config init            # 生成默认配置文件
 
 `cangjie-mcp` 和 `cangjie-mcp index` 接受完整的索引/嵌入/网络选项（通过 `cangjie-mcp --help` 查看）。其他子命令的设置统一从配置文件加载，运行 `cangjie-mcp config path` 查看路径。
 
+### 本地模型缓存
+
+当使用 `--embedding local` 或 `CANGJIE_RERANK_TYPE=local` 时，`fastembed` 模型缓存写入 `<data_dir>/cache/fastembed`。以下选项同时适用于 `cangjie-mcp` 和 `cangjie-mcp-server`：
+
+| CLI 参数 | 环境变量 | 说明 |
+|---------|---------|------|
+| `--data-dir PATH` | `CANGJIE_DATA_DIR` | 应用数据根目录，默认 `~/.cangjie-mcp`；`fastembed` 缓存始终为 `<data_dir>/cache/fastembed` |
+
 ### 全局选项
 
 | CLI 参数 | 环境变量 | 说明 |

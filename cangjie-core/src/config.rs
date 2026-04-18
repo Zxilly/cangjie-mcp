@@ -258,6 +258,10 @@ impl Settings {
         }
     }
 
+    pub fn fastembed_cache_dir(&self) -> PathBuf {
+        self.data_dir.join("cache").join("fastembed")
+    }
+
     pub fn docs_repo_dir(&self) -> PathBuf {
         self.data_dir.join("docs_repo")
     }
@@ -354,6 +358,15 @@ pub fn log_startup_info(settings: &Settings, index_info: &IndexInfo) {
                 _ => &settings.openai_model,
             };
             info!("Embedding: {} / {model}", settings.embedding_type);
+        }
+
+        if matches!(settings.embedding_type, EmbeddingType::Local)
+            || matches!(settings.rerank_type, RerankType::Local)
+        {
+            info!(
+                "Fastembed cache: {}",
+                settings.fastembed_cache_dir().display()
+            );
         }
     }
 
@@ -495,6 +508,18 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.chunk_overlap_chars, DEFAULT_CHUNK_OVERLAP_CHARS);
         assert!(s.max_chunk_chars.is_none());
+    }
+
+    #[test]
+    fn test_fastembed_cache_dir_under_data_dir() {
+        let s = Settings {
+            data_dir: PathBuf::from("/data"),
+            ..Settings::default()
+        };
+        assert_eq!(
+            s.fastembed_cache_dir(),
+            PathBuf::from("/data/cache/fastembed")
+        );
     }
 
     #[test]
