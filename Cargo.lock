@@ -727,6 +727,7 @@ dependencies = [
  "clap",
  "serde_json",
  "tokio",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]

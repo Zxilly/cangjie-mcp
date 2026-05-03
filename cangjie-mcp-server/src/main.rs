@@ -18,6 +18,7 @@ use cangjie_indexer::IndexMetadata;
 use cangjie_server::http::create_http_app;
 use cangjie_server::sse::create_sse_router;
 use cangjie_server::streamable::{create_mcp_service, CancellationToken, McpServerConfig};
+use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Parser)]
 #[command(
@@ -240,6 +241,12 @@ async fn main() -> Result<()> {
     } else {
         None
     };
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+    app = app.layer(cors);
 
     let bind_addr = format!("{}:{}", cli.host, cli.port);
     info!("Starting HTTP server on {bind_addr}...");
