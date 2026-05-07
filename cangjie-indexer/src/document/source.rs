@@ -69,6 +69,34 @@ fn list_md_files(repo_dir: &Path, base_path: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
+/// Non-recursive sibling of `list_md_files`: returns only `.md` files at the
+/// top level of `base_path` (no descent into subdirectories).
+fn list_md_files_shallow(repo_dir: &Path, base_path: &str) -> Result<Vec<String>> {
+    let repo = open_repo(repo_dir)?;
+    let tree = repo.head_commit()?.tree()?;
+    let entry = match tree.lookup_entry_by_path(base_path)? {
+        Some(e) => e,
+        None => return Ok(Vec::new()),
+    };
+    let subtree = repo.find_object(entry.oid())?.into_tree();
+    let mut files = Vec::new();
+    for item in subtree.iter() {
+        let item = item?;
+        if !item.mode().is_blob() {
+            continue;
+        }
+        let Ok(name) = std::str::from_utf8(item.filename()) else {
+            continue;
+        };
+        if !name.ends_with(".md") || name.starts_with('.') || name.starts_with('_') {
+            continue;
+        }
+        files.push(name.to_string());
+    }
+    files.sort();
+    Ok(files)
+}
+
 fn topic_name_from_md_path(path: &str) -> Option<String> {
     path.rsplit('/')
         .next()
@@ -113,35 +141,71 @@ pub struct GitDocumentSource {
     repo_dir: PathBuf,
     docs_base_path: String,
     category_prefix: Option<String>,
+    root_category: Option<String>,
 }
 
 impl GitDocumentSource {
-    pub fn new(
+    fn new(
         repo_dir: PathBuf,
         docs_base_path: String,
         category_prefix: Option<String>,
-    ) -> Result<Self> {
-        Ok(Self {
+        root_category: Option<String>,
+    ) -> Self {
+        Self {
             repo_dir,
             docs_base_path,
             category_prefix,
-        })
+            root_category,
+        }
     }
 
     pub fn for_docs(repo_dir: PathBuf, lang: DocLang) -> Result<Self> {
-        Self::new(
+        Ok(Self::new(
             repo_dir,
             format!("docs/dev-guide/{}", lang.source_dir_name()),
             None,
-        )
+            None,
+        ))
     }
 
     pub fn for_runtime(repo_dir: PathBuf, lang: DocLang) -> Result<Self> {
-        Self::new(
+        Ok(Self::new(
             repo_dir,
             format!("stdlib/doc/{}", lang.runtime_source_dir_name()),
             Some("stdlib".to_string()),
-        )
+            None,
+        ))
+    }
+
+    /// Extended stdlib (`stdx`) packages under `doc/{libs_stdx | libs_stdx_en}`.
+    pub fn for_stdx(repo_dir: PathBuf, lang: DocLang) -> Result<Self> {
+        Ok(Self::new(
+            repo_dir,
+            format!("doc/{}", lang.stdx_source_dir_name()),
+            Some("stdx".to_string()),
+            Some("stdx".to_string()),
+        ))
+    }
+
+    /// Tooling guides under `docs/tools/{lang}` (cjpm, cjfmt, language server, etc.).
+    pub fn for_tools(repo_dir: PathBuf, lang: DocLang) -> Result<Self> {
+        Ok(Self::new(
+            repo_dir,
+            format!("docs/tools/{}", lang.source_dir_name()),
+            Some("tools".to_string()),
+            Some("tools".to_string()),
+        ))
+    }
+
+    /// Per-version release notes under `release-notes/`. Lang-agnostic — the
+    /// directory is flat and shared across UI languages.
+    pub fn for_release_notes(repo_dir: PathBuf) -> Result<Self> {
+        Ok(Self::new(
+            repo_dir,
+            "release-notes".to_string(),
+            None,
+            Some("release-notes".to_string()),
+        ))
     }
 }
 
@@ -155,35 +219,22 @@ impl DocumentSource for GitDocumentSource {
         let repo_dir = self.repo_dir.clone();
         let base = self.docs_base_path.clone();
         let prefix = self.category_prefix.clone();
+        let root_category = self.root_category.clone();
 
         tokio::task::spawn_blocking(move || {
-            let categories = list_dirs(&repo_dir, &base)?;
             let mut documents = Vec::new();
 
-            for category in &categories {
+            for category in &list_dirs(&repo_dir, &base)? {
                 let path = format!("{base}/{category}");
-                let files = list_md_files(&repo_dir, &path)?;
                 let display_cat = apply_prefix(&prefix, category);
+                for file in &list_md_files(&repo_dir, &path)? {
+                    load_md_into(&repo_dir, &path, file, &display_cat, &mut documents);
+                }
+            }
 
-                for file in &files {
-                    let full_path = format!("{path}/{file}");
-                    match read_file(&repo_dir, &full_path) {
-                        Ok(content) => {
-                            let topic = topic_name_from_md_path(file).unwrap_or_default();
-                            let relative_path = format!("{display_cat}/{file}");
-                            if let Some(doc) = load_document_from_content(
-                                content,
-                                &relative_path,
-                                &display_cat,
-                                &topic,
-                            ) {
-                                documents.push(doc);
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to load {}: {}", full_path, e);
-                        }
-                    }
+            if let Some(cat) = &root_category {
+                for file in &list_md_files_shallow(&repo_dir, &base)? {
+                    load_md_into(&repo_dir, &base, file, cat, &mut documents);
                 }
             }
 
@@ -192,6 +243,30 @@ impl DocumentSource for GitDocumentSource {
         })
         .await
         .context("load_all_documents task panicked")?
+    }
+}
+
+/// Read `dir/file` from the git tree and append the loaded document to
+/// `documents`, using `category` as both the category metadata and the
+/// `<category>/<file>` file_path. Errors are logged and skipped.
+fn load_md_into(
+    repo_dir: &Path,
+    dir: &str,
+    file: &str,
+    category: &str,
+    documents: &mut Vec<DocData>,
+) {
+    let full_path = format!("{dir}/{file}");
+    match read_file(repo_dir, &full_path) {
+        Ok(content) => {
+            let topic = topic_name_from_md_path(file).unwrap_or_default();
+            let relative_path = format!("{category}/{file}");
+            if let Some(doc) = load_document_from_content(content, &relative_path, category, &topic)
+            {
+                documents.push(doc);
+            }
+        }
+        Err(e) => warn!("Failed to load {}: {}", full_path, e),
     }
 }
 
@@ -301,5 +376,105 @@ mod tests {
         assert!(files.contains(&"functions.md".to_string()));
         assert!(files.contains(&"variables.md".to_string()));
         assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn test_list_md_files_shallow_skips_subdirs_and_hidden() {
+        let tmp = create_test_repo_tmp();
+        // dev-guide source dir has `readme.md` at root plus subdirs (syntax,
+        // stdlib, _hidden, .dotdir). Only `readme.md` should come back.
+        let files = list_md_files_shallow(tmp.path(), "docs/dev-guide/source_zh_cn").unwrap();
+        assert_eq!(files, vec!["readme.md".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_for_tools_loads_root_and_subcategory() {
+        let tmp = create_test_repo_tmp();
+        let source = GitDocumentSource::for_tools(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
+
+        let docs = source.load_all_documents().await.unwrap();
+        assert_eq!(docs.len(), 2);
+
+        let cjpm = docs
+            .iter()
+            .find(|d| d.metadata.topic == "cjpm_manual")
+            .expect("cjpm_manual should be loaded");
+        assert_eq!(cjpm.metadata.category, "tools/cmd-tools");
+        assert_eq!(cjpm.metadata.file_path, "tools/cmd-tools/cjpm_manual.md");
+
+        let overview = docs
+            .iter()
+            .find(|d| d.metadata.topic == "command_line_overview")
+            .expect("command_line_overview should be loaded");
+        assert_eq!(overview.metadata.category, "tools");
+        assert_eq!(
+            overview.metadata.file_path,
+            "tools/command_line_overview.md"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_for_release_notes_loads_flat_root_files() {
+        let tmp = create_test_repo_tmp();
+        let source = GitDocumentSource::for_release_notes(tmp.path().to_path_buf()).unwrap();
+
+        let docs = source.load_all_documents().await.unwrap();
+        assert_eq!(docs.len(), 1);
+
+        let note = &docs[0];
+        assert_eq!(note.metadata.category, "release-notes");
+        assert_eq!(note.metadata.topic, "cangjie-1.1.0-release-notes");
+        assert_eq!(
+            note.metadata.file_path,
+            "release-notes/cangjie-1.1.0-release-notes.md"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_for_stdx_loads_nested_and_root_files() {
+        let tmp = create_test_repo_tmp();
+        let source = GitDocumentSource::for_stdx(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
+
+        let docs = source.load_all_documents().await.unwrap();
+        assert_eq!(docs.len(), 3);
+
+        let log_overview = docs
+            .iter()
+            .find(|d| d.metadata.topic == "log_package_overview")
+            .expect("log_package_overview should be loaded");
+        assert_eq!(log_overview.metadata.category, "stdx/log");
+        assert_eq!(
+            log_overview.metadata.file_path,
+            "stdx/log/log_package_overview.md"
+        );
+
+        let base64 = docs
+            .iter()
+            .find(|d| d.metadata.topic == "base64_package_funcs")
+            .expect("base64_package_funcs should be loaded recursively");
+        assert_eq!(base64.metadata.category, "stdx/encoding");
+        assert_eq!(
+            base64.metadata.file_path,
+            "stdx/encoding/base64/base64_package_api/base64_package_funcs.md"
+        );
+
+        let overview = docs
+            .iter()
+            .find(|d| d.metadata.topic == "libs_overview")
+            .expect("libs_overview should be loaded as a root file");
+        assert_eq!(overview.metadata.category, "stdx");
+        assert_eq!(overview.metadata.file_path, "stdx/libs_overview.md");
+    }
+
+    #[tokio::test]
+    async fn test_for_docs_still_skips_root_files() {
+        // Regression: dev-guide loader must not pick up the top-level
+        // `readme.md` (or `summary_*.md` in real repos) — those are TOC files,
+        // not real content.
+        let tmp = create_test_repo_tmp();
+        let source = GitDocumentSource::for_docs(tmp.path().to_path_buf(), DocLang::Zh).unwrap();
+        let docs = source.load_all_documents().await.unwrap();
+        assert_eq!(docs.len(), 3);
+        assert!(docs.iter().all(|d| d.metadata.topic != "readme"));
     }
 }

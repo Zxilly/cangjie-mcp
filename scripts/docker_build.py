@@ -13,6 +13,8 @@ IMAGE_NAME = "cangjie-mcp"
 # Build-time ARGs defined in Dockerfile (optional overrides)
 BUILD_ARGS = [
     "CANGJIE_DOCS_VERSION",
+    "CANGJIE_RUNTIME_VERSION",
+    "CANGJIE_STDX_VERSION",
     "CANGJIE_DOCS_LANG",
     "OPENAI_EMBEDDING_MODEL",
     "OPENAI_BASE_URL",

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build and publish the cangjie-mcp Docker image to Alibaba Cloud Container Registry."""
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -10,10 +11,11 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 REGISTRY = "crpi-5ufw1wl9cvjiiv1a.ap-northeast-1.personal.cr.aliyuncs.com"
 REPO = f"{REGISTRY}/zxilly/cangjie_mcp"
 
-# Build-time ARGs defined in Dockerfile
+# Build-time ARGs that may come from .env / environment (raw user inputs)
 BUILD_ARGS = [
     "CANGJIE_DOCS_VERSION",
     "CANGJIE_RUNTIME_VERSION",
+    "CANGJIE_STDX_VERSION",
     "CANGJIE_DOCS_LANG",
     "OPENAI_EMBEDDING_MODEL",
     "OPENAI_BASE_URL",
@@ -39,26 +41,28 @@ def load_env(path: Path) -> dict[str, str]:
     return env
 
 
-CANGJIE_DOCS_REPO = "https://gitcode.com/Cangjie/cangjie_docs.git"
-CANGJIE_RUNTIME_REPO = "https://gitcode.com/Cangjie/cangjie_runtime.git"
+CANGJIE_REPOS = {
+    "docs": "https://gitcode.com/Cangjie/cangjie_docs.git",
+    "runtime": "https://gitcode.com/Cangjie/cangjie_runtime.git",
+    "stdx": "https://gitcode.com/Cangjie/cangjie_stdx.git",
+}
 
 
-def resolve_cangjie_version(docs_version: str) -> str:
-    """Resolve CANGJIE_DOCS_VERSION against the remote cangjie_docs repo.
+def resolve_repo_version(repo_label: str, repo_url: str, version: str) -> str:
+    """Resolve a version against a remote repo.
 
     Mirrors the logic of resolve_after_checkout in repo/mod.rs:
       - "latest" → resolve main/master branch → "main(<short_hash>)"
       - tag name → tag name as-is (e.g. "v0.55.3")
       - branch name → "branch(<short_hash>)"
     """
-    # Fetch all refs from remote
     result = subprocess.run(
-        ["git", "ls-remote", CANGJIE_DOCS_REPO],
+        ["git", "ls-remote", repo_url],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        print(f"ERROR: Failed to query cangjie_docs remote: {result.stderr}", file=sys.stderr)
+        print(f"ERROR: Failed to query {repo_label} remote: {result.stderr}", file=sys.stderr)
         sys.exit(1)
 
     refs: dict[str, str] = {}
@@ -66,29 +70,32 @@ def resolve_cangjie_version(docs_version: str) -> str:
         oid, ref = line.split("\t", 1)
         refs[ref] = oid
 
-    if docs_version == "latest":
-        # Same as Rust: try main, then master
+    if version == "latest":
         for branch in ("main", "master"):
             ref_key = f"refs/heads/{branch}"
             if ref_key in refs:
                 short = refs[ref_key][:7]
                 return f"{branch}({short})"
-        print("ERROR: Could not resolve 'latest' — no main/master branch in cangjie_docs.", file=sys.stderr)
+        print(f"ERROR: Could not resolve 'latest' — no main/master branch in {repo_label}.", file=sys.stderr)
         sys.exit(1)
 
-    # Try as tag
-    tag_ref = f"refs/tags/{docs_version}"
+    tag_ref = f"refs/tags/{version}"
     if tag_ref in refs:
-        return docs_version
+        return version
 
-    # Try as branch
-    branch_ref = f"refs/heads/{docs_version}"
+    branch_ref = f"refs/heads/{version}"
     if branch_ref in refs:
         short = refs[branch_ref][:7]
-        return f"{docs_version}({short})"
+        return f"{version}({short})"
 
-    print(f"ERROR: Could not resolve CANGJIE_DOCS_VERSION='{docs_version}' as tag or branch in cangjie_docs.", file=sys.stderr)
+    print(f"ERROR: Could not resolve version='{version}' as tag or branch in {repo_label}.", file=sys.stderr)
     sys.exit(1)
+
+
+def compute_versions_hash(docs: str, runtime: str, stdx: str) -> str:
+    """Stable 12-char hex digest of the three resolved repo versions."""
+    payload = f"docs={docs}|runtime={runtime}|stdx={stdx}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:12]
 
 
 def run(cmd: list[str], **kwargs) -> None:
@@ -175,29 +182,47 @@ def main():
         branch = git_branch()
         version = f"{branch}-{short_hash}" if branch else short_hash
 
-    # Read Cangjie docs version and embedding model for tag suffix
-    cangjie_docs_input = os.environ.get("CANGJIE_DOCS_VERSION") or env.get("CANGJIE_DOCS_VERSION", "latest")
-    cangjie_version = resolve_cangjie_version(cangjie_docs_input)
-    print(f"Resolved Cangjie docs version: {cangjie_docs_input} -> {cangjie_version}")
-    embedding_model = os.environ.get("OPENAI_EMBEDDING_MODEL") or env.get("OPENAI_EMBEDDING_MODEL", "BAAI/bge-m3")
+    # Resolve docs/runtime/stdx versions; runtime/stdx default to docs version (matches CLI behavior)
+    docs_input = os.environ.get("CANGJIE_DOCS_VERSION") or env.get("CANGJIE_DOCS_VERSION", "latest")
+    runtime_input = os.environ.get("CANGJIE_RUNTIME_VERSION") or env.get("CANGJIE_RUNTIME_VERSION") or docs_input
+    stdx_input = os.environ.get("CANGJIE_STDX_VERSION") or env.get("CANGJIE_STDX_VERSION") or docs_input
 
-    # Sanitize for Docker tag: replace illegal chars ( ) / with Docker-safe equivalents
-    cangjie_version_tag = cangjie_version.replace("(", "-").replace(")", "")
+    docs_version = resolve_repo_version("docs", CANGJIE_REPOS["docs"], docs_input)
+    runtime_version = resolve_repo_version("runtime", CANGJIE_REPOS["runtime"], runtime_input)
+    stdx_version = resolve_repo_version("stdx", CANGJIE_REPOS["stdx"], stdx_input)
+    print(f"Resolved docs:    {docs_input} -> {docs_version}")
+    print(f"Resolved runtime: {runtime_input} -> {runtime_version}")
+    print(f"Resolved stdx:    {stdx_input} -> {stdx_version}")
+
+    versions_hash = compute_versions_hash(docs_version, runtime_version, stdx_version)
+    print(f"Versions hash: verhash{versions_hash}")
+
+    embedding_model = os.environ.get("OPENAI_EMBEDDING_MODEL") or env.get("OPENAI_EMBEDDING_MODEL", "BAAI/bge-m3")
     embedding_model_tag = embedding_model.replace("/", "-")
 
-    # Compose image tag: <version>_cj_<cangjie_version>_<embedding_model>
-    # Parts separated by "_" to avoid confusion with "-" inside values and "." in versions
-    image_tag = f"{version}_cj_{cangjie_version_tag}_{embedding_model_tag}"
+    # Compose image tag: <version>_<embedding_model>_verhash<hash>
+    # Three repo versions go to OCI labels; hash makes the version triple addressable from the tag.
+    image_tag = f"{version}_{embedding_model_tag}_verhash{versions_hash}"
     full_image = f"{REPO}:{image_tag}"
 
     print(f"Publishing: {full_image}")
 
-    # Build
+    # Build: pass raw inputs as CANGJIE_*_VERSION (consumed by `cangjie-mcp index`).
+    # Resolved versions go into OCI labels via --label (overrides Dockerfile fallback labels).
     cmd = ["docker", "build"]
     for arg in BUILD_ARGS:
         value = os.environ.get(arg) or env.get(arg)
         if value:
             cmd += ["--build-arg", f"{arg}={value}"]
+
+    labels = {
+        "org.cangjie-mcp.docs-version": docs_version,
+        "org.cangjie-mcp.runtime-version": runtime_version,
+        "org.cangjie-mcp.stdx-version": stdx_version,
+        "org.cangjie-mcp.versions-hash": versions_hash,
+    }
+    for key, value in labels.items():
+        cmd += ["--label", f"{key}={value}"]
 
     for secret in BUILD_SECRETS:
         value = os.environ.get(secret) or env.get(secret)

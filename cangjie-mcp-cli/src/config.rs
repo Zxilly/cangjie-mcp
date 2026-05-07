@@ -23,6 +23,7 @@ pub fn config_file() -> PathBuf {
 pub struct FileConfig {
     pub docs_version: Option<String>,
     pub runtime_version: Option<String>,
+    pub stdx_version: Option<String>,
     pub lang: Option<String>,
     pub embedding: Option<String>,
     pub local_model: Option<String>,
@@ -49,6 +50,7 @@ pub struct FileConfig {
 const FIELD_ENV_MAP: &[(&str, &str)] = &[
     ("docs_version", "CANGJIE_DOCS_VERSION"),
     ("runtime_version", "CANGJIE_RUNTIME_VERSION"),
+    ("stdx_version", "CANGJIE_STDX_VERSION"),
     ("lang", "CANGJIE_DOCS_LANG"),
     ("embedding", "CANGJIE_EMBEDDING_TYPE"),
     ("local_model", "CANGJIE_LOCAL_MODEL"),
@@ -176,6 +178,10 @@ pub fn settings_from_env() -> Settings {
             "CANGJIE_RUNTIME_VERSION",
             &env_str("CANGJIE_DOCS_VERSION", DEFAULT_DOCS_VERSION),
         ),
+        stdx_version: env_str(
+            "CANGJIE_STDX_VERSION",
+            &env_str("CANGJIE_DOCS_VERSION", DEFAULT_DOCS_VERSION),
+        ),
         docs_lang,
         embedding_type,
         local_model: env_str("CANGJIE_LOCAL_MODEL", DEFAULT_LOCAL_MODEL),
@@ -226,6 +232,9 @@ pub fn generate_default_config() -> String {
 
 # Runtime stdlib documentation version (git tag, defaults to docs_version)
 # runtime_version = "dev"
+
+# Extended stdlib (stdx) documentation version (git tag, defaults to docs_version)
+# stdx_version = "dev"
 
 # Documentation language: "zh" or "en"
 # lang = "zh"

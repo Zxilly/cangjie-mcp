@@ -1,15 +1,25 @@
 use anyhow::{bail, Context, Result};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::document::chunker::chunk_documents;
 use crate::document::source::{DocumentSource, GitDocumentSource};
 use crate::embedding;
 use crate::search::bm25::BM25Store;
 use crate::search::vector::VectorStore;
-use crate::{IndexMetadata, SearchMode};
+use crate::{DocData, IndexMetadata, SearchMode};
 use cangjie_core::config::{
     IndexInfo, PrebuiltMode, Settings, DEFAULT_EMBEDDING_DIM, VECTOR_BATCH_SIZE,
 };
+
+fn extend_or_warn(documents: &mut Vec<DocData>, label: &str, result: Result<Vec<DocData>>) {
+    match result {
+        Ok(docs) => {
+            info!("Loaded {} {label} documents", docs.len());
+            documents.extend(docs);
+        }
+        Err(e) => warn!("Failed to load {label} documents: {e}"),
+    }
+}
 
 /// Check if a valid index exists by reading the metadata file.
 async fn index_is_ready(index_info: &IndexInfo) -> bool {
@@ -31,24 +41,25 @@ async fn index_is_ready(index_info: &IndexInfo) -> bool {
 async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> {
     info!("Loading documents...");
     let docs_source = GitDocumentSource::for_docs(index_info.docs_repo_dir(), index_info.lang)?;
+    let tools_source = GitDocumentSource::for_tools(index_info.docs_repo_dir(), index_info.lang)?;
+    let release_notes_source = GitDocumentSource::for_release_notes(index_info.docs_repo_dir())?;
     let runtime_source =
         GitDocumentSource::for_runtime(index_info.runtime_repo_dir(), index_info.lang)?;
+    let stdx_source = GitDocumentSource::for_stdx(index_info.stdx_repo_dir(), index_info.lang)?;
 
-    // Load from both repos concurrently
-    let (docs_result, runtime_result) = tokio::join!(
+    // Auxiliary sources are best-effort: docs is required, the rest log and skip on failure.
+    let (docs_result, tools_result, release_notes_result, runtime_result, stdx_result) = tokio::join!(
         docs_source.load_all_documents(),
+        tools_source.load_all_documents(),
+        release_notes_source.load_all_documents(),
         runtime_source.load_all_documents(),
+        stdx_source.load_all_documents(),
     );
     let mut documents = docs_result?;
-    match runtime_result {
-        Ok(runtime_docs) => {
-            info!("Loaded {} runtime stdlib documents", runtime_docs.len());
-            documents.extend(runtime_docs);
-        }
-        Err(e) => {
-            tracing::warn!("Failed to load runtime documents: {e}");
-        }
-    }
+    extend_or_warn(&mut documents, "tools", tools_result);
+    extend_or_warn(&mut documents, "release-notes", release_notes_result);
+    extend_or_warn(&mut documents, "runtime stdlib", runtime_result);
+    extend_or_warn(&mut documents, "stdx", stdx_result);
     if documents.is_empty() {
         bail!(
             "No documents found for version={}, lang={}",
@@ -240,14 +251,20 @@ pub async fn initialize_and_index(settings: &Settings) -> Result<IndexInfo> {
         settings.runtime_repo_dir(),
         cangjie_core::config::RUNTIME_REPO_URL.to_string(),
     );
+    let mut stdx_mgr = GitManager::new(
+        settings.stdx_repo_dir(),
+        cangjie_core::config::STDX_REPO_URL.to_string(),
+    );
 
-    let (docs_result, runtime_result) = tokio::join!(
+    let (docs_result, runtime_result, stdx_result) = tokio::join!(
         git_mgr.resolve_version(&settings.docs_version),
         runtime_mgr.resolve_version(&settings.runtime_version),
+        stdx_mgr.resolve_version(&settings.stdx_version),
     );
     let resolved_version = docs_result.context("Failed to resolve documentation version")?;
     let runtime_resolved =
         runtime_result.context("Failed to resolve runtime documentation version")?;
+    let stdx_resolved = stdx_result.context("Failed to resolve stdx documentation version")?;
     info!(
         "Resolved docs version: {} -> {}",
         settings.docs_version, resolved_version
@@ -256,8 +273,12 @@ pub async fn initialize_and_index(settings: &Settings) -> Result<IndexInfo> {
         "Resolved runtime version: {} -> {}",
         settings.runtime_version, runtime_resolved
     );
+    info!(
+        "Resolved stdx version: {} -> {}",
+        settings.stdx_version, stdx_resolved
+    );
 
-    let combined_version = format!("{}+rt-{}", resolved_version, runtime_resolved);
+    let combined_version = format!("{resolved_version}+rt-{runtime_resolved}+stdx-{stdx_resolved}");
     let index_info = IndexInfo::from_settings(settings, &combined_version);
 
     if index_is_ready(&index_info).await {

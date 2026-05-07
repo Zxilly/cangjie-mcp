@@ -35,6 +35,10 @@ struct Cli {
     #[arg(long = "runtime-version", env = "CANGJIE_RUNTIME_VERSION")]
     runtime_version: Option<String>,
 
+    /// Extended stdlib (stdx) documentation version
+    #[arg(long = "stdx-version", env = "CANGJIE_STDX_VERSION")]
+    stdx_version: Option<String>,
+
     /// Documentation language (zh/en)
     #[arg(long, short = 'l', env = "CANGJIE_DOCS_LANG", default_value = "zh")]
     lang: DocLang,
@@ -155,6 +159,10 @@ impl Cli {
             docs_version: self.docs_version.clone(),
             runtime_version: self
                 .runtime_version
+                .clone()
+                .unwrap_or_else(|| self.docs_version.clone()),
+            stdx_version: self
+                .stdx_version
                 .clone()
                 .unwrap_or_else(|| self.docs_version.clone()),
             docs_lang: self.lang,

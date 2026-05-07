@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_DOCS_VERSION: &str = "dev";
 pub const DOCS_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_docs.git";
 pub const RUNTIME_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_runtime.git";
+pub const STDX_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_stdx.git";
 pub const DEFAULT_LOCAL_MODEL: &str = "paraphrase-multilingual-MiniLM-L12-v2";
 pub const DEFAULT_RRF_K: u32 = 60;
 pub const DEFAULT_RERANK_MODEL: &str = "BAAI/bge-reranker-v2-m3";
@@ -145,6 +146,13 @@ impl DocLang {
             DocLang::En => "libs/std_en",
         }
     }
+
+    pub fn stdx_source_dir_name(self) -> &'static str {
+        match self {
+            DocLang::Zh => "libs_stdx",
+            DocLang::En => "libs_stdx_en",
+        }
+    }
 }
 
 impl fmt::Display for DocLang {
@@ -199,6 +207,7 @@ pub struct Settings {
     pub max_chunk_chars: Option<usize>,
     pub data_dir: PathBuf,
     pub runtime_version: String,
+    pub stdx_version: String,
     pub server_url: Option<String>,
     pub openai_api_key: Option<String>,
     pub openai_base_url: String,
@@ -229,6 +238,7 @@ impl Default for Settings {
             max_chunk_chars: None,
             data_dir: get_default_data_dir(),
             runtime_version: DEFAULT_DOCS_VERSION.to_string(),
+            stdx_version: DEFAULT_DOCS_VERSION.to_string(),
             server_url: None,
             openai_api_key: None,
             openai_base_url: DEFAULT_OPENAI_BASE_URL.to_string(),
@@ -268,6 +278,10 @@ impl Settings {
 
     pub fn runtime_repo_dir(&self) -> PathBuf {
         self.data_dir.join("runtime_repo")
+    }
+
+    pub fn stdx_repo_dir(&self) -> PathBuf {
+        self.data_dir.join("stdx_repo")
     }
 }
 
@@ -322,6 +336,10 @@ impl IndexInfo {
 
     pub fn runtime_repo_dir(&self) -> PathBuf {
         self.data_dir.join("runtime_repo")
+    }
+
+    pub fn stdx_repo_dir(&self) -> PathBuf {
+        self.data_dir.join("stdx_repo")
     }
 
     pub fn docs_source_dir(&self) -> PathBuf {

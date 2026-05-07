@@ -57,6 +57,10 @@ pub struct ServerOptions {
     )]
     pub runtime_version: Option<String>,
 
+    /// Extended stdlib (stdx) documentation version (git tag, defaults to docs-version)
+    #[arg(long = "stdx-version", env = "CANGJIE_STDX_VERSION", global = true)]
+    pub stdx_version: Option<String>,
+
     /// Documentation language (zh/en)
     #[arg(
         long,
@@ -171,6 +175,10 @@ impl ServerOptions {
             docs_version: self.docs_version.clone(),
             runtime_version: self
                 .runtime_version
+                .clone()
+                .unwrap_or_else(|| self.docs_version.clone()),
+            stdx_version: self
+                .stdx_version
                 .clone()
                 .unwrap_or_else(|| self.docs_version.clone()),
             docs_lang: self.lang,

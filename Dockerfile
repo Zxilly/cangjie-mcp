@@ -47,6 +47,8 @@ RUN apt-get update \
 COPY --from=builder /usr/local/bin/cangjie-mcp /usr/local/bin/cangjie-mcp
 
 ARG CANGJIE_DOCS_VERSION=dev
+ARG CANGJIE_RUNTIME_VERSION=dev
+ARG CANGJIE_STDX_VERSION=dev
 ARG CANGJIE_DOCS_LANG=zh
 ARG OPENAI_EMBEDDING_MODEL=BAAI/bge-m3
 ARG OPENAI_BASE_URL=https://api.siliconflow.cn/v1
@@ -62,6 +64,8 @@ RUN --mount=type=secret,id=OPENAI_API_KEY \
     OPENAI_BASE_URL="${OPENAI_BASE_URL}" \
     cangjie-mcp index \
       --docs-version "${CANGJIE_DOCS_VERSION}" \
+      --runtime-version "${CANGJIE_RUNTIME_VERSION}" \
+      --stdx-version "${CANGJIE_STDX_VERSION}" \
       --lang "${CANGJIE_DOCS_LANG}" \
       --embedding openai \
       --data-dir /data
@@ -82,20 +86,32 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Re-declare build ARGs so they carry into ENV defaults
 ARG CANGJIE_DOCS_VERSION=dev
+ARG CANGJIE_RUNTIME_VERSION=dev
+ARG CANGJIE_STDX_VERSION=dev
 ARG CANGJIE_DOCS_LANG=zh
 ARG OPENAI_EMBEDDING_MODEL=BAAI/bge-m3
 ARG OPENAI_BASE_URL=https://api.siliconflow.cn/v1
 
-# Bake build-time settings as runtime ENV defaults
+# Bake build-time settings as runtime ENV defaults (raw inputs the build was invoked with)
 ENV CANGJIE_DATA_DIR=/data
 ENV CANGJIE_EMBEDDING_TYPE=openai
 ENV CANGJIE_RERANK_TYPE=openai
 ENV CANGJIE_DOCS_VERSION=${CANGJIE_DOCS_VERSION}
+ENV CANGJIE_RUNTIME_VERSION=${CANGJIE_RUNTIME_VERSION}
+ENV CANGJIE_STDX_VERSION=${CANGJIE_STDX_VERSION}
 ENV CANGJIE_DOCS_LANG=${CANGJIE_DOCS_LANG}
 ENV OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL}
 ENV OPENAI_BASE_URL=${OPENAI_BASE_URL}
 # Record build-time model to a file (immune to runtime ENV overrides)
 RUN echo "${OPENAI_EMBEDDING_MODEL}" > /data/.build_embedding_model
+
+# Fallback labels for direct `docker build` (raw inputs); publish.py overrides these
+# with resolved versions + versions-hash via `--label` on the CLI.
+LABEL org.cangjie-mcp.docs-version="${CANGJIE_DOCS_VERSION}" \
+      org.cangjie-mcp.runtime-version="${CANGJIE_RUNTIME_VERSION}" \
+      org.cangjie-mcp.stdx-version="${CANGJIE_STDX_VERSION}" \
+      org.cangjie-mcp.docs-lang="${CANGJIE_DOCS_LANG}" \
+      org.cangjie-mcp.embedding-model="${OPENAI_EMBEDDING_MODEL}"
 
 USER nonroot
 
