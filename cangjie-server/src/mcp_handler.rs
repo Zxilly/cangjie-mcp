@@ -287,7 +287,7 @@ impl CangjieServer {
         let mut terms: Vec<String> = jieba
             .cut_for_search(&lower, true)
             .into_iter()
-            .map(|t| t.trim().to_string())
+            .map(|t| t.word.trim().to_string())
             .filter(|t| !t.is_empty())
             .collect();
 
@@ -572,7 +572,11 @@ impl CangjieServer {
 
 // ── ServerHandler impl ──────────────────────────────────────────────────────
 
-#[tool_handler]
+// rmcp 1.7's `#[tool_handler]` defaults to the static `Self::tool_router()`,
+// which would expose every tool unconditionally. Point it back at the
+// instance field so the conditional router from `build_tool_router()` (LSP
+// tool only when `cangjie_lsp::is_available()`) is what's actually served.
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for CangjieServer {
     fn get_info(&self) -> ServerInfo {
         #[cfg(feature = "lsp")]

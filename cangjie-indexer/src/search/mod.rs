@@ -40,6 +40,7 @@ fn generate_query_variants(query: &str, max_variants: usize) -> Vec<String> {
     let tokens: Vec<&str> = GLOBAL_JIEBA
         .cut_for_search(&lower, true)
         .into_iter()
+        .map(|t| t.word)
         .filter(|w| !w.trim().is_empty())
         .collect();
 

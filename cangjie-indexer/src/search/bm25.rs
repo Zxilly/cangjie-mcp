@@ -40,8 +40,8 @@ impl Tokenizer for JiebaTokenizer {
         let mut tokens = Vec::new();
         let mut offset = 0;
 
-        for word in words {
-            let word = word.trim();
+        for token in words {
+            let word = token.word.trim();
             if word.is_empty() {
                 continue;
             }
@@ -278,6 +278,7 @@ impl BM25Store {
             let tokens: Vec<&str> = jieba
                 .cut_for_search(&query_lower, true)
                 .into_iter()
+                .map(|t| t.word)
                 .filter(|w| !w.trim().is_empty())
                 .collect();
 
@@ -307,7 +308,7 @@ impl BM25Store {
             };
 
             let top_docs = searcher
-                .search(&final_query, &TopDocs::with_limit(top_k))
+                .search(&final_query, &TopDocs::with_limit(top_k).order_by_score())
                 .context("Search failed")?;
 
             let mut results = Vec::new();
