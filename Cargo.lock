@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-core"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "dirs",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-indexer"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-lsp"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp-cli"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "cangjie-core",
@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-mcp-server"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -750,7 +750,7 @@ dependencies = [
 
 [[package]]
 name = "cangjie-server"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-trait",
