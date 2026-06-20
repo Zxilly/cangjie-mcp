@@ -18,7 +18,7 @@ use cangjie_indexer::IndexMetadata;
 use cangjie_server::http::create_http_app;
 use cangjie_server::sse::create_sse_router;
 use cangjie_server::streamable::{create_mcp_service, CancellationToken, McpServerConfig};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Parser)]
 #[command(
@@ -250,7 +250,16 @@ async fn main() -> Result<()> {
         None
     };
 
-    app = app.layer(CorsLayer::permissive());
+    // Browsers only surface non-safelisted response headers to JS when they are
+    // named in Access-Control-Expose-Headers. `permissive()` emits the wildcard
+    // `*`, which is ignored for credentialed requests and handled inconsistently
+    // across clients, so the MCP session headers must be listed explicitly.
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .expose_headers(cangjie_server::streamable::mcp_exposed_headers());
+    app = app.layer(cors);
 
     let bind_addr = format!("{}:{}", cli.host, cli.port);
     info!("Starting HTTP server on {bind_addr}...");
