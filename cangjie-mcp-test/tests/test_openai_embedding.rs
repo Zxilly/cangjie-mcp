@@ -110,7 +110,6 @@ async fn test_openai_embed_multiple_texts() {
         .unwrap();
 
     assert_eq!(embeddings.len(), 3);
-    // All should have the same dimension
     let dim = embeddings[0].len();
     for (i, emb) in embeddings.iter().enumerate() {
         assert_eq!(emb.len(), dim, "embedding {} has different dimension", i);

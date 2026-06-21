@@ -1,12 +1,10 @@
-//! Shared test helpers for cangjie-indexer tests.
-//!
-//! Provides common git repository setup utilities used across multiple test modules.
+//! Shared test helpers: git repository setup utilities used across test modules.
 
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// Git commit helper: runs `git init`, `git add .`, `git commit` in the given directory.
+/// Runs `git init`, `git add .`, `git commit` in `dir`.
 pub fn git_init_and_commit(dir: &Path) {
     let run = |args: &[&str]| {
         Command::new("git")

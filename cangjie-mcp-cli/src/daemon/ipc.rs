@@ -3,8 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-// ── Macros for AsyncRead/AsyncWrite delegation ─────────────────────────────
-
+// Delegates AsyncRead/AsyncWrite to the inner platform-specific stream variant.
 macro_rules! impl_async_io {
     ($stream_type:ident, $( $variant:ident ),+) => {
         impl AsyncRead for $stream_type {
@@ -45,8 +44,6 @@ macro_rules! impl_async_io {
     };
 }
 
-// ── Client-side stream ─────────────────────────────────────────────────────
-
 pub enum IpcStream {
     #[cfg(unix)]
     Unix(tokio::net::UnixStream),
@@ -59,8 +56,6 @@ impl_async_io!(IpcStream, Unix);
 #[cfg(windows)]
 impl_async_io!(IpcStream, Pipe);
 
-// ── Server-side stream ─────────────────────────────────────────────────────
-
 pub enum ServerIpcStream {
     #[cfg(unix)]
     Unix(tokio::net::UnixStream),
@@ -72,8 +67,6 @@ pub enum ServerIpcStream {
 impl_async_io!(ServerIpcStream, Unix);
 #[cfg(windows)]
 impl_async_io!(ServerIpcStream, Pipe);
-
-// ── Listener ───────────────────────────────────────────────────────────────
 
 pub struct IpcListener {
     #[cfg(unix)]
@@ -129,8 +122,6 @@ impl IpcListener {
         }
     }
 }
-
-// ── Client connect ─────────────────────────────────────────────────────────
 
 pub async fn ipc_connect() -> io::Result<IpcStream> {
     #[cfg(unix)]

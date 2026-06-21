@@ -16,8 +16,6 @@ use cangjie_core::config::INDEX_WRITER_HEAP_BYTES;
 
 const TOKENIZER_NAME: &str = "jieba";
 
-// -- Jieba Tokenizer for Tantivy ---------------------------------------------
-
 #[derive(Clone)]
 struct JiebaTokenizer {
     jieba: Arc<Jieba>,
@@ -88,8 +86,6 @@ impl TokenStream for JiebaTokenStream {
         &mut self.token
     }
 }
-
-// -- BM25 Store --------------------------------------------------------------
 
 pub struct BM25Store {
     index_dir: PathBuf,
@@ -273,7 +269,7 @@ impl BM25Store {
         let jieba = Arc::clone(&GLOBAL_JIEBA);
 
         tokio::task::spawn_blocking(move || {
-            // Tokenize query with jieba for better CJK search
+            // Tokenize with jieba for better CJK search.
             let query_lower = query.to_lowercase();
             let tokens: Vec<&str> = jieba
                 .cut_for_search(&query_lower, true)
@@ -295,7 +291,7 @@ impl BM25Store {
                 .parse_query(&query_str)
                 .unwrap_or_else(|_| Box::new(tantivy::query::AllQuery));
 
-            // When category is specified, use BooleanQuery to pre-filter at the index level
+            // Pre-filter by category at the index level via BooleanQuery.
             let final_query: Box<dyn tantivy::query::Query> = if let Some(ref cat) = category {
                 let category_term = Term::from_field_text(field_category, cat);
                 let category_query = TermQuery::new(category_term, IndexRecordOption::Basic);

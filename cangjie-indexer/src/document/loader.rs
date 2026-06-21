@@ -4,8 +4,6 @@ use std::sync::LazyLock;
 use super::CODE_BLOCK_RE;
 use crate::{DocData, DocMetadata};
 
-// -- Title extraction --------------------------------------------------------
-
 static H1_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#\s+(.+)$").unwrap());
 
 pub fn extract_title_from_content(content: &str) -> String {
@@ -15,8 +13,6 @@ pub fn extract_title_from_content(content: &str) -> String {
         .map(|m| m.as_str().trim().to_string())
         .unwrap_or_default()
 }
-
-// -- Document loading from files on disk -------------------------------------
 
 pub fn load_document_from_content(
     content: String,

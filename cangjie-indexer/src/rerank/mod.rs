@@ -6,8 +6,6 @@ use anyhow::Result;
 use crate::SearchResult;
 use cangjie_core::config::{RerankType, Settings};
 
-// -- RerankerKind enum -------------------------------------------------------
-
 /// Enum dispatch for reranking -- the variant set is known and fixed,
 /// which avoids async trait object-safety issues.
 pub enum RerankerKind {
@@ -36,8 +34,6 @@ impl RerankerKind {
         !matches!(self, RerankerKind::NoOp)
     }
 }
-
-// -- Factory -----------------------------------------------------------------
 
 pub async fn create_reranker(settings: &Settings) -> Result<RerankerKind> {
     match settings.rerank_type {

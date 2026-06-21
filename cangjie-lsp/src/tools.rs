@@ -9,8 +9,6 @@ use serde_json::Value;
 
 use crate::utils::uri_to_path;
 
-// -- Output types ------------------------------------------------------------
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LocationResult {
     pub file_path: String,
@@ -151,8 +149,6 @@ pub struct TypeHierarchyResult {
     pub count: usize,
 }
 
-// -- Helpers -----------------------------------------------------------------
-
 fn severity_name(severity: Option<DiagnosticSeverity>) -> &'static str {
     match severity {
         Some(DiagnosticSeverity::ERROR) => "error",
@@ -243,8 +239,6 @@ fn validate_file_path(file_path: &str) -> Option<String> {
     None
 }
 
-// -- Conversion helpers ------------------------------------------------------
-
 fn location_to_result(loc: &Location) -> LocationResult {
     LocationResult {
         file_path: uri_to_path(loc.uri.as_str()).to_string_lossy().to_string(),
@@ -290,8 +284,6 @@ fn extract_diagnostic_code(code: &NumberOrString) -> String {
         NumberOrString::String(s) => s.clone(),
     }
 }
-
-// -- Tool execution functions ------------------------------------------------
 
 pub fn process_definition(result: &Value) -> DefinitionResult {
     let response: Option<GotoDefinitionResponse> = serde_json::from_value(result.clone()).ok();
@@ -764,7 +756,6 @@ mod tests {
 
     #[test]
     fn test_validate_file_path_not_cj_extension() {
-        // Use a file that exists but isn't .cj
         let result = validate_file_path(env!("CARGO_MANIFEST_DIR"));
         assert!(result.is_some());
         // A directory is "not a file"

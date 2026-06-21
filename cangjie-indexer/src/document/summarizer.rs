@@ -131,7 +131,6 @@ pub(crate) async fn apply_context_summaries(
         }
     }
 
-    // Apply cached summaries to chunks
     for chunk in chunks.iter_mut() {
         if let Some(summary) = cache.get(&chunk.metadata.chunk_id) {
             chunk.text = format!("<context>{summary}</context>\n\n{}", chunk.text);

@@ -10,14 +10,10 @@ use serde::{Deserialize, Serialize};
 use cangjie_indexer::search::LocalSearchIndex;
 use cangjie_indexer::IndexMetadata;
 
-// ── Shared state ────────────────────────────────────────────────────────────
-
 struct AppState {
     search_index: Arc<LocalSearchIndex>,
     index_metadata: IndexMetadata,
 }
-
-// ── Request/Response types ──────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct SearchRequest {
@@ -60,8 +56,6 @@ struct InfoResponse {
     document_count: usize,
     search_mode: cangjie_indexer::SearchMode,
 }
-
-// ── Route handlers ──────────────────────────────────────────────────────────
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
@@ -111,8 +105,6 @@ async fn search_handler(
 
     Ok(Json(response))
 }
-
-// ── App builder ─────────────────────────────────────────────────────────────
 
 pub async fn create_http_app(
     search_index: Arc<LocalSearchIndex>,

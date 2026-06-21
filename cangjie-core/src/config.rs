@@ -4,8 +4,6 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-// ── Defaults ────────────────────────────────────────────────────────────────
-
 pub const DEFAULT_DOCS_VERSION: &str = "dev";
 pub const DOCS_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_docs.git";
 pub const RUNTIME_REPO_URL: &str = "https://gitcode.com/Cangjie/cangjie_runtime.git";
@@ -35,8 +33,6 @@ pub const DEFAULT_SERVER_ENABLE_HTTP2: bool = true;
 pub const DEFAULT_MAX_PER_FILE: usize = 2;
 pub const DEFAULT_MIN_VECTOR_SCORE: f64 = 0.3;
 
-// ── Constants ───────────────────────────────────────────────────────────────
-
 pub const MIN_TOP_K: usize = 1;
 pub const MAX_TOP_K: usize = 20;
 pub const DEFAULT_TOP_K: usize = 5;
@@ -54,8 +50,6 @@ pub fn get_default_data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join(DEFAULT_DATA_DIR_NAME)
 }
-
-// ── Type enums ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -175,8 +169,6 @@ impl FromStr for DocLang {
     }
 }
 
-// ── PrebuiltMode ────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrebuiltMode {
     Off,
@@ -189,8 +181,6 @@ impl PrebuiltMode {
         !matches!(self, PrebuiltMode::Off)
     }
 }
-
-// ── Settings ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -285,8 +275,6 @@ impl Settings {
     }
 }
 
-// ── IndexInfo ───────────────────────────────────────────────────────────────
-
 fn sanitize_for_path(name: &str) -> String {
     name.replace([':', '/'], "--")
 }
@@ -349,8 +337,6 @@ impl IndexInfo {
             .join(self.lang.source_dir_name())
     }
 }
-
-// ── Startup Info ────────────────────────────────────────────────────────────
 
 pub fn log_startup_info(settings: &Settings, index_info: &IndexInfo) {
     use tracing::info;

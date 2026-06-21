@@ -8,12 +8,10 @@ use cangjie_indexer::embedding::{EmbedKind, Embedder};
 use cangjie_indexer::search::vector::VectorStore;
 use cangjie_indexer::{DocMetadata, TextChunk};
 
-// -- MockEmbedder -------------------------------------------------------------
-
 const DIM: usize = 8;
 
-/// A deterministic embedder that produces normalized vectors derived from a hash
-/// of the input text.  No API key or model required.
+/// Deterministic embedder producing normalized vectors hashed from the input
+/// text. No API key or model required.
 struct MockEmbedder;
 
 impl MockEmbedder {
@@ -47,8 +45,6 @@ impl Embedder for MockEmbedder {
     }
 }
 
-// -- Helpers ------------------------------------------------------------------
-
 fn make_chunk(text: &str, category: &str, topic: &str) -> TextChunk {
     TextChunk {
         text: text.to_string(),
@@ -73,8 +69,6 @@ fn sample_chunks() -> Vec<TextChunk> {
         make_chunk("错误处理使用 try catch", "syntax", "errors"),
     ]
 }
-
-// -- Tests --------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_vector_store_open_empty() {
@@ -106,7 +100,6 @@ async fn test_vector_store_search_basic() {
     let query_emb = MockEmbedder::hash_to_vec("变量");
     let results = vs.search(&query_emb, 3, None).await.unwrap();
     assert!(!results.is_empty(), "Search should return results");
-    // All results should have valid metadata
     for r in &results {
         assert!(!r.text.is_empty());
         assert!(!r.metadata.file_path.is_empty());
@@ -121,7 +114,6 @@ async fn test_vector_store_search_returns_top_k() {
     let mut vs = VectorStore::open(tmp.path(), DIM).await.unwrap();
     let embedder = MockEmbedder;
 
-    // Build with 11 chunks
     let mut chunks = sample_chunks();
     for i in 0..6 {
         chunks.push(make_chunk(
@@ -200,18 +192,16 @@ async fn test_vector_store_rebuild_replaces_data() {
     let mut vs = VectorStore::open(tmp.path(), DIM).await.unwrap();
     let embedder = MockEmbedder;
 
-    // First build
     let chunks1 = vec![make_chunk("First version data", "v1", "old")];
     vs.build_from_chunks(&chunks1, &embedder, 64).await.unwrap();
 
-    // Second build replaces data
+    // Second build replaces, not appends
     let chunks2 = vec![make_chunk("Second version data", "v2", "new")];
     vs.build_from_chunks(&chunks2, &embedder, 64).await.unwrap();
 
     let query_emb = MockEmbedder::hash_to_vec("data");
     let results = vs.search(&query_emb, 10, None).await.unwrap();
 
-    // All results should be from v2
     for r in &results {
         assert_eq!(
             r.metadata.category, "v2",
@@ -234,7 +224,6 @@ async fn test_vector_store_reopen_persists() {
         assert!(vs.is_ready());
     }
 
-    // Reopen
     let vs2 = VectorStore::open(&path, DIM).await.unwrap();
     assert!(vs2.is_ready(), "Reopened store should still be ready");
 }

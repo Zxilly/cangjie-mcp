@@ -38,7 +38,6 @@ fn real_settings(data_dir: std::path::PathBuf) -> Settings {
 async fn build_real_index() -> (TempDir, BM25Store, usize) {
     let tmp = TempDir::new().unwrap();
 
-    // Clone and checkout
     let repo_dir = tmp.path().join("docs_repo");
     let mut git_mgr = GitManager::new(
         repo_dir.clone(),
@@ -46,17 +45,14 @@ async fn build_real_index() -> (TempDir, BM25Store, usize) {
     );
     git_mgr.ensure_cloned(false).await.unwrap();
 
-    // Load documents
     let source = GitDocumentSource::for_docs(repo_dir, DocLang::Zh).unwrap();
     let docs = source.load_all_documents().await.unwrap();
     let doc_count = docs.len();
     assert!(doc_count > 10, "should load many documents");
 
-    // Chunk
     let chunks = chunk_documents(docs, Some(6000), 200).await;
     assert!(!chunks.is_empty(), "chunking should produce chunks");
 
-    // Build BM25
     let bm25_dir = tmp.path().join("bm25_index");
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(&chunks).await.unwrap();
@@ -92,7 +88,7 @@ async fn test_real_docs_bm25_search_english_keyword() {
 async fn test_real_docs_bm25_search_with_category() {
     let (_tmp, store, _count) = build_real_index().await;
 
-    // Get a result first to find a real category
+    // Search once to discover a real category to filter on
     let all_results = store.search("仓颉", 10, None).await.unwrap();
     assert!(!all_results.is_empty());
 
@@ -113,7 +109,6 @@ async fn test_real_docs_search_relevance() {
     let results = store.search("错误处理 异常", 5, None).await.unwrap();
     assert!(!results.is_empty());
 
-    // At least one result should contain error/exception related content
     let relevant = results.iter().any(|r| {
         r.text.contains("错误")
             || r.text.contains("异常")
@@ -172,7 +167,6 @@ async fn test_real_docs_http_app_search() {
 
     let app = create_http_app(Arc::new(search_index), metadata).await;
 
-    // Test search
     let req = Request::builder()
         .method("POST")
         .uri("/search")
@@ -204,7 +198,6 @@ async fn test_initialize_and_index_full_pipeline() {
         "BM25 index should exist on disk"
     );
 
-    // Metadata file should have been written
     let metadata_path = index_info.index_dir().join("index_metadata.json");
     assert!(metadata_path.exists(), "index_metadata.json should exist");
     let meta_content = std::fs::read_to_string(&metadata_path).unwrap();
@@ -218,11 +211,10 @@ async fn test_initialize_and_index_is_idempotent() {
     let tmp = TempDir::new().unwrap();
     let settings = real_settings(tmp.path().to_path_buf());
 
-    // First build
     let mut index1 = LocalSearchIndex::new(settings.clone()).await;
     let info1 = index1.init().await.unwrap();
 
-    // Second build should detect existing index and skip
+    // Second init should detect the existing index and skip rebuilding
     let mut index2 = LocalSearchIndex::new(settings).await;
     let info2 = index2.init().await.unwrap();
 

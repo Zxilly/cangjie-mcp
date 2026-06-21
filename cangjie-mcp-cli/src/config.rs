@@ -73,15 +73,14 @@ const FIELD_ENV_MAP: &[(&str, &str)] = &[
     ("log_file", "CANGJIE_LOG_FILE"),
 ];
 
-/// Load config file and set environment variables for any keys not already present.
-/// This must be called BEFORE `CangjieArgs::parse()` so clap picks up the values.
-///
+/// Load config file and set env vars for any keys not already present.
+/// Must be called BEFORE `CangjieArgs::parse()` so clap picks up the values.
 /// Priority: CLI args > env vars > config file > defaults
 pub fn load_config_to_env() {
     let path = config_file();
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
-        Err(_) => return, // No config file — use defaults
+        Err(_) => return,
     };
 
     let config: FileConfig = match toml::from_str(&content) {
@@ -92,14 +91,13 @@ pub fn load_config_to_env() {
         }
     };
 
-    // Convert config to a TOML table for generic field access
     let table = match toml::Value::try_from(&config) {
         Ok(toml::Value::Table(t)) => t,
         _ => return,
     };
 
     for &(field, env_var) in FIELD_ENV_MAP {
-        // Only set if env var is not already present (env > config file)
+        // env var takes priority over config file
         if std::env::var(env_var).is_ok() {
             continue;
         }

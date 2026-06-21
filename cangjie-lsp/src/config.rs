@@ -4,8 +4,6 @@ use std::path::PathBuf;
 use crate::dependency::DependencyResolver;
 use serde::Serialize;
 
-// -- LSP Settings ------------------------------------------------------------
-
 pub struct LSPSettings {
     pub sdk_path: PathBuf,
     pub workspace_path: PathBuf,
@@ -87,8 +85,6 @@ impl LSPSettings {
     }
 }
 
-// -- LSP Init Options --------------------------------------------------------
-
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LSPInitOptions {
@@ -111,8 +107,6 @@ pub struct LSPInitOptions {
     #[serde(default)]
     pub extension_path: String,
 }
-
-// -- Build init options ------------------------------------------------------
 
 pub fn build_init_options(settings: &LSPSettings) -> (LSPInitOptions, String) {
     let mut resolver = DependencyResolver::new(&settings.workspace_path);
@@ -263,7 +257,6 @@ mod tests {
 
     #[test]
     fn test_validate_with_existing_workspace() {
-        // Use a directory that exists (but SDK won't)
         let settings = LSPSettings {
             sdk_path: PathBuf::from("/nonexistent/sdk"),
             workspace_path: std::env::current_dir().unwrap(),
@@ -309,7 +302,6 @@ mod tests {
             disable_auto_import: false,
         };
         let (options, require_path) = build_init_options(&settings);
-        // No cjpm.toml means no modules found
         assert!(options.multi_module_option.is_empty() || options.multi_module_option.len() == 1);
         assert!(require_path.is_empty());
     }
@@ -331,7 +323,6 @@ mod tests {
             disable_auto_import: false,
         };
         let (options, require_path) = build_init_options(&settings);
-        // Should have at least one module option
         assert!(!options.multi_module_option.is_empty());
         assert!(require_path.is_empty());
     }
@@ -372,7 +363,6 @@ mod tests {
             disable_auto_import: true,
         };
         let args = settings.get_lsp_args();
-        // Should have: "src", "--disableAutoImport", "-V", "--enable-log=true", "--log-path=..."
         assert_eq!(args[0], "src");
         assert!(args.contains(&"--disableAutoImport".to_string()));
         assert!(args.contains(&"-V".to_string()));

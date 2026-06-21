@@ -26,8 +26,8 @@ fn code_block_density(text: &str) -> f64 {
     code_chars as f64 / text.len() as f64
 }
 
-/// Determine the character budget for a document based on its code block density.
-/// If `user_override` is set, returns that value directly.
+/// Character budget for a document based on its code block density, unless
+/// overridden by the user.
 fn compute_char_budget(text: &str, user_override: Option<usize>) -> usize {
     if let Some(max) = user_override {
         return max;
@@ -42,8 +42,8 @@ fn compute_char_budget(text: &str, user_override: Option<usize>) -> usize {
     }
 }
 
-/// Split a Cangjie code block using tree-sitter if it exceeds the character budget.
-/// Returns a vec of code strings (without fence markers).
+/// Split a Cangjie code block (fence markers stripped) with tree-sitter if it
+/// exceeds the character budget.
 fn split_code_block(code: &str, max_chars: usize) -> Vec<String> {
     if code.len() <= max_chars {
         return vec![code.to_string()];
@@ -64,9 +64,8 @@ fn split_code_block(code: &str, max_chars: usize) -> Vec<String> {
     }
 }
 
-/// If a chunk contains Cangjie code blocks that exceed `max_chars`,
-/// split them using CodeSplitter and return multiple sub-chunks.
-/// Otherwise returns the chunk as-is in a single-element vec.
+/// Split any Cangjie code blocks in a chunk that exceed `max_chars` into
+/// multiple sub-chunks; otherwise return the chunk unchanged.
 fn split_chunk_code_blocks(chunk: &str, max_chars: usize) -> Vec<String> {
     let mut result = Vec::new();
     let mut last_end = 0;
@@ -130,10 +129,7 @@ fn split_chunk_code_blocks(chunk: &str, max_chars: usize) -> Vec<String> {
     result
 }
 
-/// Parse the heading hierarchy active at each byte offset of the document.
-///
-/// Returns a sorted vec of `(byte_offset, level, heading_text)` for every
-/// heading found in `text`.
+/// Sorted `(byte_offset, level, heading_text)` for every heading in `text`.
 fn parse_headings(text: &str) -> Vec<(usize, usize, String)> {
     HEADING_RE
         .captures_iter(text)
@@ -149,7 +145,6 @@ fn parse_headings(text: &str) -> Vec<(usize, usize, String)> {
 /// Build a breadcrumb string like `[H1 > H2 > H3]` for the heading stack
 /// that is active at `byte_offset` in the original document.
 fn heading_breadcrumb(headings: &[(usize, usize, String)], byte_offset: usize) -> Option<String> {
-    // Walk headings up to byte_offset, maintaining a stack by level.
     let mut stack: Vec<(usize, &str)> = Vec::new(); // (level, title)
 
     for (off, level, title) in headings {
@@ -189,20 +184,16 @@ fn chunk_byte_offset(full_text: &str, chunk_text: &str) -> usize {
     chunk_start.saturating_sub(full_start)
 }
 
-/// Count the number of fenced code blocks (``` ... ```) in a chunk.
 fn count_code_blocks(text: &str) -> usize {
     CODE_BLOCK_RE.find_iter(text).count()
 }
 
-/// Split a document into chunks using markdown-aware splitting with
-/// dynamic content detection and two-stage code splitting.
+/// Split a document into chunks in two stages: markdown structure via
+/// `MarkdownSplitter`, then oversized Cangjie code blocks via `CodeSplitter`.
 ///
-/// Stage 1: Split by markdown structure using `MarkdownSplitter`.
-/// Stage 2: For each chunk, split oversized Cangjie code blocks using `CodeSplitter`.
-///
-/// Each chunk is prefixed with its heading breadcrumb (e.g. `[H1 > H2]\n\n`)
-/// to provide hierarchical context. Adjacent chunks share a small overlap
-/// to preserve context across boundaries.
+/// Each chunk is prefixed with its heading breadcrumb (e.g. `[H1 > H2]\n\n`),
+/// and adjacent chunks share a small overlap to preserve context across
+/// boundaries.
 pub fn chunk_document(
     doc: &DocData,
     max_chunk_chars: Option<usize>,
@@ -228,15 +219,10 @@ pub fn chunk_document(
 
     for raw_chunk in &raw_chunks {
         let byte_off = chunk_byte_offset(text, raw_chunk);
-
-        // Stage 2: split oversized code blocks
         let sub_chunks = split_chunk_code_blocks(raw_chunk, budget);
-
-        // Build heading prefix.
         let prefix = heading_breadcrumb(&headings, byte_off);
 
         for sub_chunk in &sub_chunks {
-            // Assemble final chunk text.
             let mut assembled = String::new();
             if let Some(pfx) = &prefix {
                 assembled.push_str(pfx);
@@ -277,30 +263,24 @@ pub fn chunk_document(
     results
 }
 
-/// Strip indexing artifact prefixes added during chunk assembly.
-///
-/// Removes in order:
-/// - `<context>...</context>\n\n` context summary prefix
-/// - `[H1 > H2]\n\n` heading breadcrumb prefix
-/// - `...<overlap text>\n\n` previous chunk overlap prefix
+/// Strip indexing artifact prefixes added during chunk assembly, in order:
+/// `<context>...</context>\n\n`, `[H1 > H2]\n\n` breadcrumb, then
+/// `...<overlap>\n\n`.
 pub fn strip_chunk_artifacts(text: &str) -> &str {
     let mut s = text;
 
-    // Strip <context>...</context>\n\n
     if let Some(rest) = s.strip_prefix("<context>") {
         if let Some(end) = rest.find("</context>\n\n") {
             s = &rest[end + "</context>\n\n".len()..];
         }
     }
 
-    // Strip [breadcrumb]\n\n
     if let Some(rest) = s.strip_prefix('[') {
         if let Some(end) = rest.find("]\n\n") {
             s = &rest[end + "]\n\n".len()..];
         }
     }
 
-    // Strip ...overlap\n\n
     if let Some(rest) = s.strip_prefix("...") {
         if let Some(end) = rest.find("\n\n") {
             s = &rest[end + "\n\n".len()..];
@@ -351,8 +331,6 @@ mod tests {
         }
     }
 
-    // ── code_block_density tests ───────────────────────────────────────────
-
     #[test]
     fn test_code_block_density_high() {
         let text = "intro\n\n```cangjie\nfunc main() {\n    let x = 1\n    let y = 2\n    let z = 3\n    println(x)\n    println(y)\n    println(z)\n}\n```\n";
@@ -376,8 +354,6 @@ mod tests {
         );
     }
 
-    // ── compute_char_budget tests ──────────────────────────────────────────
-
     #[test]
     fn test_compute_char_budget_override() {
         assert_eq!(compute_char_budget("anything", Some(999)), 999);
@@ -396,8 +372,6 @@ mod tests {
         let budget = compute_char_budget(&text, None);
         assert_eq!(budget, DEFAULT_TEXT_HEAVY_CHARS);
     }
-
-    // ── split_code_block tests ─────────────────────────────────────────────
 
     #[test]
     fn test_split_cangjie_code_block() {
@@ -419,8 +393,6 @@ mod tests {
         let chunks = split_code_block(code, 500);
         assert_eq!(chunks.len(), 1, "Small code block should not be split");
     }
-
-    // ── chunk_document tests ───────────────────────────────────────────────
 
     #[test]
     fn test_chunk_document_dynamic_small_budget() {
@@ -489,8 +461,8 @@ mod tests {
     fn test_heading_breadcrumb_basic() {
         let headings = parse_headings("# Title\n\nText\n\n## Sub\n\nMore");
         assert_eq!(headings.len(), 2);
-        assert_eq!(headings[0].1, 1); // H1
-        assert_eq!(headings[1].1, 2); // H2
+        assert_eq!(headings[0].1, 1);
+        assert_eq!(headings[1].1, 2);
     }
 
     #[test]
@@ -498,7 +470,6 @@ mod tests {
         let text = "# Main\n\n## Sub Section\n\nContent here.";
         let doc = make_doc(text);
         let chunks = chunk_document(&doc, Some(5000), 200);
-        // The single chunk should contain the heading breadcrumb prefix
         assert!(
             chunks[0].text.contains("[Main]") || chunks[0].text.contains("[Main > Sub Section]"),
             "Chunk should have heading breadcrumb, got: {}",

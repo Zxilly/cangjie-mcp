@@ -112,7 +112,6 @@ impl VectorStore {
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().expect("mutex poisoned");
 
-            // Drop old tables and recreate
             conn.execute_batch("DROP TABLE IF EXISTS chunks_vec; DROP TABLE IF EXISTS chunks;")
                 .context("Failed to drop old tables")?;
 
@@ -241,7 +240,6 @@ impl VectorStore {
                 });
 
                 if let Ok((text, file_path, cat, topic, title, has_code, chunk_id)) = row {
-                    // Category filter
                     if let Some(ref filter_cat) = category_owned {
                         if cat != *filter_cat {
                             continue;
@@ -327,7 +325,7 @@ pub async fn expand_with_window(
         if let Some((file_path, idx)) = parse_chunk_id(&result.metadata.chunk_id) {
             let mut parts: Vec<String> = Vec::new();
 
-            // Fetch preceding chunks
+            // Preceding chunks.
             for w in (1..=window).rev() {
                 if idx >= w {
                     let neighbor_id = format!("{}#{}", file_path, idx - w);
@@ -337,10 +335,9 @@ pub async fn expand_with_window(
                 }
             }
 
-            // Current chunk
             parts.push(result.text.clone());
 
-            // Fetch following chunks
+            // Following chunks.
             for w in 1..=window {
                 let neighbor_id = format!("{}#{}", file_path, idx + w);
                 if let Some(text) = vector_store.get_chunk_text(&neighbor_id).await {

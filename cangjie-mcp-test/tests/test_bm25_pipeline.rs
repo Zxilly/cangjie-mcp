@@ -35,7 +35,6 @@ async fn test_search_chinese_query() {
         "Chinese query '变量声明' should find results"
     );
 
-    // Should match the variables chunk
     let has_variable_result = results
         .iter()
         .any(|r| r.metadata.topic == "variables" || r.text.contains("变量"));
@@ -80,14 +79,12 @@ async fn test_load_existing_index() {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25_reload");
 
-    // Build
     {
         let mut store = BM25Store::new(bm25_dir.clone());
         let chunks = sample_chunks();
         store.build_from_chunks(&chunks).await.unwrap();
     }
 
-    // Reload
     let mut store2 = BM25Store::new(bm25_dir);
     let loaded = store2.load().await.unwrap();
     assert!(loaded, "index should be loadable after build");

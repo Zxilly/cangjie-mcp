@@ -60,7 +60,6 @@ async fn sse_handler(State(state): State<SseState>) -> impl IntoResponse {
         .await
         .insert(session_id.clone(), client_tx);
 
-    // Spawn the MCP server with a (Sink, Stream) transport
     let server = (state.server_factory)();
     let sid = session_id.clone();
     tokio::spawn(async move {
@@ -75,7 +74,6 @@ async fn sse_handler(State(state): State<SseState>) -> impl IntoResponse {
         }
     });
 
-    // Build SSE event stream via a futures channel (implements Stream directly)
     let (mut event_tx, event_rx) = futures_mpsc::channel::<Result<Event, Infallible>>(32);
     let sessions = state.sessions.clone();
     let sid = session_id.clone();

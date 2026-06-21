@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-// -- Shared types ------------------------------------------------------------
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchResultMetadata {
     pub file_path: String,

@@ -79,7 +79,6 @@ async fn test_list_md_files() {
 async fn test_read_file_from_tree() {
     let (_tmp, mgr) = clone_repo().await;
 
-    // The repo should have a top-level docs directory with some markdown
     let files = mgr
         .list_md_files("docs/dev-guide/source_zh_cn")
         .await

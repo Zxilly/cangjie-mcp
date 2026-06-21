@@ -12,20 +12,13 @@
 use cangjie_lsp as lsp;
 use cangjie_lsp::config::LSPSettings;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Guard to serialize async tests that use the global `LSP_CLIENT`.
-///
-/// `lsp::init()` / `lsp::shutdown()` operate on a process-wide static.
-/// Cargo runs tests in parallel, so concurrent init/shutdown calls would
-/// race (overwriting each other's client, orphaning LSP processes, etc.).
-/// Holding this lock ensures only one lifecycle test runs at a time.
+/// Serializes async lifecycle tests: `lsp::init()`/`shutdown()` operate on a
+/// process-wide static, so parallel test runs would race (clobbering the client,
+/// orphaning LSP processes). Only one lifecycle test holds this lock at a time.
 static LSP_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Return `Some(LSPSettings)` if CANGJIE_HOME is set and the SDK looks valid,
-/// otherwise `None` (the caller should skip the test).
+/// `Some(LSPSettings)` if CANGJIE_HOME is set and the SDK validates, else `None`
+/// (the caller should skip the test).
 fn try_detect_settings() -> Option<LSPSettings> {
     let settings = lsp::detect_settings(None)?;
     let errors = settings.validate();
@@ -40,7 +33,7 @@ fn try_detect_settings() -> Option<LSPSettings> {
     }
 }
 
-/// Macro that skips the test when no valid Cangjie SDK is found.
+/// Skip the test when no valid Cangjie SDK is found.
 macro_rules! require_sdk {
     () => {
         match try_detect_settings() {
@@ -53,11 +46,9 @@ macro_rules! require_sdk {
     };
 }
 
-/// Detect the cjc-version to use in cjpm.toml.
-///
-/// Runs `cjc --version` via the envsetup wrapper and extracts the major.minor.patch
-/// portion (e.g. "1.1.0" from "Cangjie Compiler: 1.1.0-alpha.20260205020001 (cjnative)").
-/// Falls back to "0.53.4" if detection fails.
+/// Detect the cjc-version for cjpm.toml by running `cjc --version` and extracting
+/// the major.minor.patch (e.g. "1.1.0" from "Cangjie Compiler: 1.1.0-alpha.xxx
+/// (cjnative)"). Falls back to "0.53.4" if detection fails.
 fn detect_cjc_version(settings: &LSPSettings) -> String {
     let cjc_path =
         settings
@@ -83,10 +74,6 @@ fn detect_cjc_version(settings: &LSPSettings) -> String {
     }
     "0.53.4".to_string()
 }
-
-// ---------------------------------------------------------------------------
-// Tests: SDK validation (sync)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_is_available_matches_env() {
@@ -154,20 +141,14 @@ fn test_validate_passes_with_real_sdk() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Tests: LSP lifecycle (async)
-// ---------------------------------------------------------------------------
-
 #[tokio::test]
 async fn test_lsp_init_and_shutdown() {
     let _lock = LSP_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let settings = require_sdk!();
 
-    // init() should succeed with a real SDK
     let ok = lsp::init(settings).await;
     assert!(ok, "lsp::init() should succeed with a valid SDK");
 
-    // Client should be alive
     {
         let guard = lsp::get_client().await;
         assert!(guard.is_some(), "client should be available after init");
@@ -178,10 +159,8 @@ async fn test_lsp_init_and_shutdown() {
         assert!(client_ref.is_alive(), "client should be alive");
     }
 
-    // Shutdown
     lsp::shutdown().await;
 
-    // Client should be gone
     let guard = lsp::get_client().await;
     assert!(guard.is_none(), "client should be None after shutdown");
 }
@@ -198,7 +177,6 @@ async fn test_lsp_init_with_workspace() {
     let cjc_version = detect_cjc_version(&base);
     let tmp = tempfile::TempDir::new().unwrap();
 
-    // Write a minimal cjpm.toml so the workspace is realistic
     std::fs::write(
         tmp.path().join("cjpm.toml"),
         format!("[package]\nname = \"testpkg\"\ncjc-version = \"{cjc_version}\"\n"),
@@ -219,7 +197,6 @@ async fn test_lsp_init_with_workspace() {
     let ok = lsp::init(settings).await;
     assert!(ok, "lsp::init() should succeed with temp workspace");
 
-    // Verify the client is alive
     {
         let guard = lsp::get_client().await;
         assert!(guard.is_some());
@@ -227,10 +204,6 @@ async fn test_lsp_init_with_workspace() {
 
     lsp::shutdown().await;
 }
-
-// ---------------------------------------------------------------------------
-// Tests: diagnostics via LSP (async, needs SDK)
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_lsp_diagnostics_on_valid_file() {
@@ -265,7 +238,6 @@ async fn test_lsp_diagnostics_on_valid_file() {
     let ok = lsp::init(settings).await;
     assert!(ok, "init should succeed");
 
-    // Request diagnostics — valid file should have no errors
     {
         let guard = lsp::get_client().await;
         assert!(guard.is_some());
@@ -277,10 +249,6 @@ async fn test_lsp_diagnostics_on_valid_file() {
 
     lsp::shutdown().await;
 }
-
-// ---------------------------------------------------------------------------
-// Tests: document symbol (async, needs SDK)
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_lsp_document_symbol() {

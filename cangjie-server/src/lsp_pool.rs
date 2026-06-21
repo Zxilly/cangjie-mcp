@@ -75,7 +75,6 @@ impl LspPool {
             entries.remove(workspace_path);
         }
 
-        // Create new client
         let settings = cangjie_lsp::detect_settings(Some(workspace_path.to_path_buf()))
             .ok_or_else(|| {
                 format!(

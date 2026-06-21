@@ -22,8 +22,6 @@ use cangjie_indexer::document::chunker::strip_chunk_artifacts;
 use cangjie_indexer::search::{LocalSearchIndex, RemoteSearchIndex};
 use cangjie_indexer::SearchResult;
 
-// ── Output models ───────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchResultItem {
     pub content: String,
@@ -84,8 +82,6 @@ fn format_results_markdown(result: &DocsSearchResult) -> String {
     out
 }
 
-// ── Internal state ──────────────────────────────────────────────────────────
-
 #[derive(Clone)]
 enum SearchBackend {
     Local(Arc<LocalSearchIndex>),
@@ -95,8 +91,6 @@ enum SearchBackend {
 struct InnerState {
     search: SearchBackend,
 }
-
-// ── MCP Server ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct CangjieServer {
@@ -175,8 +169,7 @@ impl CangjieServer {
         }
     }
 
-    /// Create a server with an LSP pool for daemon mode.
-    /// LSP clients are created on demand per workspace directory.
+    /// Create a server with an LSP pool for daemon mode (clients created on demand per workspace).
     #[cfg(feature = "lsp")]
     pub fn with_lsp_pool(settings: Settings, idle_timeout: std::time::Duration) -> Self {
         Self {
@@ -382,7 +375,7 @@ impl CangjieServer {
         let per_doc_limit = if top_k <= 3 { 1 } else { 2 };
         let limit = offset + top_k + 1;
 
-        // Strong duplicate suppression for near-identical snippets.
+        // Suppress near-identical snippets.
         let mut seen_text_keys: HashSet<String> = HashSet::new();
         let mut candidates: Vec<(SearchResult, f64)> = Vec::new();
         for (result, adjusted) in scored {
@@ -457,8 +450,6 @@ fn default_top_k() -> usize {
     DEFAULT_TOP_K
 }
 
-// ── Tool implementations ────────────────────────────────────────────────────
-
 #[tool_router]
 impl CangjieServer {
     #[tool(
@@ -475,7 +466,6 @@ impl CangjieServer {
         Parameters(params): Parameters<crate::lsp_tools::LspRequest>,
         meta: rmcp::model::Meta,
     ) -> String {
-        // Extract working directory from _meta header
         let working_dir = meta
             .0
             .get(crate::lsp_tools::META_WORKING_DIRECTORY)
@@ -508,8 +498,7 @@ impl CangjieServer {
         let category = params.category.as_deref().filter(|s| !s.is_empty());
         let package = params.package.as_deref().filter(|s| !s.is_empty());
 
-        // Retrieve extra candidates so lexical reranking and deduplication still
-        // has enough headroom for pagination.
+        // Fetch extra candidates so reranking, dedup, and pagination have headroom.
         let dedup_fetch_multiplier = 4;
         let fetch_multiplier = if package.is_some() {
             PACKAGE_FETCH_MULTIPLIER
@@ -566,16 +555,12 @@ impl CangjieServer {
 
         format_results_markdown(&result)
     }
-
-    // ── LSP Tools ──────────────────────────────────────────────────────────
 }
 
-// ── ServerHandler impl ──────────────────────────────────────────────────────
-
-// rmcp 1.7's `#[tool_handler]` defaults to the static `Self::tool_router()`,
-// which would expose every tool unconditionally. Point it back at the
-// instance field so the conditional router from `build_tool_router()` (LSP
-// tool only when `cangjie_lsp::is_available()`) is what's actually served.
+// rmcp 1.7's `#[tool_handler]` defaults to the static `Self::tool_router()`, which
+// would expose every tool unconditionally. Point it at the instance field so the
+// conditional router from `build_tool_router()` (LSP tool only when
+// `cangjie_lsp::is_available()`) is what's actually served.
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for CangjieServer {
     fn get_info(&self) -> ServerInfo {

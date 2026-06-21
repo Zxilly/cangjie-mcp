@@ -5,8 +5,6 @@ use async_trait::async_trait;
 
 use cangjie_core::config::{EmbeddingType, Settings};
 
-// -- Embedder trait ----------------------------------------------------------
-
 /// Distinguish query embedding from document embedding for asymmetric retrieval models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedKind {
@@ -46,11 +44,7 @@ pub fn model_max_input_chars(model_name: &str) -> Option<usize> {
     }
 }
 
-// -- Factory -----------------------------------------------------------------
-
-/// Create an embedder based on settings.
-///
-/// Returns `None` if embedding is disabled (`EmbeddingType::None`).
+/// Create an embedder from settings; `None` when embedding is disabled.
 pub async fn create_embedder(settings: &Settings) -> Result<Option<Box<dyn Embedder>>> {
     match settings.embedding_type {
         EmbeddingType::None => Ok(None),

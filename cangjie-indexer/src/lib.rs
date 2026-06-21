@@ -9,7 +9,6 @@ pub mod search;
 #[cfg(test)]
 pub(crate) mod testutil;
 
-// Re-export core types for convenience
 pub use cangjie_core::types::{
     DocData, DocMetadata, IndexMetadata, SearchMode, SearchResult, SearchResultMetadata, TextChunk,
 };

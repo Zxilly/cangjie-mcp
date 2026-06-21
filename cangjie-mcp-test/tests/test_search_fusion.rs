@@ -26,18 +26,15 @@ async fn test_bm25_search_and_fusion() {
     let mut store = BM25Store::new(bm25_dir);
     store.build_from_chunks(&sample_chunks()).await.unwrap();
 
-    // Two different queries
     let results_a = store.search("函数定义", 5, None).await.unwrap();
     let results_b = store.search("集合类型", 5, None).await.unwrap();
 
     assert!(!results_a.is_empty());
     assert!(!results_b.is_empty());
 
-    // Fuse them
     let fused = reciprocal_rank_fusion(&[results_a, results_b], 60, 10);
     assert!(!fused.is_empty(), "fused results should not be empty");
 
-    // Scores should be positive and ordered
     for window in fused.windows(2) {
         assert!(
             window[0].score >= window[1].score,
@@ -48,7 +45,6 @@ async fn test_bm25_search_and_fusion() {
 
 #[test]
 fn test_fusion_dedup() {
-    // Two lists with overlapping results
     let list1 = vec![
         make_result(
             "shared document about functions",
@@ -70,20 +66,18 @@ fn test_fusion_dedup() {
 
     let fused = reciprocal_rank_fusion(&[list1, list2], 60, 10);
 
-    // "shared document about functions" should appear only once
     let shared_count = fused
         .iter()
         .filter(|r| r.metadata.file_path == "shared.md")
         .count();
     assert_eq!(shared_count, 1, "duplicate results should be merged");
 
-    // The shared result should have the highest score (appears in both lists)
+    // Appears in both lists, so ranks first via score accumulation
     assert_eq!(
         fused[0].metadata.file_path, "shared.md",
         "shared result should be ranked first due to score accumulation"
     );
 
-    // Total unique results should be 3
     assert_eq!(fused.len(), 3);
 }
 
@@ -100,7 +94,6 @@ fn test_fusion_score_accumulation() {
 
     let fused = reciprocal_rank_fusion(&[list1, list2], 60, 10);
 
-    // doc B appears in both lists so should have accumulated score
     let doc_b = fused
         .iter()
         .find(|r| r.metadata.file_path == "b.md")
@@ -147,9 +140,8 @@ fn test_fusion_three_lists() {
 
     let fused = reciprocal_rank_fusion(&[list1, list2, list3], 60, 10);
 
-    // doc B appears in all 3 lists, should be ranked first
+    // doc B appears in all 3 lists, so it ranks first
     assert_eq!(fused[0].metadata.file_path, "b.md");
-    // Should have 4 unique results total
     assert_eq!(fused.len(), 4);
 }
 

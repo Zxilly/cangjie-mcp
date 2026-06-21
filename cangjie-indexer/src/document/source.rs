@@ -8,15 +8,13 @@ use crate::document::loader::load_document_from_content;
 use crate::DocData;
 use cangjie_core::config::DocLang;
 
-// -- Document Source trait ---------------------------------------------------
-
 #[async_trait]
 pub trait DocumentSource: Send + Sync {
     async fn is_available(&self) -> bool;
     async fn load_all_documents(&self) -> Result<Vec<DocData>>;
 }
 
-// -- Sync gix helpers (run inside spawn_blocking) ----------------------------
+// Sync gix helpers, run inside spawn_blocking.
 
 fn open_repo(repo_dir: &Path) -> Result<gix::Repository> {
     gix::open(repo_dir).context("Failed to open git repository")
@@ -134,8 +132,6 @@ fn apply_prefix(prefix: &Option<String>, cat: &str) -> String {
         None => cat.to_string(),
     }
 }
-
-// -- Git Document Source -----------------------------------------------------
 
 pub struct GitDocumentSource {
     repo_dir: PathBuf,

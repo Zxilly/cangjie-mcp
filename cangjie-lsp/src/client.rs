@@ -487,10 +487,9 @@ fn escape_powershell(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// Captures environment variables after sourcing envsetup.ps1 via a separate
-/// PowerShell process. The resulting HashMap contains the full environment
-/// (inherited + SDK modifications) and can be passed to `env_clear() + envs()`
-/// on the LSP server Command.
+/// Captures the full environment (inherited + SDK modifications) after sourcing
+/// envsetup.ps1 in a separate PowerShell process, for `env_clear() + envs()` on
+/// the LSP server Command.
 fn capture_envsetup_env(settings: &LSPSettings) -> Result<HashMap<String, String>> {
     let sdk_path = settings.sdk_path.to_string_lossy();
     let envsetup = settings.envsetup_script_path();
@@ -615,10 +614,8 @@ impl CangjieClient {
         let diagnostics_notify = Arc::new(Notify::new());
         let running = Arc::new(AtomicBool::new(true));
 
-        // Stdout reader task: continuously reads from LSP stdout into unbounded buffer
         tokio::spawn(stdout_reader_task(stdout, incoming_tx, running.clone()));
 
-        // Build jsonrpsee transport
         let sender = LspSender {
             outbound_tx: outbound_tx.clone(),
         };
@@ -634,13 +631,9 @@ impl CangjieClient {
             .request_timeout(REQUEST_TIMEOUT)
             .build_with_tokio(sender, receiver);
 
-        // Stdin writer task: reads from channel, writes Content-Length framed messages
+        // Stdin writer: frames outbound messages with Content-Length headers.
         tokio::spawn(stdin_task(stdin, outbound_rx, running.clone()));
-
-        // Stderr reader task
         tokio::spawn(stderr_task(stderr));
-
-        // Process monitor task
         tokio::spawn(process_monitor(child, running.clone()));
 
         let client = Self {
@@ -654,7 +647,6 @@ impl CangjieClient {
             running,
         };
 
-        // LSP initialize handshake
         client.lsp_initialize(settings, init_options).await?;
 
         Ok(client)
@@ -1246,7 +1238,6 @@ mod tests {
             assert!(script.contains("envsetup.sh"));
             assert!(script.contains("exec"));
             assert!(script.contains("LSPServer"));
-            // No PATH prepend when require_path is empty
             assert!(!script.contains("export PATH="));
         }
 

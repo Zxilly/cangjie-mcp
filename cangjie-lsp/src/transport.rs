@@ -10,8 +10,6 @@ use tracing::{debug, error, info, warn};
 
 const CONTENT_LENGTH: &str = "Content-Length";
 
-// -- Transport error ---------------------------------------------------------
-
 #[derive(Debug)]
 pub(crate) enum LspTransportError {
     ChannelClosed,
@@ -30,8 +28,6 @@ impl std::fmt::Display for LspTransportError {
 }
 
 impl std::error::Error for LspTransportError {}
-
-// -- Transport sender --------------------------------------------------------
 
 /// Writes JSON-RPC messages to an outbound channel (consumed by the stdin writer task).
 pub(crate) struct LspSender {
@@ -52,8 +48,6 @@ impl TransportSenderT for LspSender {
         Ok(())
     }
 }
-
-// -- Transport receiver ------------------------------------------------------
 
 /// Reads JSON-RPC messages from an unbounded buffer (fed by stdout_reader_task).
 ///
@@ -167,8 +161,6 @@ impl LspReceiver {
     }
 }
 
-// -- RPC params adapter ------------------------------------------------------
-
 /// Wraps a pre-serialized value for use with jsonrpsee's `ClientT` methods.
 pub(crate) struct LspParams(Option<Box<RawValue>>);
 
@@ -189,8 +181,6 @@ impl LspParams {
         LspParams(None)
     }
 }
-
-// -- Background tasks --------------------------------------------------------
 
 /// Continuously reads Content-Length framed JSON-RPC messages from LSP stdout
 /// and pushes them into an unbounded channel. This allows the LSP server to
@@ -222,8 +212,7 @@ pub(crate) async fn stdout_reader_task(
             break;
         }
 
-        // Use from_utf8_lossy-free path: LSP mandates UTF-8.
-        // Validate + convert in one step via from_utf8.
+        // LSP mandates UTF-8; validate strictly via from_utf8 rather than lossy decode.
         let body = match String::from_utf8(body_buf) {
             Ok(s) => s,
             Err(e) => {

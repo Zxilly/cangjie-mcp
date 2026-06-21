@@ -31,8 +31,7 @@ use crate::SearchResult;
 use crate::SearchResultMetadata;
 use cangjie_core::config::{DocLang, IndexInfo, Settings, DEFAULT_EMBEDDING_DIM};
 
-/// Generate query variants using synonym expansion, returning up to `max_variants`
-/// (including the original query).
+/// Generate query variants via synonym expansion, up to `max_variants` (including the original).
 fn generate_query_variants(query: &str, max_variants: usize) -> Vec<String> {
     use crate::search::synonyms::SYNONYM_MAP;
 
@@ -84,8 +83,6 @@ async fn bm25_multi_query_search(
     }
     Ok(reciprocal_rank_fusion(&bm25_lists, rrf_k, fetch_k))
 }
-
-// -- Local Search Index ------------------------------------------------------
 
 pub struct LocalSearchIndex {
     settings: Settings,
@@ -165,7 +162,7 @@ impl LocalSearchIndex {
         }
 
         let vector_dir = index_info.vector_db_dir();
-        // Determine embedding dimension by doing a test embed
+        // Determine embedding dimension via a test embed.
         let dim = if let Some(ref embedder) = self.embedder {
             let test = embedder.embed(&["test"], EmbedKind::Document).await?;
             test.first()
@@ -297,8 +294,6 @@ impl LocalSearchIndex {
     }
 }
 
-// -- Remote protocol types ---------------------------------------------------
-
 #[derive(Debug, serde::Deserialize)]
 struct RemoteInfoResponse {
     #[serde(default)]
@@ -332,8 +327,6 @@ struct RemoteSearchResultItem {
     #[serde(default)]
     metadata: SearchResultMetadata,
 }
-
-// -- Remote Search Index -----------------------------------------------------
 
 pub struct RemoteSearchIndex {
     http: HttpClient,
@@ -507,7 +500,6 @@ mod tests {
             embedding_cache: new_embedding_cache(),
         };
 
-        // Search with category filter for "basics"
         let results = index
             .query("\u{51fd}\u{6570}", 5, Some("basics"))
             .await
@@ -563,14 +555,12 @@ mod tests {
             embedding_cache: new_embedding_cache(),
         };
 
-        // Request top_k=2, should not return more than 2 results
         let results = index.query("\u{7f16}\u{7a0b}", 2, None).await.unwrap();
         assert!(results.len() <= 2, "Should return at most top_k results");
     }
 
     #[tokio::test]
     async fn test_local_search_query_bm25_category_no_match() {
-        // Query with a category that has no matching documents
         let chunks = sample_chunks();
         let bm25 = build_bm25_with_chunks(&chunks).await;
         let settings = test_settings(PathBuf::from("/tmp/test-search-cat-nomatch"));

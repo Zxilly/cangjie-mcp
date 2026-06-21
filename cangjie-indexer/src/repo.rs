@@ -11,7 +11,7 @@ pub struct GitManager {
     repo: Option<gix::Repository>,
 }
 
-/// Helper to create a RefEdit that sets a ref to point at an object (detached).
+/// Create a RefEdit that points a ref at an object (detached).
 fn ref_edit_to_object(name: &str, oid: gix::ObjectId, msg: &str) -> Result<RefEdit> {
     Ok(RefEdit {
         change: Change::Update {
@@ -28,7 +28,7 @@ fn ref_edit_to_object(name: &str, oid: gix::ObjectId, msg: &str) -> Result<RefEd
     })
 }
 
-/// Helper to create a RefEdit that sets a ref to point symbolically at another ref.
+/// Create a RefEdit that points a ref symbolically at another ref.
 fn ref_edit_symbolic(name: &str, target_ref: &str, msg: &str) -> Result<RefEdit> {
     Ok(RefEdit {
         change: Change::Update {
@@ -280,7 +280,6 @@ fn sync_branch(repo: &mut gix::Repository) -> Result<()> {
             .peel_to_id()
             .context("Failed to peel remote ref")?
             .detach();
-        // Update local branch ref to match remote
         let local_ref = format!("refs/heads/{branch_name}");
         repo.edit_reference(ref_edit_to_object(
             &local_ref,
@@ -311,13 +310,11 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
                     .unwrap_or(false);
 
                 if !head_is_target {
-                    // Create/update local branch ref pointing at oid
                     repo.edit_reference(ref_edit_to_object(
                         &local_ref,
                         oid,
                         "create local branch from remote",
                     )?)?;
-                    // Set HEAD to point symbolically to the local branch
                     repo.edit_reference(ref_edit_symbolic("HEAD", &local_ref, "checkout branch")?)?;
                 }
                 let _ = sync_branch(repo);
@@ -327,20 +324,19 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
         }
     }
 
-    // Try as tag first
+    // Try as tag first.
     let tag_ref = format!("refs/tags/{version}");
     if let Ok(mut reference) = repo.find_reference(&tag_ref) {
         let oid = reference
             .peel_to_id()
             .context("Failed to peel tag ref")?
             .detach();
-        // Set HEAD detached to the tag's commit
         repo.edit_reference(ref_edit_to_object("HEAD", oid, "checkout tag")?)?;
         info!("Checked out tag {}.", version);
         return Ok(());
     }
 
-    // Try as remote branch
+    // Try as remote branch.
     let remote_ref = format!("refs/remotes/origin/{version}");
     if let Ok(mut reference) = repo.find_reference(&remote_ref) {
         let oid = reference
@@ -362,7 +358,6 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
             )?)?;
             repo.edit_reference(ref_edit_symbolic("HEAD", &local_ref, "checkout branch")?)?;
         }
-        // Update local branch to match remote
         repo.edit_reference(ref_edit_to_object(
             &local_ref,
             oid,
@@ -373,7 +368,7 @@ fn checkout(repo: &mut gix::Repository, version: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Try as commit hash
+    // Try as commit hash.
     if let Ok(oid) = gix::ObjectId::from_hex(version.as_bytes()) {
         if repo.find_commit(oid).is_ok() {
             repo.edit_reference(ref_edit_to_object("HEAD", oid, "checkout commit")?)?;
@@ -463,7 +458,7 @@ mod tests {
     use crate::testutil::{add_fake_remote, create_test_repo, create_test_repo_with_remote};
     use std::process::Command;
 
-    /// Test helper: create GitManager without a real URL (tests don't clone).
+    /// GitManager without a real URL (tests don't clone).
     fn test_mgr(repo_dir: std::path::PathBuf) -> GitManager {
         GitManager::new(repo_dir, String::new())
     }

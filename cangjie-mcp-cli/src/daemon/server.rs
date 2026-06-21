@@ -12,16 +12,15 @@ use cangjie_server::CangjieServer;
 use super::ipc::IpcListener;
 use super::paths;
 
-const LSP_IDLE_TIMEOUT_SECS: u64 = 10 * 60; // 10 minutes
+const LSP_IDLE_TIMEOUT_SECS: u64 = 10 * 60;
 
 pub async fn run_daemon(settings: Settings, timeout_minutes: u64) -> Result<()> {
-    // Write PID file
     paths::ensure_runtime_dir()?;
     let pid = std::process::id();
     std::fs::write(paths::pid_file(), pid.to_string())?;
     info!("Daemon started (PID={pid}, timeout={timeout_minutes}min)");
 
-    // Create and initialize the MCP server with LSP pool for multi-workspace support
+    // LSP pool enables multi-workspace support
     let server = CangjieServer::with_lsp_pool(settings, Duration::from_secs(LSP_IDLE_TIMEOUT_SECS));
 
     // Spawn LSP pool idle eviction task
@@ -42,15 +41,13 @@ pub async fn run_daemon(settings: Settings, timeout_minutes: u64) -> Result<()> 
         }
     });
 
-    // Bind IPC listener
     let mut listener = IpcListener::bind()?;
     info!("Daemon listening for connections");
 
-    // Activity tracking for idle timeout
     let last_activity = Arc::new(AtomicU64::new(current_epoch_secs()));
     let timeout_secs = timeout_minutes * 60;
 
-    // Idle timeout watchdog
+    // Idle timeout watchdog: shut down after no activity for timeout_secs
     let activity = last_activity.clone();
     tokio::spawn(async move {
         loop {
@@ -66,7 +63,6 @@ pub async fn run_daemon(settings: Settings, timeout_minutes: u64) -> Result<()> 
         }
     });
 
-    // Accept loop
     loop {
         match listener.accept().await {
             Ok(stream) => {

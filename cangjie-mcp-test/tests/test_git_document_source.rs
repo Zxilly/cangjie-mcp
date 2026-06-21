@@ -42,7 +42,6 @@ async fn test_git_source_load_all_documents() {
         docs.len()
     );
 
-    // Every doc should have non-empty text and metadata
     for doc in &docs {
         assert!(!doc.text.is_empty(), "doc text should not be empty");
         assert!(!doc.metadata.category.is_empty());

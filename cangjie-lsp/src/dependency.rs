@@ -6,8 +6,6 @@ use tracing::warn;
 
 use crate::utils::*;
 
-// -- Resolved types ----------------------------------------------------------
-
 #[derive(Debug, Clone, Serialize)]
 pub struct Dependency {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -32,8 +30,6 @@ pub struct ModuleOption {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub java_requires: Option<Vec<String>>,
 }
-
-// -- Dependency Resolver -----------------------------------------------------
 
 pub struct DependencyResolver {
     workspace_path: PathBuf,
@@ -132,11 +128,10 @@ impl DependencyResolver {
         for member_path in &members {
             let member_uri = path_to_uri(member_path);
             if let Some(opt) = self.multi_module_option.get_mut(&member_uri) {
-                // Merge root deps (root takes precedence)
+                // root takes precedence over member deps
                 for (k, v) in &root_requires {
                     opt.requires.entry(k.clone()).or_insert_with(|| v.clone());
                 }
-                // Merge package requires
                 let pkg_req = opt
                     .package_requires
                     .get_or_insert_with(PackageRequires::default);
@@ -262,15 +257,12 @@ impl DependencyResolver {
             }
         }
 
-        // Regular dependencies
         let requires = self.get_requires(&cjpm.dependencies, module_path);
         module_option.requires.extend(requires);
 
-        // Dev dependencies
         let dev_requires = self.get_requires(&cjpm.dev_dependencies, module_path);
         module_option.requires.extend(dev_requires);
 
-        // Target dependencies
         for target_config in cjpm.target.values() {
             let target_requires = self.get_requires(&target_config.dependencies, module_path);
             module_option.requires.extend(target_requires);
@@ -291,7 +283,6 @@ impl DependencyResolver {
             match dep {
                 CjpmDepValue::Config(config) => {
                     if let Some(ref path_str) = config.path {
-                        // Local path dependency
                         let resolved = normalize_path(path_str, module_path);
                         let uri = path_to_uri(&resolved);
                         result.insert(
@@ -302,7 +293,6 @@ impl DependencyResolver {
                                 path: uri,
                             },
                         );
-                        // Recurse
                         self.find_all_toml(&resolved, name);
                     } else if config.git.is_some() {
                         // Git dependency — resolve via lock file
@@ -414,9 +404,7 @@ mod tests {
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // process_package_mode -> find_all_toml on ws -> no cjpm.toml exists,
-        // so a default ModuleOption is inserted with an empty name.
-        // The single entry is keyed by the workspace URI.
+        // No cjpm.toml: a default ModuleOption keyed by the workspace URI is inserted.
         assert_eq!(modules.len(), 1);
         let uri = path_to_uri(&ws);
         let module = modules.get(&uri).expect("expected module at workspace URI");
@@ -448,14 +436,13 @@ name = "myapp"
         assert!(module.requires.is_empty());
     }
 
-    /// A package with a path dependency pointing to a subdirectory that also
-    /// contains a cjpm.toml. Both modules should be resolved.
+    /// A package with a path dependency to a subdir that also has a cjpm.toml;
+    /// both modules should resolve.
     #[test]
     fn test_resolver_with_path_dependency() {
         let tmp = TempDir::new().unwrap();
         let ws = tmp.path().to_path_buf();
 
-        // Root cjpm.toml depends on "childlib" via path.
         std::fs::write(
             ws.join(CJPM_TOML),
             r#"
@@ -468,7 +455,6 @@ path = "childlib"
         )
         .unwrap();
 
-        // Create the child directory and its cjpm.toml.
         let child_dir = ws.join("childlib");
         std::fs::create_dir_all(&child_dir).unwrap();
         std::fs::write(
@@ -483,7 +469,6 @@ name = "childlib"
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // Should have two modules: parent and childlib.
         assert_eq!(modules.len(), 2);
 
         let parent_uri = path_to_uri(&ws);
@@ -510,8 +495,6 @@ name = "childlib"
         std::fs::create_dir_all(&pkg_a_dir).unwrap();
         std::fs::create_dir_all(&pkg_b_dir).unwrap();
 
-        // Root cjpm.toml -- workspace with two members is cleaner but we want
-        // package-mode with a path dep that starts the chain.
         std::fs::write(
             ws.join(CJPM_TOML),
             r#"
@@ -524,7 +507,6 @@ path = "pkg_a"
         )
         .unwrap();
 
-        // pkg_a depends on pkg_b (uses relative path going up then into pkg_b).
         std::fs::write(
             pkg_a_dir.join(CJPM_TOML),
             r#"
@@ -537,7 +519,6 @@ path = "../pkg_b"
         )
         .unwrap();
 
-        // pkg_b depends back on pkg_a.
         std::fs::write(
             pkg_b_dir.join(CJPM_TOML),
             r#"
@@ -553,7 +534,7 @@ path = "../pkg_a"
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // All three modules should be present despite the cycle.
+        // All three present despite the cycle.
         assert_eq!(modules.len(), 3);
         assert!(modules.contains_key(&path_to_uri(&ws)));
         assert!(modules.contains_key(&path_to_uri(&pkg_a_dir)));
@@ -721,7 +702,6 @@ members = ["sub"]
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // Should return empty because both workspace and package are present
         assert!(
             modules.is_empty(),
             "modules should be empty when both workspace and package are present"
@@ -759,7 +739,6 @@ name = "pkg_a"
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // Should have pkg_a but not nonexistent_pkg
         let pkg_a_uri = path_to_uri(&pkg_a_dir);
         assert!(
             modules.contains_key(&pkg_a_uri),
@@ -778,7 +757,6 @@ name = "pkg_a"
         std::fs::create_dir_all(&pkg_a_dir).unwrap();
         std::fs::create_dir_all(&lib_dir).unwrap();
 
-        // Root cjpm.toml: workspace with root-level dependencies
         std::fs::write(
             ws.join(CJPM_TOML),
             r#"
@@ -814,7 +792,6 @@ name = "sharedlib"
 
         let pkg_a_uri = path_to_uri(&pkg_a_dir);
         let module = modules.get(&pkg_a_uri).expect("pkg_a module");
-        // Root deps should be merged into member
         assert!(
             module.requires.contains_key("sharedlib"),
             "root dependency should be merged into workspace member"
@@ -842,7 +819,6 @@ path = "submod"
         )
         .unwrap();
 
-        // Sub-module has workspace field (not allowed in sub-modules)
         std::fs::write(
             sub_dir.join(CJPM_TOML),
             r#"
@@ -855,11 +831,10 @@ members = ["something"]
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // Sub-module should still be in the map (default option inserted)
         let sub_uri = path_to_uri(&sub_dir);
         assert!(modules.contains_key(&sub_uri));
         let sub_module = modules.get(&sub_uri).unwrap();
-        // Name should be empty since workspace field caused early return
+        // Name stays empty because the workspace field caused an early return.
         assert!(sub_module.name.is_empty() || sub_module.name == "submod");
     }
 
@@ -884,13 +859,11 @@ path = "badmod"
         )
         .unwrap();
 
-        // Invalid TOML content
         std::fs::write(sub_dir.join(CJPM_TOML), "invalid toml {{{").unwrap();
 
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // badmod should still be present with a default module option
         let sub_uri = path_to_uri(&sub_dir);
         assert!(modules.contains_key(&sub_uri));
         let sub_module = modules.get(&sub_uri).unwrap();
@@ -917,7 +890,6 @@ name = ""
 
         let uri = path_to_uri(&ws);
         let module = modules.get(&uri).expect("module");
-        // Should fall back to directory name
         let dir_name = ws
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -1117,7 +1089,6 @@ path = "native2"
             require_path.contains(&expected2),
             "require_path should contain native2. Got: {require_path}"
         );
-        // Should be split into multiple PATH entries
         let path_count = std::env::split_paths(require_path).count();
         assert!(
             path_count >= 2,
@@ -1175,7 +1146,6 @@ git = "https://example.com/gitlib.git"
 
         let uri = path_to_uri(&ws);
         let module = modules.get(&uri).expect("root module");
-        // Without a lock file, git dep should not be resolved
         assert!(
             !module.requires.contains_key("gitlib"),
             "git dependency should not be resolved without a lock file"
@@ -1201,7 +1171,6 @@ git = "https://example.com/gitlib.git"
         )
         .unwrap();
 
-        // Create a lock file with commit ID
         std::fs::write(
             ws.join(CJPM_LOCK),
             r#"
@@ -1216,7 +1185,7 @@ commitId = "deadbeef123"
 
         let uri = path_to_uri(&ws);
         let module = modules.get(&uri).expect("root module");
-        // The git path won't exist on disk, so dep won't resolve
+        // The git checkout path won't exist on disk, so the dep won't resolve.
         assert!(
             !module.requires.contains_key("gitlib"),
             "git dep should not resolve when checkout dir doesn't exist"
@@ -1246,7 +1215,7 @@ somelib = "1.0.0"
 
         let uri = path_to_uri(&ws);
         let module = modules.get(&uri).expect("root module");
-        // Without ~/.cjpm/repository/somelib/1.0.0, this won't resolve
+        // No ~/.cjpm/repository/somelib/1.0.0 on disk, so this won't resolve.
         assert!(
             !module.requires.contains_key("somelib"),
             "version dep should not resolve when repo path doesn't exist"
@@ -1270,11 +1239,10 @@ name = "myapp"
 
         let mut resolver = DependencyResolver::new(&ws);
 
-        // First resolve
         let modules1 = resolver.resolve();
         assert_eq!(modules1.len(), 1);
 
-        // Second resolve should produce same results (state is cleared)
+        // Second resolve clears state and produces the same result.
         let modules2 = resolver.resolve();
         assert_eq!(modules2.len(), 1);
         assert_eq!(
@@ -1324,7 +1292,6 @@ name = "pkg_a"
 
         let pkg_a_uri = path_to_uri(&pkg_a_dir);
         let module = modules.get(&pkg_a_uri).expect("pkg_a module");
-        // Root target bin-dependencies should be merged into member's package_requires
         assert!(
             module.package_requires.is_some(),
             "package_requires should be merged from root targets"
@@ -1353,7 +1320,7 @@ path = "mylib"
         )
         .unwrap();
 
-        // The dependency key is "mylib" but the package declares "different_name"
+        // Dep key is "mylib" but the package declares "different_name".
         std::fs::write(
             sub_dir.join(CJPM_TOML),
             r#"
@@ -1368,7 +1335,6 @@ name = "different_name"
 
         let sub_uri = path_to_uri(&sub_dir);
         let sub_module = modules.get(&sub_uri).expect("sub module");
-        // Should use the actual package name from cjpm.toml, not the key
         assert_eq!(sub_module.name, "different_name");
     }
 
@@ -1390,8 +1356,7 @@ members = []
         let mut resolver = DependencyResolver::new(&ws);
         let modules = resolver.resolve();
 
-        // Empty members -> falls through to process_package_mode
-        // which calls find_all_toml on workspace root
+        // Empty members falls through to package mode (find_all_toml on the ws root).
         let uri = path_to_uri(&ws);
         assert!(modules.contains_key(&uri));
     }
@@ -1414,7 +1379,6 @@ git = "https://example.com/gitlib.git"
         )
         .unwrap();
 
-        // Lock file with empty commitId
         std::fs::write(
             ws.join(CJPM_LOCK),
             r#"

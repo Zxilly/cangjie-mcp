@@ -22,14 +22,9 @@ use cangjie_server::mcp_handler::CangjieServer;
 use cangjie_server::Parameters;
 use rmcp::model::Meta;
 
-// ── Serialization ──────────────────────────────────────────────────────────
-
 /// Only one LSP server can run at a time (global singleton).
 static LSP_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/// Return the test project path from `CANGJIE_LSP_TEST_PROJECT`, or `None`.
 fn test_project_path() -> Option<PathBuf> {
     std::env::var("CANGJIE_LSP_TEST_PROJECT")
         .ok()
@@ -37,7 +32,6 @@ fn test_project_path() -> Option<PathBuf> {
         .filter(|p| p.exists())
 }
 
-/// Detect and validate LSP settings for the test project workspace.
 fn detect_test_settings(project_path: &Path) -> Option<LSPSettings> {
     let settings = lsp::detect_settings(Some(project_path.to_path_buf()))?;
     let errors = settings.validate();
@@ -51,7 +45,7 @@ fn detect_test_settings(project_path: &Path) -> Option<LSPSettings> {
     })
 }
 
-/// Skip test if SDK or test project is not available.
+/// Skip the test if the SDK or test project is unavailable.
 macro_rules! require_project {
     () => {{
         let project = match test_project_path() {
@@ -72,8 +66,7 @@ macro_rules! require_project {
     }};
 }
 
-/// Initialize LSP for the test project and return the project path.
-/// Panics if initialization fails.
+/// Initialize LSP for the test project, returning its path. Panics if init fails.
 async fn init_lsp_for_project() -> Option<PathBuf> {
     let (project, settings) = {
         let project = test_project_path()?;
@@ -86,7 +79,6 @@ async fn init_lsp_for_project() -> Option<PathBuf> {
     Some(project)
 }
 
-/// Parse the JSON response from the unified LSP tool.
 fn parse_lsp_response(json: &str) -> LspResponse {
     serde_json::from_str(json).unwrap_or_else(|e| {
         panic!("Failed to parse LSP response: {e}\nRaw: {json}");
@@ -135,10 +127,6 @@ async fn lsp_call(server: &CangjieServer, req: LspRequest) -> LspResponse {
     parse_lsp_response(&json)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 1. LSP Lifecycle with Real Project
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Initialize LSP against cjbind, verify client is alive, then shutdown.
 #[tokio::test]
 async fn test_lsp_lifecycle_with_real_project() {
@@ -160,10 +148,6 @@ async fn test_lsp_lifecycle_with_real_project() {
     let guard = lsp::get_client().await;
     assert!(guard.is_none(), "client should be None after shutdown");
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. Document Symbols — verify cjbind source files have symbols
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Get document symbols from cjbind/src/lib.cj — should find `generate`, `parse`, etc.
 #[tokio::test]
@@ -236,10 +220,6 @@ async fn test_document_symbol_options_cj() {
     lsp::shutdown().await;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 3. Workspace Symbol — search across the whole project
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Search for "CjbindOptions" across the workspace.
 #[tokio::test]
 async fn test_workspace_symbol_search() {
@@ -293,10 +273,6 @@ async fn test_workspace_symbol_item() {
     lsp::shutdown().await;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 4. Diagnostics — valid files should compile cleanly
-// ═══════════════════════════════════════════════════════════════════════════
-
 #[tokio::test]
 async fn test_diagnostics_on_valid_source() {
     let _lock = LSP_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
@@ -324,10 +300,6 @@ async fn test_diagnostics_on_valid_source() {
     );
     lsp::shutdown().await;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 5. Hover — get type info for symbols
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn test_hover_on_function() {
@@ -363,10 +335,6 @@ async fn test_hover_on_function() {
     lsp::shutdown().await;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 6. Go to Definition
-// ═══════════════════════════════════════════════════════════════════════════
-
 #[tokio::test]
 async fn test_goto_definition() {
     let _lock = LSP_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
@@ -400,10 +368,6 @@ async fn test_goto_definition() {
     }
     lsp::shutdown().await;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 7. Find References
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn test_find_references() {
@@ -450,10 +414,6 @@ async fn test_find_references() {
     lsp::shutdown().await;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 8. Validation Errors via MCP Tool Interface
-// ═══════════════════════════════════════════════════════════════════════════
-
 #[tokio::test]
 async fn test_lsp_validation_errors_comprehensive() {
     let _lock = LSP_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
@@ -487,10 +447,6 @@ async fn test_lsp_validation_errors_comprehensive() {
 
     lsp::shutdown().await;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 10. Multiple Operations in Sequence
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Simulate how an AI assistant explores code: symbols → diagnostics → hover → workspace search.
 #[tokio::test]
@@ -543,10 +499,6 @@ async fn test_sequential_operations_on_same_file() {
 
     lsp::shutdown().await;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 11. Multiple Files in Same Session
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Open and inspect symbols from multiple files without restarting LSP.
 #[tokio::test]

@@ -18,11 +18,11 @@ use cangjie_indexer::search::LocalSearchIndex;
 use cli::{CangjieArgs, Commands, ConfigAction, DaemonAction};
 
 pub async fn run() -> ExitCode {
-    // Load config file to env BEFORE clap parsing (priority: CLI > env > config > defaults)
+    // Must run before clap parsing so env-backed args pick up config values
     config::load_config_to_env();
     let args = CangjieArgs::parse();
 
-    // Daemon serve mode: log to daemon.log instead of stderr
+    // Daemon serve mode logs to daemon.log instead of stderr
     let is_daemon_serve = matches!(args.command, Some(Commands::Serve));
     if is_daemon_serve {
         let log_path = daemon::paths::log_file();

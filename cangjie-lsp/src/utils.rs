@@ -5,7 +5,6 @@ use regex::Regex;
 use serde::Deserialize;
 use std::sync::LazyLock;
 
-// -- URI / path conversion ---------------------------------------------------
 // Aligned with Cangjie LSP server C++ implementation:
 // - URI.cpp: URIFromAbsolutePath, ToString, PercentEncode, ShouldEscape
 // - Utils.cpp: PathWindowsToLinux
@@ -102,8 +101,6 @@ fn from_hex(b: u8) -> Option<u8> {
     }
 }
 
-// -- Environment variable substitution ---------------------------------------
-
 static ENV_VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{(\w+)\}").unwrap());
 
 pub fn get_real_path(path_str: &str) -> String {
@@ -154,13 +151,11 @@ fn clean_path_components(path: &Path) -> PathBuf {
 
 /// Convert an MSYS2-style path (`/c/Users/…`) to a Windows path (`C:/Users/…`).
 ///
-/// Only applies on Windows. Recognises the pattern `/<letter>/…` where `<letter>`
-/// is a single ASCII letter (the drive letter).  All other inputs are returned
-/// unchanged.
+/// Windows-only; recognises `/<letter>/…` where `<letter>` is the drive letter.
+/// All other inputs are returned unchanged.
 pub fn normalize_msys2_path(path: &str) -> String {
     if cfg!(windows) {
         let bytes = path.as_bytes();
-        // Match: starts with '/', second byte is ASCII alpha, third is '/' or end-of-string
         if bytes.len() >= 2
             && bytes[0] == b'/'
             && bytes[1].is_ascii_alphabetic()
@@ -192,8 +187,6 @@ pub fn merge_unique_strings(lists: &[&[String]]) -> Vec<String> {
     }
     result
 }
-
-// -- CJPM TOML types --------------------------------------------------------
 
 pub const CJPM_DEFAULT_DIR: &str = ".cjpm";
 pub const CJPM_GIT_SUBDIR: &str = "git";
@@ -549,7 +542,6 @@ commitId = "abc123"
 
     #[test]
     fn test_get_cjpm_config_path_default() {
-        // Without CJPM_CONFIG set, should use home dir
         temp_env::with_var("CJPM_CONFIG", None::<&str>, || {
             let path = get_cjpm_config_path("git");
             assert!(path.to_string_lossy().contains(".cjpm"));

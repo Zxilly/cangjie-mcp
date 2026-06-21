@@ -41,8 +41,6 @@ pub struct CangjieArgs {
     pub command: Option<Commands>,
 }
 
-// ── Server/index options ───────────────────────────────────────────────
-
 #[derive(Args)]
 pub struct ServerOptions {
     /// Documentation version (git tag)
@@ -209,8 +207,6 @@ impl ServerOptions {
         }
     }
 }
-
-// ── Commands ─────────────────────────────────────────────────────────────
 
 #[derive(Subcommand)]
 pub enum Commands {

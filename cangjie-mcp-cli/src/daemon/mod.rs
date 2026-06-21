@@ -12,12 +12,10 @@ use self::ipc::ipc_connect;
 
 /// Ensure the daemon is running. Returns Ok(()) if a connection can be made.
 pub async fn ensure_running(timeout_minutes: u64) -> Result<()> {
-    // Try connecting first
     if ipc_connect().await.is_ok() {
         return Ok(());
     }
 
-    // Need to spawn daemon
     spawn_daemon(timeout_minutes)?;
 
     // Wait for socket to become available
@@ -40,7 +38,7 @@ fn spawn_daemon(timeout_minutes: u64) -> Result<()> {
     cmd.arg("--daemon-timeout");
     cmd.arg(timeout_minutes.to_string());
 
-    // Detach from terminal
+    // Detach from controlling terminal so the daemon outlives the CLI process
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -88,7 +86,6 @@ pub fn stop_daemon() -> Result<()> {
 
     kill_process(pid)?;
 
-    // Clean up files
     let _ = std::fs::remove_file(&pid_path);
     #[cfg(unix)]
     let _ = std::fs::remove_file(paths::socket_path());
@@ -116,7 +113,6 @@ pub fn daemon_status() -> Result<()> {
     if alive {
         println!("{}", json!({"status": "running", "pid": pid}));
     } else {
-        // Stale PID file
         let _ = std::fs::remove_file(&pid_path);
         println!(
             "{}",
@@ -166,12 +162,12 @@ pub fn daemon_logs(tail: usize, follow: bool) -> Result<()> {
         let file_len = file.metadata()?.len();
         let mut reader = std::io::BufReader::new(file);
 
-        // Estimate ~200 bytes per log line, with 2x safety margin
+        // ~200 bytes/line estimate with 2x safety margin, to avoid reading the whole file
         const BYTES_PER_LINE: u64 = 400;
         let estimated_seek = file_len.saturating_sub(BYTES_PER_LINE * tail as u64);
         if estimated_seek > 0 {
             reader.seek(SeekFrom::Start(estimated_seek))?;
-            // Skip partial first line after seeking mid-file
+            // skip partial first line after seeking mid-file
             let mut discard = String::new();
             reader.read_line(&mut discard)?;
         }

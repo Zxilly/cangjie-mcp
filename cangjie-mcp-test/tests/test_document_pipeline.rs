@@ -17,7 +17,6 @@ fn test_load_and_chunk_pipeline() {
 
     let chunks = chunk_document(&doc, Some(6000), 200);
     assert!(!chunks.is_empty(), "document should produce chunks");
-    // All chunks should carry the same category/topic metadata
     for chunk in &chunks {
         assert_eq!(chunk.metadata.category, "test");
         assert_eq!(chunk.metadata.topic, "example");
@@ -68,8 +67,7 @@ fn test_load_document_multiple_code_blocks() {
 fn test_title_extraction_no_heading() {
     let content = "Just plain text with no heading at all.";
     let title = extract_title_from_content(content);
-    // When there's no H1, extract_title_from_content returns empty or the first line
-    // The actual behavior: returns "" if no # heading found
+    // With no H1, returns "" (never a heading marker)
     assert!(
         title.is_empty() || !title.contains('#'),
         "should not return a markdown heading marker"
@@ -87,7 +85,6 @@ fn test_chunk_content_completeness() {
 
     assert!(chunks.len() > 1, "should split into multiple chunks");
 
-    // All chunks combined should cover the important content
     let combined: String = chunks.iter().map(|c| c.text.as_str()).collect();
     assert!(combined.contains("完整性测试"));
     assert!(combined.contains("第二节"));
@@ -108,14 +105,12 @@ async fn test_chunk_documents_mixed_code_detection() {
         !code_chunks.is_empty(),
         "should have chunks with code blocks"
     );
-    // Verify code chunks actually contain code markers
     for c in &code_chunks {
         assert!(
             c.text.contains("```"),
             "chunk marked has_code should contain code block marker"
         );
     }
-    // Verify no-code chunks don't have code markers
     for c in &no_code_chunks {
         assert!(
             !c.text.contains("```"),

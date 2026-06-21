@@ -20,7 +20,6 @@ pub fn test_settings(data_dir: PathBuf) -> Settings {
 /// Return a set of realistic `TextChunk` values spanning multiple categories.
 pub fn sample_chunks() -> Vec<TextChunk> {
     vec![
-        // ── syntax category ────────────────────────────────────────────
         TextChunk {
             text: "# 函数定义\n\n仓颉语言使用 `func` 关键字定义函数。函数可以有参数和返回值。\n\n```cangjie\nfunc add(a: Int, b: Int): Int {\n    return a + b\n}\n```\n\n函数是仓颉程序的基本构建块。".to_string(),
             metadata: DocMetadata {
@@ -69,7 +68,6 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 ..Default::default()
             },
         },
-        // ── stdlib category ────────────────────────────────────────────
         TextChunk {
             text: "# 集合类型\n\n标准库提供了 Array、HashMap、HashSet 等集合类型。\n\n```cangjie\nlet arr = Array<Int>([1, 2, 3])\nlet map = HashMap<String, Int>()\n```\n\n集合类型支持迭代器操作。".to_string(),
             metadata: DocMetadata {
@@ -106,7 +104,6 @@ pub fn sample_chunks() -> Vec<TextChunk> {
                 ..Default::default()
             },
         },
-        // ── cjpm category ──────────────────────────────────────────────
         TextChunk {
             text: "# 包管理器 CJPM\n\nCJPM 是仓颉的官方包管理工具。使用 `cjpm init` 创建新项目。\n\n```bash\ncjpm init my-project\ncjpm build\ncjpm test\n```\n\nCJPM 使用 cjpm.toml 文件管理依赖。".to_string(),
             metadata: DocMetadata {
@@ -362,7 +359,6 @@ pub struct MockDocumentSource {
 }
 
 impl MockDocumentSource {
-    /// Build a `MockDocumentSource` from a slice of `DocData`.
     pub fn from_docs(docs: &[DocData]) -> Self {
         Self {
             documents: docs.to_vec(),

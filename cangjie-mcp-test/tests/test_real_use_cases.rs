@@ -21,8 +21,6 @@ use http_body_util::BodyExt;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
 async fn build_server(chunks: &[TextChunk]) -> (TempDir, CangjieServer) {
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25");
@@ -79,11 +77,6 @@ async fn http_post(app: axum::Router, uri: &str, json: &str) -> (StatusCode, ser
     (status, v)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════
-// 1. Search Quality and Relevance
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Search for Chinese programming concepts — results should be relevant.
 #[tokio::test]
 async fn test_search_relevance_error_handling() {
@@ -99,7 +92,6 @@ async fn test_search_relevance_error_handling() {
         }))
         .await;
 
-    // Should find the error_handling topic
     let has_relevant =
         result.contains("错误") || result.contains("Error") || result.contains("Result");
     assert!(
@@ -113,7 +105,6 @@ async fn test_search_relevance_error_handling() {
 async fn test_search_mixed_language_query() {
     let (_tmp, server) = build_default_server().await;
 
-    // English keyword in Chinese docs
     let result = server
         .search_docs(Parameters(SearchDocsParams {
             query: "HashMap".into(),
@@ -145,7 +136,6 @@ async fn test_search_category_filter_strict() {
         }))
         .await;
 
-    // All results should be from the cjpm category
     if result.contains("### [") {
         assert!(
             !result.contains("syntax/functions"),
@@ -169,16 +159,11 @@ async fn test_search_no_match_graceful() {
         }))
         .await;
 
-    // Should return something graceful (0 results or low-relevance results)
     assert!(
         result.contains("Found") || result.contains("0 results") || result.contains("showing"),
         "no-match search should still return a well-formatted response"
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 4. Package Filter (stdlib use case)
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Test filtering search results by stdlib package name.
 #[tokio::test]
@@ -196,7 +181,6 @@ async fn test_search_package_filter_std_collection() {
         }))
         .await;
 
-    // Should only return results mentioning std.collection
     if result.contains("### [") {
         assert!(
             result.contains("std.collection") || result.contains("collection"),
@@ -221,8 +205,7 @@ async fn test_search_package_filter_excludes_others() {
         }))
         .await;
 
-    // HTTP results should be excluded when filtering by std.fs
-    // Either no results or only fs-related results
+    // Filtering by std.fs should yield either no results or only fs-related ones
     if result.contains("### [") {
         assert!(
             !result.contains("HttpClient") || result.contains("std.fs"),
@@ -230,14 +213,6 @@ async fn test_search_package_filter_excludes_others() {
         );
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 5. Cross-category Topics (same topic name in different categories)
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 5. Concurrent Access
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Multiple concurrent searches should all succeed.
 #[tokio::test]
@@ -273,10 +248,6 @@ async fn test_concurrent_searches() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 6. Edge Cases and Boundary Conditions
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Unicode edge cases in search queries.
 #[tokio::test]
 async fn test_search_unicode_edge_cases() {
@@ -300,7 +271,6 @@ async fn test_search_unicode_edge_cases() {
             }))
             .await;
 
-        // Should not panic or return an error
         assert!(
             !result.contains("Search error"),
             "query '{query}' should not produce a search error, got: {result}"
@@ -352,7 +322,6 @@ async fn test_search_empty_category_treated_as_none() {
         }))
         .await;
 
-    // Both should return results (empty string category = no filter)
     let count1 = with_empty_cat.matches("### [").count();
     let count2 = without_cat.matches("### [").count();
     assert_eq!(
@@ -361,17 +330,12 @@ async fn test_search_empty_category_treated_as_none() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 9. HTTP API Real Workflows
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Simulate full HTTP API workflow: health → info → search → browse topics → detail.
 #[tokio::test]
 async fn test_http_full_workflow() {
     let chunks = sample_chunks();
     let (_tmp, app) = build_http_app(&chunks).await;
 
-    // Step 1: Health check
     let req = Request::builder()
         .uri("/health")
         .body(Body::empty())
@@ -379,13 +343,11 @@ async fn test_http_full_workflow() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Step 2: Get server info
     let (status, info) = http_get(app.clone(), "/info").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(info["version"], "test");
     assert!(info["document_count"].as_u64().unwrap() > 0);
 
-    // Step 3: Search
     let (status, search_result) =
         http_post(app.clone(), "/search", r#"{"query":"函数定义","top_k":3}"#).await;
     assert_eq!(status, StatusCode::OK);
@@ -428,10 +390,6 @@ async fn test_http_search_category_filter_json() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 9. Document Processing → Search Pipeline
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Verify that chunk_documents → BM25 build → search produces sensible results
 /// for a realistic multi-section document.
 #[tokio::test]
@@ -446,13 +404,11 @@ async fn test_large_document_chunking_and_search() {
         chunks.len()
     );
 
-    // All chunks should carry the same metadata
     for chunk in &chunks {
         assert_eq!(chunk.metadata.category, "syntax");
         assert_eq!(chunk.metadata.topic, "complete_guide");
     }
 
-    // Build index and search
     let tmp = TempDir::new().unwrap();
     let bm25_dir = tmp.path().join("bm25");
     let mut bm25 = BM25Store::new(bm25_dir);
@@ -484,7 +440,6 @@ async fn test_combined_chunks_search_consistency() {
     let mut bm25 = BM25Store::new(bm25_dir);
     bm25.build_from_chunks(&all_chunks).await.unwrap();
 
-    // Search should find results across all chunk sets
     let results = bm25.search("概述", 10, None).await.unwrap();
     assert!(
         !results.is_empty(),
@@ -504,15 +459,11 @@ async fn test_combined_chunks_search_consistency() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 11. Deduplication and Ranking Behavior
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// When multiple chunks from the same document match, results should be deduplicated
 /// appropriately based on top_k.
 #[tokio::test]
 async fn test_search_deduplication_across_chunks() {
-    // Create many chunks from the same document
+    // many chunks from the same document, plus one from a different document
     let mut chunks = Vec::new();
     for i in 0..6 {
         chunks.push(TextChunk {
@@ -528,7 +479,6 @@ async fn test_search_deduplication_across_chunks() {
             },
         });
     }
-    // Add a different document
     chunks.push(TextChunk {
         text: "函数定义使用 func 关键字，支持泛型参数".to_string(),
         metadata: DocMetadata {
@@ -565,10 +515,6 @@ async fn test_search_deduplication_across_chunks() {
         "deduplication should show diverse results from different documents"
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 12. Uninitialized Server Behavior
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// All tools should return a meaningful error when server is not initialized.
 #[tokio::test]

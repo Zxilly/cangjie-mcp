@@ -198,7 +198,7 @@ fn unsupported_response(operation: LspOperation, message: impl Into<String>) -> 
 fn validate_request(params: &LspRequest) -> Result<(), String> {
     let op_name = format!("{:?}", params.operation).to_lowercase();
 
-    // Phase 1: Check required parameters are present
+    // Phase 1: required parameters present
     if params.operation.requires_file_path() && params.file_path.is_none() {
         return Err(format!(
             "file_path is required for {op_name}. Provide an absolute path to a .cj file, e.g. {{\"file_path\": \"/path/to/file.cj\"}}"
@@ -223,7 +223,7 @@ fn validate_request(params: &LspRequest) -> Result<(), String> {
         );
     }
 
-    // Phase 2: Validate parameter values (e.g. file exists on disk)
+    // Phase 2: validate parameter values (e.g. file exists on disk)
     if let Some(file_path) = params.file_path.as_deref() {
         if params.operation.requires_file_path() {
             if let Some(err) = lsp_tools::get_validate_error(file_path) {

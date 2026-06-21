@@ -69,7 +69,7 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
     }
     info!("Loaded {} documents", documents.len());
 
-    // Capture doc texts before consuming documents (avoids a second load_all_documents call)
+    // Capture doc texts before consuming documents (avoids a second load_all_documents call).
     let needs_summaries = settings.summary_model.is_some() && settings.openai_api_key.is_some();
     let doc_texts: std::collections::HashMap<String, String> = if needs_summaries {
         documents
@@ -96,7 +96,7 @@ async fn build_index(settings: &Settings, index_info: &IndexInfo) -> Result<()> 
     .await;
     info!("Created {} chunks", chunks.len());
 
-    // Contextual retrieval: generate LLM summaries if summary_model is configured
+    // Contextual retrieval: generate LLM summaries if summary_model is configured.
     if let Some(ref summary_model) = settings.summary_model {
         if let Some(ref api_key) = settings.openai_api_key {
             info!("Generating context summaries with model: {}", summary_model);
@@ -289,7 +289,6 @@ pub async fn initialize_and_index(settings: &Settings) -> Result<IndexInfo> {
         return Ok(index_info);
     }
 
-    // Build index
     build_index(settings, &index_info).await?;
 
     Ok(index_info)
@@ -314,8 +313,7 @@ mod tests {
         }
     }
 
-    /// Helper: write a valid index_metadata.json at the correct path for the given
-    /// settings and version.
+    /// Write a valid index_metadata.json at the correct path for the given settings and version.
     async fn write_valid_metadata(
         data_dir: &std::path::Path,
         version: &str,
@@ -365,10 +363,9 @@ mod tests {
     #[tokio::test]
     async fn test_index_is_ready_wrong_version() {
         let tmp = TempDir::new().unwrap();
-        // Write metadata for version "v0.55.3"
+        // Write metadata for v0.55.3 but query for v0.55.4.
         write_valid_metadata(tmp.path(), "v0.55.3", "zh", 100).await;
 
-        // But ask about version "v0.55.4"
         let settings = test_settings(tmp.path().to_path_buf());
         let index_info = IndexInfo::from_settings(&settings, "v0.55.4");
 
@@ -403,7 +400,7 @@ mod tests {
     #[tokio::test]
     async fn test_index_is_ready_wrong_lang() {
         let tmp = TempDir::new().unwrap();
-        // Settings use DocLang::Zh ("zh"), so write metadata with lang "en"
+        // Settings use DocLang::Zh, so deliberately write metadata with lang "en".
         let settings = test_settings(tmp.path().to_path_buf());
         let index_info = IndexInfo::from_settings(&settings, "v0.55.4");
         let index_dir = index_info.index_dir();
@@ -473,7 +470,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write_valid_metadata(tmp.path(), "v0.55.4", "zh", 100).await;
 
-        // Create an invalid index directory (no valid metadata)
+        // Invalid index directory (no valid metadata).
         let invalid_dir = tmp
             .path()
             .join("indexes")
@@ -495,7 +492,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write_valid_metadata(tmp.path(), "v0.55.4", "zh", 100).await;
 
-        // Create a plain file (not a directory) inside indexes/
+        // A plain file (not a directory) inside indexes/.
         let indexes_dir = tmp.path().join("indexes");
         tokio::fs::write(indexes_dir.join("README.md"), "not a version dir")
             .await
@@ -521,7 +518,6 @@ mod tests {
     #[tokio::test]
     async fn test_load_prebuilt_version_missing() {
         let tmp = TempDir::new().unwrap();
-        // No metadata written
 
         let mut settings = test_settings(tmp.path().to_path_buf());
         settings.prebuilt = PrebuiltMode::Version("v0.55.4".to_string());
@@ -550,7 +546,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_prebuilt_auto_zero_indexes() {
         let tmp = TempDir::new().unwrap();
-        // Create the indexes dir but leave it empty
+        // Indexes dir exists but is empty.
         tokio::fs::create_dir_all(tmp.path().join("indexes"))
             .await
             .unwrap();

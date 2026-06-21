@@ -139,9 +139,7 @@ fn retry_backoff(max_attempts: usize) -> ExponentialBuilder {
         .with_max_times(max_attempts)
 }
 
-// -- HttpClient (no auth) ----------------------------------------------------
-
-/// A generic HTTP client with base-URL handling and optional retry support.
+/// HTTP client (no auth) with base-URL handling and retry support.
 #[derive(Clone)]
 pub(crate) struct HttpClient {
     base_url: String,
@@ -247,9 +245,7 @@ impl HttpClient {
     }
 }
 
-// -- ApiClient (Bearer auth) -------------------------------------------------
-
-/// An authenticated HTTP client for OpenAI-compatible API endpoints.
+/// Bearer-authenticated HTTP client for OpenAI-compatible API endpoints.
 #[derive(Clone)]
 pub(crate) struct ApiClient {
     http: HttpClient,
