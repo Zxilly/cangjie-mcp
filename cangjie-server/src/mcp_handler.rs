@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[cfg(feature = "lsp")]
@@ -7,80 +6,24 @@ use anyhow::Result;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
-use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
-use serde::{Deserialize, Serialize};
+use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use tokio::sync::RwLock;
 use tracing::info;
 #[cfg(feature = "lsp")]
 use tracing::warn;
 
-use cangjie_core::config::{
-    Settings, DEFAULT_TOP_K, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER,
-};
+use cangjie_core::config::{Settings, MAX_TOP_K, MIN_TOP_K, PACKAGE_FETCH_MULTIPLIER};
 use cangjie_core::prompts::get_prompt;
 use cangjie_indexer::document::chunker::strip_chunk_artifacts;
 use cangjie_indexer::search::{LocalSearchIndex, RemoteSearchIndex};
 use cangjie_indexer::SearchResult;
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchResultItem {
-    pub content: String,
-    pub score: f64,
-    pub file_path: String,
-    pub category: String,
-    pub topic: String,
-    pub title: String,
-}
+mod ranking;
+mod results;
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct DocsSearchResult {
-    pub items: Vec<SearchResultItem>,
-    pub total: usize,
-    pub count: usize,
-    pub offset: usize,
-    pub has_more: bool,
-    pub next_offset: Option<usize>,
-}
+pub use results::{DocsSearchResult, SearchDocsParams, SearchResultItem};
 
-/// Format search results as compact Markdown for LLM consumption.
-fn format_results_markdown(result: &DocsSearchResult) -> String {
-    use std::fmt::Write;
-
-    let mut out = String::new();
-    let start = result.offset + 1;
-    let end = result.offset + result.count;
-    writeln!(
-        out,
-        "Found {} results (showing {start}-{end}):\n",
-        result.total
-    )
-    .unwrap();
-
-    for (i, item) in result.items.iter().enumerate() {
-        let rank = result.offset + i + 1;
-        writeln!(out, "---").unwrap();
-        writeln!(
-            out,
-            "### [{rank}] {} ({}/{}) [score: {:.2}]\n",
-            item.title, item.category, item.topic, item.score
-        )
-        .unwrap();
-        writeln!(out, "{}\n", item.content).unwrap();
-    }
-
-    if result.has_more {
-        if let Some(next) = result.next_offset {
-            writeln!(out, "---").unwrap();
-            writeln!(
-                out,
-                "_More results available. Use offset={next} to see next page._"
-            )
-            .unwrap();
-        }
-    }
-
-    out
-}
+use results::format_results_markdown;
 
 #[derive(Clone)]
 enum SearchBackend {
@@ -269,185 +212,6 @@ impl CangjieServer {
             SearchBackend::Remote(remote) => remote.query(query, top_k, category).await,
         }
     }
-
-    fn has_package(result: &SearchResult, package: &str) -> bool {
-        result.text.contains(package) || result.text.contains(&format!("import {package}"))
-    }
-
-    fn query_terms(query: &str) -> Vec<String> {
-        let jieba = &**cangjie_indexer::search::GLOBAL_JIEBA;
-        let lower = query.to_lowercase();
-        let mut terms: Vec<String> = jieba
-            .cut_for_search(&lower, true)
-            .into_iter()
-            .map(|t| t.word.trim().to_string())
-            .filter(|t| !t.is_empty())
-            .collect();
-
-        for token in lower
-            .split(|c: char| !c.is_alphanumeric() && c != '_')
-            .filter(|t| !t.is_empty())
-        {
-            if !terms.iter().any(|t| t == token) {
-                terms.push(token.to_string());
-            }
-        }
-
-        terms
-    }
-
-    fn lexical_boost(query_terms: &[String], query_lc: &str, item: &SearchResult) -> f64 {
-        let topic = item.metadata.topic.to_lowercase();
-        let title = item.metadata.title.to_lowercase();
-        let path = item.metadata.file_path.to_lowercase();
-        let text = item.text.to_lowercase();
-        let mut boost = 0.0;
-
-        for term in query_terms {
-            if topic == *term {
-                boost += 8.0;
-            } else if topic.contains(term) {
-                boost += 5.0;
-            }
-
-            if title == *term {
-                boost += 6.0;
-            } else if title.contains(term) {
-                boost += 4.0;
-            }
-
-            if path.contains(term) {
-                boost += 2.0;
-            }
-
-            if text.contains(term) {
-                boost += 1.5;
-            }
-        }
-
-        if !query_lc.is_empty() {
-            if topic.contains(query_lc) {
-                boost += 6.0;
-            }
-            if title.contains(query_lc) {
-                boost += 5.0;
-            }
-            if text.contains(query_lc) {
-                boost += 2.0;
-            }
-        }
-
-        boost
-    }
-
-    fn rerank_and_dedup_results(
-        results: Vec<SearchResult>,
-        query: &str,
-        top_k: usize,
-        offset: usize,
-    ) -> Vec<SearchResult> {
-        /// Maximum possible boost per query term (topic exact 8 + title exact 6 + text 1.5)
-        const MAX_BOOST_PER_TERM: f64 = 15.5;
-        /// Maximum whole-query boost (topic 6 + title 5 + text 2)
-        const MAX_WHOLE_QUERY_BOOST: f64 = 13.0;
-        /// Weight cap for lexical boost in final score
-        const BOOST_WEIGHT: f64 = 0.3;
-
-        let query_terms = Self::query_terms(query);
-        let query_lc = query.to_lowercase();
-        let max_possible = query_terms.len() as f64 * MAX_BOOST_PER_TERM + MAX_WHOLE_QUERY_BOOST;
-        let mut scored: Vec<(SearchResult, f64)> = results
-            .into_iter()
-            .map(|r| {
-                let raw_boost = Self::lexical_boost(&query_terms, &query_lc, &r);
-                let normalized_boost = if max_possible > 0.0 {
-                    raw_boost / max_possible
-                } else {
-                    0.0
-                };
-                let adjusted = r.score + BOOST_WEIGHT * normalized_boost;
-                (r, adjusted)
-            })
-            .collect();
-
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let per_doc_limit = if top_k <= 3 { 1 } else { 2 };
-        let limit = offset + top_k + 1;
-
-        // Suppress near-identical snippets.
-        let mut seen_text_keys: HashSet<String> = HashSet::new();
-        let mut candidates: Vec<(SearchResult, f64)> = Vec::new();
-        for (result, adjusted) in scored {
-            let text_key = result
-                .text
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .to_lowercase();
-            if !seen_text_keys.insert(text_key) {
-                continue;
-            }
-            candidates.push((result, adjusted));
-        }
-
-        // Phase 1: maximize document coverage (at most one per document).
-        let mut selected: Vec<(SearchResult, f64)> = Vec::new();
-        let mut per_doc_count: HashMap<String, usize> = HashMap::new();
-        for (result, adjusted) in &candidates {
-            if selected.len() >= limit {
-                break;
-            }
-            let key = result.metadata.file_path.clone();
-            if per_doc_count.get(&key).copied().unwrap_or(0) == 0 {
-                selected.push((result.clone(), *adjusted));
-                per_doc_count.insert(key, 1);
-            }
-        }
-
-        // Phase 2: backfill with additional high-scoring snippets up to per-doc cap.
-        for (result, adjusted) in candidates {
-            if selected.len() >= limit {
-                break;
-            }
-            let key = result.metadata.file_path.clone();
-            let count = per_doc_count.get(&key).copied().unwrap_or(0);
-            if count >= per_doc_limit {
-                continue;
-            }
-            if count == 0 {
-                continue;
-            }
-            selected.push((result, adjusted));
-            per_doc_count.insert(key, count + 1);
-        }
-
-        selected.into_iter().map(|(result, _)| result).collect()
-    }
-}
-
-// ── Tool parameter types ────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SearchDocsParams {
-    /// Search query describing what you're looking for
-    pub query: String,
-    /// Optional category to filter results (e.g., 'cjpm', 'syntax', 'stdlib')
-    #[serde(default)]
-    pub category: Option<String>,
-    /// Number of results to return (default: 5, max: 20)
-    #[serde(default = "default_top_k")]
-    pub top_k: usize,
-    /// Number of results to skip for pagination
-    #[serde(default)]
-    pub offset: usize,
-    /// Filter by stdlib package name (e.g., 'std.collection', 'std.fs')
-    #[serde(default)]
-    pub package: Option<String>,
-}
-
-fn default_top_k() -> usize {
-    DEFAULT_TOP_K
 }
 
 #[tool_router]
@@ -578,37 +342,6 @@ impl ServerHandler for CangjieServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cangjie_indexer::{SearchResult, SearchResultMetadata};
-
-    #[test]
-    fn test_has_package_direct_match() {
-        let result = SearchResult {
-            text: "This text mentions std.collection directly".to_string(),
-            score: 1.0,
-            metadata: SearchResultMetadata::default(),
-        };
-        assert!(CangjieServer::has_package(&result, "std.collection"));
-    }
-
-    #[test]
-    fn test_has_package_import_match() {
-        let result = SearchResult {
-            text: "You can use import std.fs to access filesystem APIs".to_string(),
-            score: 1.0,
-            metadata: SearchResultMetadata::default(),
-        };
-        assert!(CangjieServer::has_package(&result, "std.fs"));
-    }
-
-    #[test]
-    fn test_has_package_no_match() {
-        let result = SearchResult {
-            text: "This text has nothing relevant to any package".to_string(),
-            score: 1.0,
-            metadata: SearchResultMetadata::default(),
-        };
-        assert!(!CangjieServer::has_package(&result, "std.collection"));
-    }
 
     #[test]
     fn test_get_info_without_cangjie_home() {
