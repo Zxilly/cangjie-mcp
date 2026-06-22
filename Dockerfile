@@ -84,21 +84,18 @@ RUN --mount=type=secret,id=OPENAI_API_KEY \
       --embedding openai \
       --data-dir /index-cache \
  && mkdir -p /data \
- && cp -a /index-cache/indexes /data/indexes
+ && cp -a /index-cache/indexes /data/indexes \
+ && printf '%s' "${OPENAI_EMBEDDING_MODEL}" > /data/.build_embedding_model
 
 # ---- Stage 5: minimal runtime with server binary + pre-built index ----
-FROM debian:bookworm-slim
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/* \
- && groupadd --system --gid 999 nonroot \
- && useradd --system --gid 999 --uid 999 --create-home nonroot
+# distroless/cc provides glibc + libgcc + libssl + ca-certificates — everything
+# the dynamically-linked (rustls TLS) binary needs — at a fraction of debian-slim.
+# It has no shell, so the former entrypoint.sh checks now live in the binary and
+# .build_embedding_model is written in the indexer stage.
+FROM gcr.io/distroless/cc-debian12:nonroot
 
 COPY --from=builder /usr/local/bin/cangjie-mcp-server /usr/local/bin/cangjie-mcp-server
 COPY --from=indexer --chown=nonroot:nonroot /data /data
-COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Re-declare build ARGs so they carry into ENV defaults
 ARG CANGJIE_DOCS_VERSION=dev
@@ -118,8 +115,6 @@ ENV CANGJIE_STDX_VERSION=${CANGJIE_STDX_VERSION}
 ENV CANGJIE_DOCS_LANG=${CANGJIE_DOCS_LANG}
 ENV OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL}
 ENV OPENAI_BASE_URL=${OPENAI_BASE_URL}
-# Record build-time model to a file (immune to runtime ENV overrides)
-RUN echo "${OPENAI_EMBEDDING_MODEL}" > /data/.build_embedding_model
 
 # Fallback labels for direct `docker build` (raw inputs); publish.py overrides these
 # with resolved versions + versions-hash via `--label` on the CLI.
@@ -129,9 +124,7 @@ LABEL org.cangjie-mcp.docs-version="${CANGJIE_DOCS_VERSION}" \
       org.cangjie-mcp.docs-lang="${CANGJIE_DOCS_LANG}" \
       org.cangjie-mcp.embedding-model="${OPENAI_EMBEDDING_MODEL}"
 
-USER nonroot
-
 EXPOSE 8765
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["cangjie-mcp-server", "--prebuilt", "--host", "0.0.0.0"]
+ENTRYPOINT ["/usr/local/bin/cangjie-mcp-server"]
+CMD ["--prebuilt", "--host", "0.0.0.0"]

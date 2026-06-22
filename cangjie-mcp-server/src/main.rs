@@ -211,12 +211,57 @@ impl Cli {
 
 use cangjie_core::logging::setup_logging;
 
+/// Fail-fast startup checks that the prebuilt Docker image used to run from
+/// entrypoint.sh. The image now runs on distroless (no shell), so these live in
+/// the binary instead — surfacing a clear error rather than failing per-request
+/// or as a confusing "index not found".
+fn validate_runtime(settings: &Settings) -> Result<()> {
+    let needs_openai = settings.embedding_type == EmbeddingType::OpenAI
+        || settings.rerank_type == RerankType::OpenAI;
+    if needs_openai
+        && settings
+            .openai_api_key
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+    {
+        anyhow::bail!(
+            "OPENAI_API_KEY is required when embedding or rerank uses OpenAI. \
+             Pass it via -e OPENAI_API_KEY=sk-xxx (Docker) or --openai-api-key."
+        );
+    }
+
+    // A baked prebuilt image must be queried with the same embedding model it was
+    // built with, or the stored vectors are meaningless.
+    if settings.prebuilt.is_prebuilt() {
+        let build_model_file = settings.data_dir.join(".build_embedding_model");
+        if let Ok(baked) = std::fs::read_to_string(&build_model_file) {
+            let baked = baked.trim();
+            if !baked.is_empty()
+                && settings.embedding_type == EmbeddingType::OpenAI
+                && settings.openai_model != baked
+            {
+                anyhow::bail!(
+                    "OPENAI_EMBEDDING_MODEL='{}' does not match the pre-built index model '{}'. \
+                     Remove the override or rebuild the image with the desired model.",
+                    settings.openai_model,
+                    baked
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     setup_logging(cli.log_file.as_deref(), cli.debug);
 
     let settings = cli.to_settings();
+
+    validate_runtime(&settings)?;
 
     info!(
         "Initializing index (version={}, lang={})...",
