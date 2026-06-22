@@ -11,11 +11,16 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 REGISTRY = "crpi-5ufw1wl9cvjiiv1a.ap-northeast-1.personal.cr.aliyuncs.com"
 REPO = f"{REGISTRY}/zxilly/cangjie_mcp"
 
-# Build-time ARGs that may come from .env / environment (raw user inputs)
-BUILD_ARGS = [
+# Version inputs — resolved to exact checkout refs before the build so the index
+# built in the container is pinned to the same commit recorded in the OCI labels.
+VERSION_BUILD_ARGS = [
     "CANGJIE_DOCS_VERSION",
     "CANGJIE_RUNTIME_VERSION",
     "CANGJIE_STDX_VERSION",
+]
+
+# Other build-time ARGs passed through from .env / environment (raw user inputs).
+OTHER_BUILD_ARGS = [
     "CANGJIE_DOCS_LANG",
     "OPENAI_EMBEDDING_MODEL",
     "OPENAI_BASE_URL",
@@ -48,13 +53,18 @@ CANGJIE_REPOS = {
 }
 
 
-def resolve_repo_version(repo_label: str, repo_url: str, version: str) -> str:
+def resolve_repo_version(repo_label: str, repo_url: str, version: str) -> tuple[str, str]:
     """Resolve a version against a remote repo.
 
-    Mirrors the logic of resolve_after_checkout in repo/mod.rs:
-      - "latest" → resolve main/master branch → "main(<short_hash>)"
-      - tag name → tag name as-is (e.g. "v0.55.3")
-      - branch name → "branch(<short_hash>)"
+    Returns ``(display, checkout_ref)``:
+      - ``display`` is the human-readable version recorded in the OCI labels and
+        the image-tag hash. Mirrors resolve_after_checkout in repo/mod.rs:
+          "latest" → "main(<short>)"; tag → tag name; branch → "branch(<short>)".
+      - ``checkout_ref`` is a ref the in-container ``cangjie-mcp index`` checks out
+        to EXACTLY the commit ``display`` refers to: the tag name for tags, or the
+        full commit oid for latest/branch. Passing the oid (not "latest"/branch)
+        pins the indexed content to the resolved commit, so it can't drift from
+        the labelled version if the branch advances during the build.
     """
     result = subprocess.run(
         ["git", "ls-remote", repo_url],
@@ -74,19 +84,19 @@ def resolve_repo_version(repo_label: str, repo_url: str, version: str) -> str:
         for branch in ("main", "master"):
             ref_key = f"refs/heads/{branch}"
             if ref_key in refs:
-                short = refs[ref_key][:7]
-                return f"{branch}({short})"
+                oid = refs[ref_key]
+                return f"{branch}({oid[:7]})", oid
         print(f"ERROR: Could not resolve 'latest' — no main/master branch in {repo_label}.", file=sys.stderr)
         sys.exit(1)
 
     tag_ref = f"refs/tags/{version}"
     if tag_ref in refs:
-        return version
+        return version, version
 
     branch_ref = f"refs/heads/{version}"
     if branch_ref in refs:
-        short = refs[branch_ref][:7]
-        return f"{version}({short})"
+        oid = refs[branch_ref]
+        return f"{version}({oid[:7]})", oid
 
     print(f"ERROR: Could not resolve version='{version}' as tag or branch in {repo_label}.", file=sys.stderr)
     sys.exit(1)
@@ -187,12 +197,12 @@ def main():
     runtime_input = os.environ.get("CANGJIE_RUNTIME_VERSION") or env.get("CANGJIE_RUNTIME_VERSION") or docs_input
     stdx_input = os.environ.get("CANGJIE_STDX_VERSION") or env.get("CANGJIE_STDX_VERSION") or docs_input
 
-    docs_version = resolve_repo_version("docs", CANGJIE_REPOS["docs"], docs_input)
-    runtime_version = resolve_repo_version("runtime", CANGJIE_REPOS["runtime"], runtime_input)
-    stdx_version = resolve_repo_version("stdx", CANGJIE_REPOS["stdx"], stdx_input)
-    print(f"Resolved docs:    {docs_input} -> {docs_version}")
-    print(f"Resolved runtime: {runtime_input} -> {runtime_version}")
-    print(f"Resolved stdx:    {stdx_input} -> {stdx_version}")
+    docs_version, docs_ref = resolve_repo_version("docs", CANGJIE_REPOS["docs"], docs_input)
+    runtime_version, runtime_ref = resolve_repo_version("runtime", CANGJIE_REPOS["runtime"], runtime_input)
+    stdx_version, stdx_ref = resolve_repo_version("stdx", CANGJIE_REPOS["stdx"], stdx_input)
+    print(f"Resolved docs:    {docs_input} -> {docs_version} (checkout {docs_ref})")
+    print(f"Resolved runtime: {runtime_input} -> {runtime_version} (checkout {runtime_ref})")
+    print(f"Resolved stdx:    {stdx_input} -> {stdx_version} (checkout {stdx_ref})")
 
     versions_hash = compute_versions_hash(docs_version, runtime_version, stdx_version)
     print(f"Versions hash: verhash{versions_hash}")
@@ -207,10 +217,22 @@ def main():
 
     print(f"Publishing: {full_image}")
 
-    # Build: pass raw inputs as CANGJIE_*_VERSION (consumed by `cangjie-mcp index`).
-    # Resolved versions go into OCI labels via --label (overrides Dockerfile fallback labels).
+    # Build. The three CANGJIE_*_VERSION args are the RESOLVED checkout refs (tag
+    # name, or the exact commit oid for latest/branch), so `cangjie-mcp index`
+    # inside the container indexes the same commit recorded in the OCI labels below
+    # — it can't drift even if a branch advances mid-build. Other args (lang,
+    # embedding model, base url) pass through from .env / environment as raw inputs.
     cmd = ["docker", "build"]
-    for arg in BUILD_ARGS:
+
+    resolved_versions = {
+        "CANGJIE_DOCS_VERSION": docs_ref,
+        "CANGJIE_RUNTIME_VERSION": runtime_ref,
+        "CANGJIE_STDX_VERSION": stdx_ref,
+    }
+    for key in VERSION_BUILD_ARGS:
+        cmd += ["--build-arg", f"{key}={resolved_versions[key]}"]
+
+    for arg in OTHER_BUILD_ARGS:
         value = os.environ.get(arg) or env.get(arg)
         if value:
             cmd += ["--build-arg", f"{arg}={value}"]
