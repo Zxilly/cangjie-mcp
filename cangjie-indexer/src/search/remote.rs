@@ -100,20 +100,8 @@ impl RemoteSearchIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
+    use crate::search::test_settings;
     use std::path::PathBuf;
-
-    fn test_settings(data_dir: PathBuf) -> Settings {
-        Settings {
-            data_dir,
-            openai_base_url: "https://api.example.com".to_string(),
-            openai_model: "test".to_string(),
-            docs_lang: DocLang::Zh,
-            embedding_type: EmbeddingType::None,
-            rerank_type: RerankType::None,
-            ..Settings::default()
-        }
-    }
 
     #[test]
     fn test_remote_search_new_trailing_slash() {

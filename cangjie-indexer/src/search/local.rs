@@ -286,21 +286,9 @@ impl LocalSearchIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::test_settings;
     use crate::TextChunk;
-    use cangjie_core::config::{DocLang, EmbeddingType, RerankType, Settings};
     use std::path::PathBuf;
-
-    fn test_settings(data_dir: PathBuf) -> Settings {
-        Settings {
-            data_dir,
-            openai_base_url: "https://api.example.com".to_string(),
-            openai_model: "test".to_string(),
-            docs_lang: DocLang::Zh,
-            embedding_type: EmbeddingType::None,
-            rerank_type: RerankType::None,
-            ..Settings::default()
-        }
-    }
 
     fn make_chunk(text: &str, category: &str, topic: &str) -> TextChunk {
         use crate::DocMetadata;
