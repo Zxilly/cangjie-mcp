@@ -151,6 +151,18 @@ struct Cli {
     /// Disable legacy SSE transport (GET /sse + POST /message)
     #[arg(long = "no-sse", env = "CANGJIE_NO_SSE")]
     no_sse: bool,
+
+    /// Comma-separated Host header allowlist for the MCP endpoint's DNS-rebinding
+    /// guard. Leave empty (the default) to allow any Host — appropriate when the
+    /// server runs behind a trusted reverse proxy, where rmcp's localhost-only
+    /// default would reject every request to the public domain with 403. Set to
+    /// e.g. "mcp.example.com,mcp.example.com:443" to restrict.
+    #[arg(
+        long = "mcp-allowed-hosts",
+        env = "CANGJIE_MCP_ALLOWED_HOSTS",
+        value_delimiter = ','
+    )]
+    mcp_allowed_hosts: Vec<String>,
 }
 
 impl Cli {
@@ -241,7 +253,21 @@ async fn main() -> Result<()> {
         let mcp_config = McpServerConfig::default()
             .with_stateful_mode(true)
             .with_cancellation_token(ct.child_token());
+        // rmcp's DNS-rebinding guard defaults to a localhost-only Host allowlist,
+        // which 403s every request once deployed behind a domain/reverse proxy.
+        // An explicit allowlist restricts to those hosts; empty disables the check.
+        let mcp_config = if cli.mcp_allowed_hosts.is_empty() {
+            mcp_config.disable_allowed_hosts()
+        } else {
+            mcp_config.with_allowed_hosts(cli.mcp_allowed_hosts.clone())
+        };
         let mcp_service = create_mcp_service(mcp_server, mcp_config);
+
+        if cli.mcp_allowed_hosts.is_empty() {
+            info!("MCP Host allowlist disabled (any Host accepted)");
+        } else {
+            info!("MCP Host allowlist: {}", cli.mcp_allowed_hosts.join(", "));
+        }
 
         info!("MCP endpoint enabled at {}", cli.mcp_path);
         app = app.nest_service(&cli.mcp_path, mcp_service);
