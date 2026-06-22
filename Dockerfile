@@ -52,8 +52,22 @@ ARG CANGJIE_STDX_VERSION=dev
 ARG CANGJIE_DOCS_LANG=zh
 ARG OPENAI_EMBEDDING_MODEL=BAAI/bge-m3
 ARG OPENAI_BASE_URL=https://api.siliconflow.cn/v1
+# Cache bucket for the embedding index. publish.py derives it from the resolved
+# docs/runtime/stdx commits + model + base URL + lang + a hash of the indexing
+# source, so the cache is reused across unrelated code changes and only rebuilt
+# when an input that actually affects the index changes. Defaults to "dev" for a
+# plain `docker build` (one shared bucket).
+ARG INDEX_CACHE_ID=dev
 
+# Build the index into a BuildKit cache mount keyed by INDEX_CACHE_ID, then copy
+# just the index tree into the image. `cangjie-mcp index` is idempotent: if the
+# cache already holds the index for these resolved versions it skips the
+# (expensive, API-billed) embedding step. Embedding the key into the cache id
+# gives each distinct input set its own bucket holding exactly one index version,
+# so versions never accumulate. The RUN layer still re-executes when the binary
+# changes, but against a warm cache that run performs no embedding.
 RUN --mount=type=secret,id=OPENAI_API_KEY \
+    --mount=type=cache,target=/index-cache,id=cangjie-index-${INDEX_CACHE_ID},sharing=locked \
     if [ ! -f /run/secrets/OPENAI_API_KEY ]; then \
         echo "ERROR: OPENAI_API_KEY secret is required for building the OpenAI embedding index." >&2; \
         echo "  Pass it via: docker build --secret id=OPENAI_API_KEY,env=OPENAI_API_KEY ..." >&2; \
@@ -68,7 +82,9 @@ RUN --mount=type=secret,id=OPENAI_API_KEY \
       --stdx-version "${CANGJIE_STDX_VERSION}" \
       --lang "${CANGJIE_DOCS_LANG}" \
       --embedding openai \
-      --data-dir /data
+      --data-dir /index-cache \
+ && mkdir -p /data \
+ && cp -a /index-cache/indexes /data/indexes
 
 # ---- Stage 5: minimal runtime with server binary + pre-built index ----
 FROM debian:bookworm-slim

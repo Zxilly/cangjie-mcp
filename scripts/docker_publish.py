@@ -108,6 +108,42 @@ def compute_versions_hash(docs: str, runtime: str, stdx: str) -> str:
     return hashlib.sha256(payload).hexdigest()[:12]
 
 
+# Source trees whose contents determine the index output (indexing/embedding
+# logic + the config that drives it: chunk defaults, model handling, path layout).
+INDEX_SOURCE_DIRS = [
+    PROJECT_DIR / "cangjie-indexer" / "src",
+    PROJECT_DIR / "cangjie-core" / "src" / "config",
+]
+
+
+def hash_index_sources() -> str:
+    """Stable digest of the indexing source, so the index cache invalidates when
+    that code changes but NOT when unrelated crates (server/lsp/cli) change."""
+    h = hashlib.sha256()
+    files = sorted(
+        f for d in INDEX_SOURCE_DIRS if d.exists() for f in d.rglob("*.rs")
+    )
+    for f in files:
+        h.update(f.relative_to(PROJECT_DIR).as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(f.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()[:16]
+
+
+def compute_index_cache_key(
+    docs: str, runtime: str, stdx: str, model: str, base_url: str, lang: str, src_hash: str
+) -> str:
+    """16-char key identifying everything that affects the built index. Used as the
+    BuildKit cache-mount bucket id so embeddings are reused across unrelated builds
+    and recomputed only when a real input changes."""
+    payload = (
+        f"docs={docs}|rt={runtime}|stdx={stdx}|model={model}"
+        f"|base={base_url}|lang={lang}|src={src_hash}"
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
 def run(cmd: list[str], **kwargs) -> None:
     print(f"+ {' '.join(cmd)}")
     result = subprocess.run(cmd, **kwargs)
@@ -210,6 +246,13 @@ def main():
     embedding_model = os.environ.get("OPENAI_EMBEDDING_MODEL") or env.get("OPENAI_EMBEDDING_MODEL", "BAAI/bge-m3")
     embedding_model_tag = embedding_model.replace("/", "-")
 
+    base_url = os.environ.get("OPENAI_BASE_URL") or env.get("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1")
+    docs_lang = os.environ.get("CANGJIE_DOCS_LANG") or env.get("CANGJIE_DOCS_LANG", "zh")
+    index_cache_key = compute_index_cache_key(
+        docs_version, runtime_version, stdx_version, embedding_model, base_url, docs_lang, hash_index_sources()
+    )
+    print(f"Index cache key: {index_cache_key}")
+
     # Compose image tag: <version>_<embedding_model>_verhash<hash>
     # Three repo versions go to OCI labels; hash makes the version triple addressable from the tag.
     image_tag = f"{version}_{embedding_model_tag}_verhash{versions_hash}"
@@ -236,6 +279,9 @@ def main():
         value = os.environ.get(arg) or env.get(arg)
         if value:
             cmd += ["--build-arg", f"{arg}={value}"]
+
+    # Keyed cache-mount bucket for the embedding index (see Dockerfile).
+    cmd += ["--build-arg", f"INDEX_CACHE_ID={index_cache_key}"]
 
     labels = {
         "org.cangjie-mcp.docs-version": docs_version,
